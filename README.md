@@ -21,6 +21,7 @@ All dependencies are fetched automatically with CMake `FetchContent` and pinned 
 | [SDL3](https://github.com/libsdl-org/SDL) | `release-3.4.16` | Built statically |
 | [spdlog](https://github.com/gabime/spdlog) | `v1.17.0` | Uses bundled fmt |
 | [stb](https://github.com/nothings/stb) | commit `2c980bb` | Header-only, exposed as `Emerald::stb` (INTERFACE) |
+| [dr_libs](https://github.com/mackron/dr_libs) | commit `dfe8377` | Only `dr_mp3.h` (MP3 decoding); header-only, public domain / MIT-0 |
 | [Dear ImGui](https://github.com/ocornut/imgui) | `v1.92.9b-docking` | Optional, SDL3 + SDLGPU3 backends |
 | [EnTT](https://github.com/skypjack/entt) | `v3.16.0` | Optional |
 | [SDL_shadercross](https://github.com/libsdl-org/SDL_shadercross) | commit `1ff05be` | Build-time host tool (HLSL → SPIR-V/DXIL/MSL), built from source with vendored DXC + SPIRV-Cross |
@@ -255,6 +256,7 @@ structure-of-arrays layout instead (all x together, all y together).
 | `ThreadPoolTests` | futures return values, exceptions through futures, `WaitIdle`, shutdown with pending tasks, `ParallelFor` covers every index once |
 | `MemoryTests` | frame arena reset/alignment/overflow, many resets stay in the buffer, pmr containers use their resource, tracking counts, pools (incl. the synchronized pool from many threads) |
 | `InputTests` | key down/pressed/released edges, taps within one frame, fixed-step edges, `ReleaseAll`; actions with several keys, action taps across fixed steps, axes, rebinding; gamepads (synthetic pads, no hardware): deadzone math (per-axis, radial), trigger/stick virtual buttons with hysteresis, button edges across fixed steps, several pads, labels, gamepad bindings and largest-magnitude axes; `FixedTimestep` accumulation, average rate at 144 fps / 120 Hz, slow-frame clamp |
+| `AudioTests` | MP3 decoding from an embedded 809-byte file (length, level, channels, pitch after resampling), garbage rejected, WAV loading, `LoadSound` by extension incl. unknown/missing files, `MakeSound` conversion |
 | `Renderer2DTests` | `Renderer2D` batching and shape generation on the CPU (no GPU), `Transform2D`, color packing |
 
 ```sh
@@ -432,6 +434,28 @@ step* in `OnFixedUpdate`, so a tap in a frame that runs no fixed step (which hap
 repeats are ignored, held keys and pad buttons are released when the window loses focus, and with ImGui on, key presses are withheld from the game while an ImGui
 text field is active.
 
+## Audio
+
+`include/Emerald/Audio/`: load sounds, then play them fire-and-forget.
+
+```cpp
+std::optional<Emerald::Sound> boom = Emerald::LoadSound("assets/boom.mp3"); // .wav or .mp3
+if (boom)
+    GetAudio().Play(*boom, 0.8f); // volume 0..1
+```
+
+- **`LoadSound(path)`** picks the loader by extension (case-insensitive): `.wav` → `LoadWav`
+  (`SDL_LoadWAV`), `.mp3` → `LoadMp3` ([dr_mp3](https://github.com/mackron/dr_libs), compiled
+  once in `src/Vendor/dr_mp3.cpp`). MP3s are decoded to f32 at the file's own rate and channel
+  count, then everything is converted with `SDL_ConvertAudioSamples` to the **mix format**
+  `kMixSpec` (f32, stereo, 48 kHz), so playing needs no conversion. Failures return `std::nullopt`
+  and are logged. `LoadMp3FromMemory` decodes embedded data; `MakeSound(samples, channels, rate)`
+  converts sounds generated in code (the sandbox's pulse "blip" is one).
+- **`Audio`** (`Application::GetAudio()`) opens the default output device and plays each sound on
+  one of 16 voices (SDL audio streams bound to the device, which SDL mixes). When all voices are
+  busy the oldest sound is cut off. `StopAll()`, `SetMasterVolume()`. Without an audio device the
+  app runs normally and `Play` does nothing (a warning is logged).
+
 ## Fixed-timestep update
 
 `OnFixedUpdate(f32 dt)` runs at `ApplicationSpec::FixedUpdateRate` (default **120 Hz**) with a
@@ -501,7 +525,7 @@ It is always built in Release and lives in `build/_shadercross`, which every pre
 ## Project layout
 
 ```
-include/Emerald/   Public engine headers (Core/, Input/, Renderer/, Assets/, Math/, Memory/)
+include/Emerald/   Public engine headers (Core/, Input/, Audio/, Renderer/, Assets/, Math/, Memory/)
 src/               Engine implementation
 shaders/           The engine's HLSL shaders (Renderer2D; compiled at build time for every app)
 sandbox/           Example application (src/, and its own shaders/)

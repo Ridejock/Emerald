@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <future>
 #include <numeric>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -136,6 +137,14 @@ protected:
         input.BindAction("Pulse", {Key::Space});
         input.BindAction("Pulse", {GamepadButton::South});
         input.BindAction("Quit", {Key::Escape});
+
+        // A short generated "blip" for the pulse (files would use Emerald::LoadSound("x.mp3")).
+        std::vector<f32> blip(48000 * 15 / 100); // 0.15 s, mono, 48 kHz
+        for (usize i = 0; i < blip.size(); ++i) {
+            const f32 t = static_cast<f32>(i) / 48000.0f;
+            blip[i] = 0.4f * std::sin(Emerald::TwoPi * 660.0f * t) * std::exp(-t * 25.0f);
+        }
+        m_Blip = Emerald::MakeSound(blip, 1, 48000);
     }
 
     // Input + fixed-step demo: move the arrow with WASD / arrow keys / left stick / d-pad (at
@@ -160,6 +169,8 @@ protected:
         if (input.WasActionPressed("Pulse")) {
             m_PulseAge = 0.0f;
             input.Rumble(0.3f, 0.6f, 120);
+            if (m_Blip)
+                GetAudio().Play(*m_Blip, 0.7f);
         }
         m_PulseAge += dt;
     }
@@ -283,6 +294,7 @@ protected:
         ImGui::Text("Move the arrow: WASD / arrows / left stick, pulse: Space / %s",
                     GetInput().GetGamepads().GetButtonLabel(GamepadButton::South));
         ShowGamepads();
+        ImGui::Text("Audio: %s", GetAudio().IsAvailable() ? "on" : "no device");
         ImGui::Separator();
         ImGui::Text("Workers: %u", GetThreadPool().GetThreadCount());
         const Emerald::FrameArena::Stats arena = GetFrameArena().GetStats();
@@ -435,6 +447,7 @@ private:
     SandboxOptions m_Options;
     f32 m_Time = 0.0f;
     Vec2 m_ArrowPosition{200.0f, 400.0f};
+    std::optional<Emerald::Sound> m_Blip;
     f32 m_ArrowAngle = 0.0f;
     f32 m_PulseAge = 1.0f; // seconds since Space was pressed
     SDL_GPUGraphicsPipeline* m_Pipeline = nullptr;

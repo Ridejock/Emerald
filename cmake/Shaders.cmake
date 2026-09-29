@@ -57,6 +57,22 @@ function(_emerald_setup_shadercross)
                 -DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}
                 -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER})
         endif()
+        # The tool's source must be the same path for every build sharing the tool dir, or its
+        # CMake cache refuses it. A game that FetchContent's Emerald has one Emerald copy per
+        # build dir (build/<preset>/_deps/emerald-src), so copy the few tool files to a stable
+        # folder next to the tool dir in that case. Top-level and local checkouts use them in place.
+        set(tool_source "${EMERALD_ROOT}/tools/shadercross")
+        cmake_path(IS_PREFIX CMAKE_BINARY_DIR "${EMERALD_ROOT}" NORMALIZE emerald_in_build_dir)
+        if(emerald_in_build_dir)
+            set(tool_source "${EMERALD_SHADERCROSS_BUILD_DIR}-src")
+            file(MAKE_DIRECTORY "${tool_source}")
+            file(GLOB tool_files "${EMERALD_ROOT}/tools/shadercross/*")
+            foreach(tool_file IN LISTS tool_files)
+                get_filename_component(tool_file_name "${tool_file}" NAME)
+                file(COPY_FILE "${tool_file}" "${tool_source}/${tool_file_name}" ONLY_IF_DIFFERENT)
+            endforeach()
+        endif()
+
         # The tool dir is shared, but ExternalProject's stamps live in each engine build dir. If
         # the tool dir is missing or predates the dxcompiler copy next to the exe (older Emerald),
         # drop the stamps so configure + build of the tool run again instead of being skipped.
@@ -68,7 +84,7 @@ function(_emerald_setup_shadercross)
         endif()
         ExternalProject_Add(emerald_shadercross
             STAMP_DIR         "${stamp_dir}"
-            SOURCE_DIR        "${EMERALD_ROOT}/tools/shadercross"
+            SOURCE_DIR        "${tool_source}"
             BINARY_DIR        "${EMERALD_SHADERCROSS_BUILD_DIR}"
             CMAKE_ARGS        ${tool_args}
             # shadercross_bundle = shadercross + dxcompiler/dxil copied next to it + smoke test.

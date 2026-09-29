@@ -1,9 +1,13 @@
 #include <array>
 #include <charconv>
+#include <cmath>
 #include <cstddef>
+#include <future>
+#include <numeric>
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 #include <SDL3/SDL.h>
 
@@ -60,6 +64,13 @@ struct Velocity {
 };
 #endif
 
+// One draw call, collected into a per-frame list before recording (see OnRender).
+struct DrawItem {
+    Mat4 Transform; // projection * model
+    SDL_GPUBuffer* Vertices = nullptr;
+    u32 VertexCount = 0;
+};
+
 struct SandboxOptions {
     u64 Frames = 0;
     std::string ScreenshotPath;
@@ -84,10 +95,11 @@ protected:
 #if EMERALD_WITH_ENTT
         auto& registry = GetRegistry();
         const auto entity = registry.create();
-        registry.emplace<Position>(entity, Vec2(100.0f, 100.0f));
+        registry.emplace<Position>(entity, Vec2(160.0f, 220.0f)); // below the ImGui panel
         registry.emplace<Velocity>(entity, Vec2(120.0f, 80.0f));
         EM_INFO("EnTT enabled: created entity {}", static_cast<u32>(entity));
 #endif
+        RunThreadPoolDemo();
     }
 
     void OnEvent(const SDL_Event& event) override
@@ -129,29 +141,35 @@ protected:
         const Vec2 size = GetWindowSize();
         const Mat4 projection = Mat4::OrthoPixelSpace(size.x, size.y);
 
+        // First collect this frame's draws into a list, then record them. The list lives in the
+        // frame arena: allocating is a pointer bump and there is nothing to free - the arena is
+        // reset when the next frame starts.
+        Emerald::PmrVector<DrawItem> draws(GetFrameAllocator());
+
         // The triangle: scaled to 40% of the window, slowly rotating, centered. Read right to
         // left: scale the unit triangle, rotate it, move it to the center, then project.
         const f32 radius = 0.4f * Emerald::Min(size.x, size.y);
         const Mat4 model =
             Mat4::Translate(size * 0.5f) * Mat4::RotateZ(0.5f * m_Time) * Mat4::Scale(Vec2(radius));
-        // Uniform data is pushed into the command buffer and applies to the draws that follow
-        // (slot 0 = register(b0, space1)).
-        const Uniforms triangleUniforms{projection * model};
-        SDL_PushGPUVertexUniformData(cmd, 0, &triangleUniforms, sizeof(triangleUniforms));
-        const SDL_GPUBufferBinding triangle{m_TriangleBuffer, 0};
-        SDL_BindGPUVertexBuffers(pass, 0, &triangle, 1);
-        SDL_DrawGPUPrimitives(pass, static_cast<u32>(kTriangle.size()), 1, 0, 0);
+        draws.push_back({projection * model, m_TriangleBuffer, static_cast<u32>(kTriangle.size())});
 
 #if EMERALD_WITH_ENTT
         // One quad per entity: the unit quad scaled to kQuadSize pixels and moved to its position.
-        const SDL_GPUBufferBinding quad{m_QuadBuffer, 0};
-        SDL_BindGPUVertexBuffers(pass, 0, &quad, 1);
         GetRegistry().view<Position>().each([&](const Position& p) {
-            const Uniforms u{projection * Mat4::Translate(p.Value) * Mat4::Scale(kQuadSize)};
-            SDL_PushGPUVertexUniformData(cmd, 0, &u, sizeof(u));
-            SDL_DrawGPUPrimitives(pass, static_cast<u32>(kQuad.size()), 1, 0, 0);
+            draws.push_back({projection * Mat4::Translate(p.Value) * Mat4::Scale(kQuadSize),
+                             m_QuadBuffer, static_cast<u32>(kQuad.size())});
         });
 #endif
+
+        for (const DrawItem& draw : draws) {
+            // Uniform data is pushed into the command buffer and applies to the draws that follow
+            // (slot 0 = register(b0, space1)).
+            const Uniforms uniforms{draw.Transform};
+            SDL_PushGPUVertexUniformData(cmd, 0, &uniforms, sizeof(uniforms));
+            const SDL_GPUBufferBinding binding{draw.Vertices, 0};
+            SDL_BindGPUVertexBuffers(pass, 0, &binding, 1);
+            SDL_DrawGPUPrimitives(pass, draw.VertexCount, 1, 0, 0);
+        }
     }
 
     void OnImGui() override
@@ -162,6 +180,16 @@ protected:
         ImGui::Text("Renderer: SDL GPU (%s)", SDL_GetGPUDeviceDriver(GetRenderer().GetDevice()));
         ImGui::Text("Frame: %llu", static_cast<unsigned long long>(GetFrameCount()));
         ImGui::Text("Time:  %.2f s", static_cast<f64>(m_Time));
+        ImGui::Separator();
+        ImGui::Text("Workers: %u", GetThreadPool().GetThreadCount());
+        const Emerald::FrameArena::Stats arena = GetFrameArena().GetStats();
+        ImGui::Text("Frame arena: %zu B last frame, peak %zu / %zu B", arena.LastFrameBytes,
+                    arena.PeakBytes, arena.Capacity);
+        ImGui::Text("Frames over capacity: %llu",
+                    static_cast<unsigned long long>(arena.OverflowFrames));
+        const Emerald::TrackingResource::Stats pools = GetPoolStats();
+        ImGui::Text("Pools: %zu B in use (peak %zu B), %zu chunks", pools.BytesInUse,
+                    pools.PeakBytes, pools.AllocationsInUse);
         ImGui::End();
 #endif
     }
@@ -179,6 +207,28 @@ protected:
     }
 
 private:
+    // Shows the thread pool once at startup: fills an array in parallel with ParallelFor, then
+    // sums it in a background task and waits for the result through its future.
+    void RunThreadPoolDemo()
+    {
+        Emerald::ThreadPool& pool = GetThreadPool();
+        constexpr usize kCount = 1'000'000;
+        std::vector<f32> values(kCount);
+
+        const u64 start = SDL_GetTicksNS();
+        // Each index is written by exactly one thread, so no locking is needed.
+        pool.ParallelFor(kCount,
+                         [&values](usize i) { values[i] = std::sqrt(static_cast<f32>(i)); });
+        std::future<f64> sum =
+            pool.Submit([&values] { return std::accumulate(values.begin(), values.end(), 0.0); });
+        const f64 total = sum.get(); // blocks until the task has run
+        const f64 ms = static_cast<f64>(SDL_GetTicksNS() - start) / 1e6;
+
+        EM_INFO("Thread pool demo: {} square roots on {} workers + main thread, summed by a task: "
+                "{:.0f} ({:.2f} ms)",
+                kCount, pool.GetThreadCount(), total, ms);
+    }
+
     [[nodiscard]] Vec2 GetWindowSize()
     {
         i32 w = 0, h = 0;

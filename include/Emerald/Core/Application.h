@@ -2,12 +2,16 @@
 
 #include <filesystem>
 #include <memory>
+#include <memory_resource>
 
 #include <SDL3/SDL_pixels.h>
 
 #include "Emerald/Core/Defines.h"
 #include "Emerald/Core/Log.h"
+#include "Emerald/Core/ThreadPool.h"
 #include "Emerald/Core/Window.h"
+#include "Emerald/Memory/FrameArena.h"
+#include "Emerald/Memory/TrackingResource.h"
 #include "Emerald/Renderer/Renderer.h"
 
 #if EMERALD_WITH_ENTT
@@ -34,6 +38,11 @@ struct ApplicationSpec {
     // Log file written in addition to the console. Relative paths are relative to the executable's
     // directory; the file is truncated on each run. Empty = no log file.
     std::filesystem::path LogFile = Log::DefaultFile;
+    // Worker threads in the application's ThreadPool (0 = hardware threads - 1, at least 1).
+    u32 WorkerThreads = 0;
+    // Size of the per-frame scratch arena (GetFrameAllocator). Frames that need more fall back to
+    // the heap and log a warning once.
+    usize FrameArenaSize = 1024 * 1024;
 };
 
 // Initializes SDL, owns the main window and GPU renderer, and drives the main loop.
@@ -53,6 +62,22 @@ public:
     [[nodiscard]] Window& GetWindow() { return *m_Window; }
     [[nodiscard]] Renderer& GetRenderer() { return *m_Renderer; }
     [[nodiscard]] u64 GetFrameCount() const { return m_FrameCount; }
+
+    // Worker threads for background/parallel work (see ThreadPool.h).
+    [[nodiscard]] ThreadPool& GetThreadPool() { return *m_ThreadPool; }
+
+    // Memory (see Memory/). Pass these to pmr containers, e.g. PmrVector<T> v(GetFrameAllocator()).
+    // Scratch memory for the current frame; everything is freed when the next frame starts.
+    // Main thread only.
+    [[nodiscard]] std::pmr::memory_resource* GetFrameAllocator() { return m_FrameArena.get(); }
+    [[nodiscard]] const FrameArena& GetFrameArena() const { return *m_FrameArena; }
+    // Pooled memory for long-lived objects that are created and destroyed often, main thread only
+    // (std::pmr::unsynchronized_pool_resource: no locking, so it is fast).
+    [[nodiscard]] std::pmr::memory_resource* GetPoolAllocator() { return &m_Pool; }
+    // The same, but safe to use from any thread (std::pmr::synchronized_pool_resource).
+    [[nodiscard]] std::pmr::memory_resource* GetSharedPoolAllocator() { return &m_SharedPool; }
+    // Counts the heap memory both pools have taken (they get their memory in big chunks).
+    [[nodiscard]] TrackingResource::Stats GetPoolStats() const { return m_PoolHeap.GetStats(); }
 
 #if EMERALD_WITH_ENTT
     [[nodiscard]] entt::registry& GetRegistry() { return m_Registry; }
@@ -76,6 +101,15 @@ private:
     void RenderFrame();
 
     ApplicationSpec m_Spec;
+
+    // Memory resources first, so they outlive everything below that might use them. The pools
+    // get their chunks from the heap through m_PoolHeap, which counts them.
+    TrackingResource m_PoolHeap{std::pmr::new_delete_resource()};
+    std::pmr::unsynchronized_pool_resource m_Pool{&m_PoolHeap};
+    std::pmr::synchronized_pool_resource m_SharedPool{&m_PoolHeap};
+    std::unique_ptr<FrameArena> m_FrameArena;
+    std::unique_ptr<ThreadPool> m_ThreadPool;
+
     std::unique_ptr<Window> m_Window;
     std::unique_ptr<Renderer> m_Renderer;
     bool m_SdlInitialized = false;

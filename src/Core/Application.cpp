@@ -21,6 +21,11 @@ Application::Application(const ApplicationSpec& spec) : m_Spec(spec)
     EM_CORE_INFO("Emerald starting (SDL {}.{}.{})", SDL_MAJOR_VERSION, SDL_MINOR_VERSION,
                  SDL_MICRO_VERSION);
 
+    m_FrameArena = std::make_unique<FrameArena>(spec.FrameArenaSize);
+    m_ThreadPool = std::make_unique<ThreadPool>(spec.WorkerThreads);
+    EM_CORE_INFO("Thread pool: {} workers; frame arena: {} KiB", m_ThreadPool->GetThreadCount(),
+                 spec.FrameArenaSize / 1024);
+
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS)) {
         EM_CORE_ERROR("SDL_Init failed: {}", SDL_GetError());
         return;
@@ -53,6 +58,7 @@ Application::Application(const ApplicationSpec& spec) : m_Spec(spec)
 
 Application::~Application()
 {
+    m_ThreadPool.reset(); // stops and joins the workers while everything they might use exists
     ShutdownImGui();
     m_Renderer.reset(); // GPU device must go before the window it renders into
     m_Window.reset();
@@ -74,6 +80,9 @@ int Application::Run()
 
     u64 last = SDL_GetTicksNS();
     while (m_Running) {
+        // Everything allocated from the frame arena last frame is gone from here on.
+        m_FrameArena->Reset();
+
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
 #if EMERALD_WITH_IMGUI
@@ -98,8 +107,13 @@ int Application::Run()
         }
     }
 
+    // Let background tasks finish before the app releases the resources they may use.
+    m_ThreadPool->WaitIdle();
     OnShutdown();
-    EM_CORE_INFO("Main loop ended after {} frames", m_FrameCount);
+    const FrameArena::Stats arena = m_FrameArena->GetStats();
+    EM_CORE_INFO("Main loop ended after {} frames (frame arena peak {} of {} bytes, {} frames "
+                 "overflowed)",
+                 m_FrameCount, arena.PeakBytes, arena.Capacity, arena.OverflowFrames);
     return 0;
 }
 

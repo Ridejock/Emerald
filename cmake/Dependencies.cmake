@@ -37,11 +37,25 @@ FetchContent_Declare(stb
     GIT_TAG        2c980bb59875b0d32144a71867fbdebb2f77cd20
 )
 
-FetchContent_MakeAvailable(SDL3 spdlog stb)
+# --- dr_libs (single-header decoders, no releases: pinned to a commit) --------
+# Only dr_mp3.h is used. SOURCE_SUBDIR points at a folder that does not exist so FetchContent just
+# downloads the headers and does not add dr_libs' own CMake project (tests etc.).
+FetchContent_Declare(dr_libs
+    GIT_REPOSITORY https://github.com/mackron/dr_libs.git
+    GIT_TAG        dfe8377631000664666519fdb83da193fd8037f4
+    GIT_SUBMODULES ""          # skip its test submodules (miniaudio)
+    SOURCE_SUBDIR  do-not-add
+)
+
+FetchContent_MakeAvailable(SDL3 spdlog stb dr_libs)
 
 add_library(emerald_stb INTERFACE)
 add_library(Emerald::stb ALIAS emerald_stb)
 target_include_directories(emerald_stb SYSTEM INTERFACE ${stb_SOURCE_DIR})
+
+add_library(emerald_dr_libs INTERFACE)
+add_library(Emerald::dr_libs ALIAS emerald_dr_libs)
+target_include_directories(emerald_dr_libs SYSTEM INTERFACE ${dr_libs_SOURCE_DIR})
 
 # --- Dear ImGui (optional) --------------------------------------------------
 if(EMERALD_USE_IMGUI)

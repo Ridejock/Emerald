@@ -44,6 +44,11 @@ Application::Application(const ApplicationSpec& spec)
     SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_SWITCH, "1");
     if (!SDL_InitSubSystem(SDL_INIT_GAMEPAD))
         EM_CORE_WARN("Gamepad support unavailable: {}", SDL_GetError());
+    // Audio is optional too: without a device, Audio::Play does nothing.
+    if (SDL_InitSubSystem(SDL_INIT_AUDIO))
+        m_Audio.Init();
+    else
+        EM_CORE_WARN("Audio unavailable: {}", SDL_GetError());
 
     m_Window = std::make_unique<Window>(spec.Window);
     if (!m_Window->IsValid())
@@ -80,6 +85,7 @@ Application::~Application()
     m_Renderer.reset(); // GPU device must go before the window it renders into
     m_Window.reset();
     m_Gamepads.CloseAll();
+    m_Audio.Shutdown();
     if (m_SdlInitialized)
         SDL_Quit();
     EM_CORE_INFO("Emerald shut down");

@@ -6,6 +6,7 @@
 
 #include <SDL3/SDL_pixels.h>
 
+#include "Emerald/Audio/Audio.h"
 #include "Emerald/Core/Defines.h"
 #include "Emerald/Core/FixedTimestep.h"
 #include "Emerald/Core/Log.h"
@@ -72,6 +73,8 @@ public:
     [[nodiscard]] Renderer2D& GetRenderer2D() { return *m_Renderer2D; }
     // Action-based input: bind actions/axes to keys (e.g. in OnStart), then query them.
     [[nodiscard]] Input& GetInput() { return m_Input; }
+    // Sound playback (see Audio.h; load sounds with LoadSound).
+    [[nodiscard]] Audio& GetAudio() { return m_Audio; }
     [[nodiscard]] u64 GetFrameCount() const { return m_FrameCount; }
 
     // Client-area size in window coordinates / in pixels (see Window.h).
@@ -142,8 +145,9 @@ private:
     std::unique_ptr<Window> m_Window;
     std::unique_ptr<Renderer> m_Renderer;
     std::unique_ptr<Renderer2D> m_Renderer2D;
-    Keyboard m_Keyboard;                   // raw key state, fed from SDL events
-    Gamepads m_Gamepads;                   // raw gamepad state, fed from SDL events
+    Keyboard m_Keyboard; // raw key state, fed from SDL events
+    Gamepads m_Gamepads; // raw gamepad state, fed from SDL events
+    Audio m_Audio;
     Input m_Input{m_Keyboard, m_Gamepads}; // actions on top of both
     FixedTimestep m_FixedTimestep;
     bool m_SdlInitialized = false;

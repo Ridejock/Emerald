@@ -1,9 +1,12 @@
 # Build-time HLSL shader compilation with SDL_shadercross.
 #
-#   emerald_add_shaders(<target> <file.vert.hlsl> <file.frag.hlsl> ...)
+#   emerald_add_shaders(<target> [<file.vert.hlsl> <file.frag.hlsl> ...])
 #
-# compiles each HLSL file to every format in EMERALD_SHADER_FORMATS (SPIR-V for Vulkan, DXIL for
-# Direct3D 12, MSL for Metal) plus a reflection .json, into <runtime output dir>/shaders/.
+# Call it once for every executable using Emerald (even without shaders of its own): it also
+# compiles the engine's built-in shaders (Emerald's shaders/ folder, e.g. Renderer2D) for it.
+# Each HLSL file is compiled to every format in EMERALD_SHADER_FORMATS (SPIR-V for Vulkan, DXIL
+# for Direct3D 12, MSL for Metal) plus a reflection .json, into a shaders/ folder next to the
+# target's executable (its RUNTIME_OUTPUT_DIRECTORY, or its build folder if that is not set).
 # The stage comes from the file name: *.vert.hlsl, *.frag.hlsl or *.comp.hlsl; the entry point
 # is always `main`. Editing an .hlsl (or any .hlsli in the same folder) recompiles it.
 # The target also gets EMERALD_SHADER_FORMATS defined as the matching SDL_GPUShaderFormat mask.
@@ -20,7 +23,8 @@ option(EMERALD_BUILD_SHADERCROSS
     "Build SDL_shadercross from source when EMERALD_SHADERCROSS_EXECUTABLE is not set" ON)
 set(EMERALD_SHADERCROSS_EXECUTABLE "" CACHE FILEPATH
     "Prebuilt shadercross executable to use instead of building it")
-set(EMERALD_SHADERCROSS_BUILD_DIR "${PROJECT_SOURCE_DIR}/build/_shadercross" CACHE PATH
+# CMAKE_SOURCE_DIR is the top-level project: Emerald itself, or the game that pulls it in.
+set(EMERALD_SHADERCROSS_BUILD_DIR "${CMAKE_SOURCE_DIR}/build/_shadercross" CACHE PATH
     "Build directory for the shadercross host tool (shared between presets)")
 set(EMERALD_SHADER_FORMATS "SPIRV;DXIL;MSL" CACHE STRING
     "Shader formats to generate (any of SPIRV, DXIL, MSL)")
@@ -36,6 +40,10 @@ function(_emerald_setup_shadercross)
     set(formats ${EMERALD_SHADER_FORMATS})
     set(depends "")
     set(prebuilt TRUE)
+
+    # Relative to this file, not PROJECT_SOURCE_DIR: that is the calling project's when Emerald is
+    # a subproject (FetchContent / add_subdirectory).
+    get_filename_component(EMERALD_ROOT "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/.." ABSOLUTE)
 
     if(EMERALD_SHADERCROSS_EXECUTABLE)
         set(exe "${EMERALD_SHADERCROSS_EXECUTABLE}")
@@ -60,7 +68,7 @@ function(_emerald_setup_shadercross)
         endif()
         ExternalProject_Add(emerald_shadercross
             STAMP_DIR         "${stamp_dir}"
-            SOURCE_DIR        "${PROJECT_SOURCE_DIR}/tools/shadercross"
+            SOURCE_DIR        "${EMERALD_ROOT}/tools/shadercross"
             BINARY_DIR        "${EMERALD_SHADERCROSS_BUILD_DIR}"
             CMAKE_ARGS        ${tool_args}
             # shadercross_bundle = shadercross + dxcompiler/dxil copied next to it + smoke test.
@@ -122,12 +130,21 @@ function(emerald_add_shaders target)
     get_property(formats GLOBAL PROPERTY EMERALD_SHADERCROSS_FORMATS)
 
     # Shaders go next to the executable, e.g. build/debug/bin/shaders/.
-    get_property(multi_config GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
-    if(multi_config)
-        set(out_dir "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/shaders")
-    else()
-        set(out_dir "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/shaders")
+    get_target_property(exe_dir ${target} RUNTIME_OUTPUT_DIRECTORY)
+    if(NOT exe_dir)
+        get_target_property(exe_dir ${target} BINARY_DIR)
     endif()
+    get_property(multi_config GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
+    if(multi_config AND NOT exe_dir MATCHES "\\$<")
+        set(out_dir "${exe_dir}/$<CONFIG>/shaders") # e.g. Visual Studio: bin/Debug/shaders
+    else()
+        set(out_dir "${exe_dir}/shaders")
+    endif()
+
+    # The engine's own shaders, then the target's.
+    get_filename_component(engine_shader_dir "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../shaders" ABSOLUTE)
+    file(GLOB engine_shaders CONFIGURE_DEPENDS "${engine_shader_dir}/*.hlsl")
+    set(sources ${engine_shaders} ${ARGN})
 
     set(ext_SPIRV spv)
     set(ext_DXIL dxil)
@@ -135,7 +152,8 @@ function(emerald_add_shaders target)
     set(ext_JSON json)
 
     set(outputs "")
-    foreach(src IN LISTS ARGN)
+    set(shared_targets "")
+    foreach(src IN LISTS sources)
         get_filename_component(src "${src}" ABSOLUTE)
         get_filename_component(src_dir "${src}" DIRECTORY)
         get_filename_component(file_name "${src}" NAME)
@@ -155,6 +173,15 @@ function(emerald_add_shaders target)
         file(GLOB includes CONFIGURE_DEPENDS "${src_dir}/*.hlsli")
         foreach(format IN LISTS formats ITEMS JSON)
             set(out "${out_dir}/${base}.${ext_${format}}")
+            # Several executables sharing an output folder (e.g. all in bin/) share the engine
+            # shaders: only the first gets the build rule, the others depend on its target.
+            string(MD5 out_key "${out}")
+            get_property(owner GLOBAL PROPERTY "EMERALD_SHADER_RULE_${out_key}")
+            if(owner)
+                list(APPEND shared_targets ${owner})
+                continue()
+            endif()
+            set_property(GLOBAL PROPERTY "EMERALD_SHADER_RULE_${out_key}" ${target}_shaders)
             add_custom_command(
                 OUTPUT  "${out}"
                 COMMAND ${CMAKE_COMMAND} -E make_directory "${out_dir}"
@@ -167,8 +194,12 @@ function(emerald_add_shaders target)
         endforeach()
     endforeach()
 
-    add_custom_target(${target}_shaders ALL DEPENDS ${outputs} SOURCES ${ARGN})
+    add_custom_target(${target}_shaders ALL DEPENDS ${outputs} SOURCES ${sources})
     add_dependencies(${target} ${target}_shaders)
+    list(REMOVE_DUPLICATES shared_targets)
+    foreach(shared IN LISTS shared_targets)
+        add_dependencies(${target}_shaders ${shared})
+    endforeach()
 
     # Tell the code which formats exist, e.g. for ApplicationSpec::ShaderFormats.
     list(TRANSFORM formats PREPEND "SDL_GPU_SHADERFORMAT_" OUTPUT_VARIABLE format_flags)

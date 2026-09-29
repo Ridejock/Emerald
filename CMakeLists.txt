@@ -14,16 +14,25 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE Debug CACHE STRING "Build type" FORCE)
 endif()
 
-# Put all executables/DLLs in one place so the sandbox can find SDL3 at runtime on Windows.
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
-set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
-set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
+# Put all executables/DLLs in one place (build/<preset>/bin). A game that includes Emerald as a
+# subproject (FetchContent) keeps its own choice if it set one.
+if(NOT DEFINED CMAKE_RUNTIME_OUTPUT_DIRECTORY)
+    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+endif()
+if(NOT DEFINED CMAKE_LIBRARY_OUTPUT_DIRECTORY)
+    set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
+endif()
+if(NOT DEFINED CMAKE_ARCHIVE_OUTPUT_DIRECTORY)
+    set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
+endif()
 
-option(EMERALD_BUILD_SANDBOX "Build the sandbox example application" ON)
+# Sandbox and tests are only built by default when Emerald is the top-level project, not when a
+# game pulls it in.
+option(EMERALD_BUILD_SANDBOX "Build the sandbox example application" ${PROJECT_IS_TOP_LEVEL})
 option(EMERALD_USE_IMGUI     "Enable Dear ImGui (SDL3 + SDL GPU backends)" OFF)
 option(EMERALD_USE_ENTT      "Enable the EnTT entity-component system" OFF)
 option(EMERALD_MATH_SIMD     "Use the SSE code paths of the math library on x86/x64" ON)
-option(EMERALD_BUILD_TESTS   "Build the unit tests (run with ctest)" ON)
+option(EMERALD_BUILD_TESTS   "Build the unit tests (run with ctest)" ${PROJECT_IS_TOP_LEVEL})
 option(EMERALD_BUILD_BENCH   "Build the math micro-benchmark" OFF)
 
 include(cmake/Dependencies.cmake)

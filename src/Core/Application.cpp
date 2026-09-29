@@ -64,8 +64,8 @@ int Application::Run()
             OnEvent(event);
         }
 
-        const std::uint64_t now = SDL_GetTicksNS();
-        const float dt = static_cast<float>(now - last) / 1e9f;
+        const u64 now = SDL_GetTicksNS();
+        const f32 dt = static_cast<f32>(now - last) / 1e9f;
         last = now;
 
         OnUpdate(dt);

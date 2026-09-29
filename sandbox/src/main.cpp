@@ -14,10 +14,10 @@ namespace {
 
 #if EMERALD_WITH_ENTT
 struct Position {
-    float X = 0.0f, Y = 0.0f;
+    f32 X = 0.0f, Y = 0.0f;
 };
 struct Velocity {
-    float X = 0.0f, Y = 0.0f;
+    f32 X = 0.0f, Y = 0.0f;
 };
 #endif
 
@@ -34,7 +34,7 @@ protected:
         const auto entity = registry.create();
         registry.emplace<Position>(entity, 100.0f, 100.0f);
         registry.emplace<Velocity>(entity, 120.0f, 80.0f);
-        EM_INFO("EnTT enabled: created entity {}", static_cast<std::uint32_t>(entity));
+        EM_INFO("EnTT enabled: created entity {}", static_cast<u32>(entity));
 #endif
     }
 
@@ -44,7 +44,7 @@ protected:
             Quit();
     }
 
-    void OnUpdate(float dt) override
+    void OnUpdate(f32 dt) override
     {
         m_Time += dt;
 #if EMERALD_WITH_ENTT
@@ -53,9 +53,9 @@ protected:
         GetRegistry().view<Position, Velocity>().each([&](Position& p, Velocity& v) {
             p.X += v.X * dt;
             p.Y += v.Y * dt;
-            if (p.X < 0.0f || p.X > static_cast<float>(w - 50))
+            if (p.X < 0.0f || p.X > static_cast<f32>(w - 50))
                 v.X = -v.X;
-            if (p.Y < 0.0f || p.Y > static_cast<float>(h - 50))
+            if (p.Y < 0.0f || p.Y > static_cast<f32>(h - 50))
                 v.Y = -v.Y;
         });
 #endif
@@ -81,7 +81,7 @@ protected:
 #if EMERALD_WITH_IMGUI
         ImGui::Begin("Emerald");
         ImGui::Text("Frame: %llu", static_cast<unsigned long long>(GetFrameCount()));
-        ImGui::Text("Time:  %.2f s", static_cast<double>(m_Time));
+        ImGui::Text("Time:  %.2f s", static_cast<f64>(m_Time));
         ImGui::End();
 #endif
     }
@@ -89,14 +89,14 @@ protected:
     void OnShutdown() override { EM_INFO("Sandbox shutting down after {:.2f}s", m_Time); }
 
 private:
-    float m_Time = 0.0f;
+    f32 m_Time = 0.0f;
 };
 
-std::uint64_t ParseFrames(int argc, char** argv)
+u64 ParseFrames(int argc, char** argv)
 {
     for (int i = 1; i + 1 < argc; ++i) {
         if (std::string_view(argv[i]) == "--frames") {
-            std::uint64_t value = 0;
+            u64 value = 0;
             std::string_view arg(argv[i + 1]);
             std::from_chars(arg.data(), arg.data() + arg.size(), value);
             return value;

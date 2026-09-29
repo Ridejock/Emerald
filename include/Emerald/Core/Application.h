@@ -1,8 +1,8 @@
 #pragma once
 
-#include <cstdint>
 #include <memory>
 
+#include "Emerald/Core/Defines.h"
 #include "Emerald/Core/Window.h"
 
 #if EMERALD_WITH_ENTT
@@ -17,7 +17,7 @@ struct ApplicationSpec {
     WindowSpec Window;
     // Stop after this many frames (0 = run until the window is closed). Useful for CI/headless
     // runs.
-    std::uint64_t MaxFrames = 0;
+    u64 MaxFrames = 0;
 };
 
 // Initializes SDL, owns the main window and drives the main loop.
@@ -35,7 +35,7 @@ public:
     void Quit() { m_Running = false; }
 
     [[nodiscard]] Window& GetWindow() { return *m_Window; }
-    [[nodiscard]] std::uint64_t GetFrameCount() const { return m_FrameCount; }
+    [[nodiscard]] u64 GetFrameCount() const { return m_FrameCount; }
 
 #if EMERALD_WITH_ENTT
     [[nodiscard]] entt::registry& GetRegistry() { return m_Registry; }
@@ -44,7 +44,7 @@ public:
 protected:
     virtual void OnStart() {}
     virtual void OnEvent(const SDL_Event& /*event*/) {}
-    virtual void OnUpdate(float /*deltaSeconds*/) {}
+    virtual void OnUpdate(f32 /*deltaSeconds*/) {}
     virtual void OnRender() {}
     virtual void OnImGui() {} // Only called when built with EMERALD_USE_IMGUI=ON
     virtual void OnShutdown() {}
@@ -58,7 +58,7 @@ private:
     bool m_SdlInitialized = false;
     bool m_ImGuiInitialized = false;
     bool m_Running = false;
-    std::uint64_t m_FrameCount = 0;
+    u64 m_FrameCount = 0;
 
 #if EMERALD_WITH_ENTT
     entt::registry m_Registry;

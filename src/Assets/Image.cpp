@@ -16,7 +16,7 @@ std::optional<Image> FromStb(stbi_uc* pixels, int width, int height)
     Image image;
     image.Width = width;
     image.Height = height;
-    image.Pixels.assign(pixels, pixels + static_cast<std::size_t>(width) * height * 4);
+    image.Pixels.assign(pixels, pixels + static_cast<usize>(width) * height * 4);
     stbi_image_free(pixels);
     return image;
 }
@@ -32,7 +32,7 @@ std::optional<Image> Image::LoadFromFile(const std::filesystem::path& path)
     return FromStb(pixels, w, h);
 }
 
-std::optional<Image> Image::LoadFromMemory(const std::uint8_t* data, std::size_t size)
+std::optional<Image> Image::LoadFromMemory(const u8* data, usize size)
 {
     int w = 0, h = 0, channels = 0;
     stbi_uc* pixels = stbi_load_from_memory(data, static_cast<int>(size), &w, &h, &channels, 4);

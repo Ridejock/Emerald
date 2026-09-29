@@ -17,7 +17,7 @@ namespace Emerald {
 
 Application::Application(const ApplicationSpec& spec) : m_Spec(spec)
 {
-    Log::Init();
+    Log::Init(spec.LogFile);
     EM_CORE_INFO("Emerald starting (SDL {}.{}.{})", SDL_MAJOR_VERSION, SDL_MINOR_VERSION,
                  SDL_MICRO_VERSION);
 

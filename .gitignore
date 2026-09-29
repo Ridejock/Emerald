@@ -27,3 +27,4 @@ Thumbs.db
 # Runtime
 imgui.ini
 *.log
+logs/

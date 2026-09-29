@@ -1,10 +1,12 @@
 #pragma once
 
+#include <filesystem>
 #include <memory>
 
 #include <SDL3/SDL_pixels.h>
 
 #include "Emerald/Core/Defines.h"
+#include "Emerald/Core/Log.h"
 #include "Emerald/Core/Window.h"
 #include "Emerald/Renderer/Renderer.h"
 
@@ -29,6 +31,9 @@ struct ApplicationSpec {
     // Stop after this many frames (0 = run until the window is closed). Useful for CI/headless
     // runs.
     u64 MaxFrames = 0;
+    // Log file written in addition to the console. Relative paths are relative to the executable's
+    // directory; the file is truncated on each run. Empty = no log file.
+    std::filesystem::path LogFile = Log::DefaultFile;
 };
 
 // Initializes SDL, owns the main window and GPU renderer, and drives the main loop.

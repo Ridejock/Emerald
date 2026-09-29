@@ -22,3 +22,14 @@ add_executable(EmeraldLogTests TestMain.cpp LogTests.cpp)
 target_link_libraries(EmeraldLogTests PRIVATE Emerald::Emerald)
 emerald_set_warnings(EmeraldLogTests)
 add_test(NAME LogTests COMMAND EmeraldLogTests)
+
+# Thread pool and std::pmr memory helpers; these link the engine library.
+add_executable(EmeraldThreadPoolTests TestMain.cpp ThreadPoolTests.cpp)
+target_link_libraries(EmeraldThreadPoolTests PRIVATE Emerald::Emerald)
+emerald_set_warnings(EmeraldThreadPoolTests)
+add_test(NAME ThreadPoolTests COMMAND EmeraldThreadPoolTests)
+
+add_executable(EmeraldMemoryTests TestMain.cpp MemoryTests.cpp)
+target_link_libraries(EmeraldMemoryTests PRIVATE Emerald::Emerald)
+emerald_set_warnings(EmeraldMemoryTests)
+add_test(NAME MemoryTests COMMAND EmeraldMemoryTests)

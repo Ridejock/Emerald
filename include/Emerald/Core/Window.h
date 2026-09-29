@@ -3,6 +3,8 @@
 #include <cstdint>
 #include <string>
 
+#include "Emerald/Core/Defines.h"
+
 struct SDL_Window;
 struct SDL_Renderer;
 
@@ -10,8 +12,8 @@ namespace Emerald {
 
 struct WindowSpec {
     std::string Title = "Emerald";
-    std::uint32_t Width = 1280;
-    std::uint32_t Height = 720;
+    u32 Width = 1280;
+    u32 Height = 720;
     bool Resizable = true;
     bool VSync = true;
 };

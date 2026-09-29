@@ -2,6 +2,7 @@
 
 #include <SDL3/SDL.h>
 
+#include "Emerald/Core/Defines.h"
 #include "Emerald/Core/Log.h"
 
 #if EMERALD_WITH_IMGUI
@@ -51,7 +52,7 @@ int Application::Run()
     m_Running = true;
     OnStart();
 
-    std::uint64_t last = SDL_GetTicksNS();
+    u64 last = SDL_GetTicksNS();
     while (m_Running) {
         SDL_Event event;
         while (SDL_PollEvent(&event)) {

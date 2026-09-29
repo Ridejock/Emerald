@@ -256,7 +256,7 @@ structure-of-arrays layout instead (all x together, all y together).
 | `ThreadPoolTests` | futures return values, exceptions through futures, `WaitIdle`, shutdown with pending tasks, `ParallelFor` covers every index once |
 | `MemoryTests` | frame arena reset/alignment/overflow, many resets stay in the buffer, pmr containers use their resource, tracking counts, pools (incl. the synchronized pool from many threads) |
 | `InputTests` | key down/pressed/released edges, taps within one frame, fixed-step edges, `ReleaseAll`; actions with several keys, action taps across fixed steps, axes, rebinding; gamepads (synthetic pads, no hardware): deadzone math (per-axis, radial), trigger/stick virtual buttons with hysteresis, button edges across fixed steps, several pads, labels, gamepad bindings and largest-magnitude axes; `FixedTimestep` accumulation, average rate at 144 fps / 120 Hz, slow-frame clamp |
-| `AudioTests` | MP3 decoding from an embedded 809-byte file (length, level, channels, pitch after resampling), garbage rejected, WAV loading, `LoadSound` by extension incl. unknown/missing files, `MakeSound` conversion |
+| `AudioTests` | MP3 decoding from an embedded 809-byte file (length, level, channels, pitch after resampling), garbage rejected, WAV loading, `LoadSound` by extension incl. unknown/missing files, `MakeSound` conversion; mixer handles (stale handles, reuse, releasing samples), fade-in/out and volume ramps without clicks, looping, pitch, pan, master volume/mute, voice stealing, soft limiter; synth waveforms (length, no NaN, peak), envelopes, lowpass |
 | `Renderer2DTests` | `Renderer2D` batching and shape generation on the CPU (no GPU), `Transform2D`, color packing |
 
 ```sh
@@ -436,25 +436,48 @@ text field is active.
 
 ## Audio
 
-`include/Emerald/Audio/`: load sounds, then play them fire-and-forget.
+`include/Emerald/Audio/`: load or generate sounds, then play them through `Application::GetAudio()`.
 
 ```cpp
 std::optional<Emerald::Sound> boom = Emerald::LoadSound("assets/boom.mp3"); // .wav or .mp3
+Emerald::Audio& audio = GetAudio();
 if (boom)
-    GetAudio().Play(*boom, 0.8f); // volume 0..1
+    audio.Play(*boom, {.Volume = 0.8f, .Pan = -0.3f});          // fire and forget
+
+Emerald::VoiceHandle engine = audio.Play(hum, {.Volume = 0.5f, .Loop = true});
+audio.SetVolume(engine, 0.2f);   // ramped, no click
+audio.Stop(engine, 80.0f);       // fade out over 80 ms (default 10 ms)
+audio.IsPlaying(engine);         // false once it has faded out
+audio.SetMasterVolume(0.7f);
+audio.SetMuted(!audio.IsMuted());
 ```
 
-- **`LoadSound(path)`** picks the loader by extension (case-insensitive): `.wav` → `LoadWav`
-  (`SDL_LoadWAV`), `.mp3` → `LoadMp3` ([dr_mp3](https://github.com/mackron/dr_libs), compiled
-  once in `src/Vendor/dr_mp3.cpp`). MP3s are decoded to f32 at the file's own rate and channel
-  count, then everything is converted with `SDL_ConvertAudioSamples` to the **mix format**
-  `kMixSpec` (f32, stereo, 48 kHz), so playing needs no conversion. Failures return `std::nullopt`
-  and are logged. `LoadMp3FromMemory` decodes embedded data; `MakeSound(samples, channels, rate)`
-  converts sounds generated in code (the sandbox's pulse "blip" is one).
-- **`Audio`** (`Application::GetAudio()`) opens the default output device and plays each sound on
-  one of 16 voices (SDL audio streams bound to the device, which SDL mixes). When all voices are
-  busy the oldest sound is cut off. `StopAll()`, `SetMasterVolume()`. Without an audio device the
-  app runs normally and `Play` does nothing (a warning is logged).
+- **Loading**: `LoadSound(path)` picks the loader by extension (case-insensitive): `.wav` →
+  `LoadWav` (`SDL_LoadWAV`), `.mp3` → `LoadMp3` ([dr_mp3](https://github.com/mackron/dr_libs),
+  compiled once in `src/Vendor/dr_mp3.cpp`). MP3s are decoded to f32 at the file's own rate and
+  channel count, then everything is converted with `SDL_ConvertAudioSamples` to the **mix format**
+  `kMixSpec` (f32, stereo, 48 kHz). Failures return `std::nullopt` and are logged.
+  `LoadMp3FromMemory` decodes embedded data, `MakeSound(samples, channels, rate)` converts
+  generated samples. A `Sound` shares its (immutable) samples, so copies are cheap and a playing
+  sound stays valid even if the game drops its `Sound`.
+- **Synth** (`Synth.h`): `Generate(Tone)` makes sine, square/pulse (`Duty`), triangle, saw or
+  noise with an optional exponential pitch sweep (`StartHz` → `EndHz`; for noise the frequency sets
+  how bright it is); shape it with `ApplyDecay`, `ApplyAdsr`, `LowPass` (one-pole) and `MixInto`,
+  then `ToSound`. Asteroids generates all its sounds this way.
+- **Mixer** (`Mixer.h`, owned by `Audio`): 32 voices. `Play` returns a `VoiceHandle` that remembers
+  the voice's generation, so a handle to a sound that has ended (and whose voice was reused) is a
+  safe no-op. `PlayOptions`: `Volume`, `Pan` (-1..1), `Pitch` (speed, linear interpolation),
+  `Loop`, `FadeInMs` (2 ms). Every gain change is ramped per sample (start, `Stop` fades,
+  `SetVolume`, master volume, mute), so nothing clicks. The master output goes through a soft
+  limiter (unchanged up to 0.8, then eases towards 1.0), so ten explosions at once get louder
+  without harsh clipping. When all voices are busy, the oldest non-looping sound is cut off.
+- **Threads**: SDL calls the mixer from its audio thread with the audio stream locked; every
+  `Audio` method locks the same stream (for microseconds), so the game thread and the audio thread
+  never touch mixer state at the same time. The audio thread never allocates or frees: finished
+  sounds are released by `Audio::Update()` on the main thread (the Application calls it every
+  frame). Call `Audio` from the main thread only.
+- Without an audio device the app runs normally and `Play` returns an invalid handle (a warning is
+  logged). `SDL_AUDIO_DRIVER=disk` writes the output to a raw file instead (handy for testing).
 
 ## Fixed-timestep update
 

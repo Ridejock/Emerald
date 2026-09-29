@@ -138,13 +138,16 @@ protected:
         input.BindAction("Pulse", {GamepadButton::South});
         input.BindAction("Quit", {Key::Escape});
 
-        // A short generated "blip" for the pulse (files would use Emerald::LoadSound("x.mp3")).
-        std::vector<f32> blip(48000 * 15 / 100); // 0.15 s, mono, 48 kHz
-        for (usize i = 0; i < blip.size(); ++i) {
-            const f32 t = static_cast<f32>(i) / 48000.0f;
-            blip[i] = 0.4f * std::sin(Emerald::TwoPi * 660.0f * t) * std::exp(-t * 25.0f);
-        }
-        m_Blip = Emerald::MakeSound(blip, 1, 48000);
+        // A short generated "blip" for the pulse, rising in pitch (files would use
+        // Emerald::LoadSound("x.mp3")).
+        using namespace Emerald::Synth;
+        std::vector<f32> blip = Generate({.Shape = Wave::Sine,
+                                          .Seconds = 0.15f,
+                                          .StartHz = 520.0f,
+                                          .EndHz = 880.0f,
+                                          .Volume = 0.4f});
+        ApplyDecay(blip, 0.03f);
+        m_Blip = ToSound(blip);
     }
 
     // Input + fixed-step demo: move the arrow with WASD / arrow keys / left stick / d-pad (at
@@ -169,8 +172,9 @@ protected:
         if (input.WasActionPressed("Pulse")) {
             m_PulseAge = 0.0f;
             input.Rumble(0.3f, 0.6f, 120);
-            if (m_Blip)
-                GetAudio().Play(*m_Blip, 0.7f);
+            // Panned towards the side of the window the arrow is on.
+            const f32 pan = m_ArrowPosition.x / GetViewSize().x * 2.0f - 1.0f;
+            GetAudio().Play(m_Blip, {.Volume = 0.7f, .Pan = pan * 0.8f});
         }
         m_PulseAge += dt;
     }
@@ -447,7 +451,7 @@ private:
     SandboxOptions m_Options;
     f32 m_Time = 0.0f;
     Vec2 m_ArrowPosition{200.0f, 400.0f};
-    std::optional<Emerald::Sound> m_Blip;
+    Emerald::Sound m_Blip;
     f32 m_ArrowAngle = 0.0f;
     f32 m_PulseAge = 1.0f; // seconds since Space was pressed
     SDL_GPUGraphicsPipeline* m_Pipeline = nullptr;

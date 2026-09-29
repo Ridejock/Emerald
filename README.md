@@ -8,7 +8,8 @@ It is split into:
   memory helpers).
 - **`Emerald::Math`** – a header-only math library (vectors, `Mat4`, optional SSE), included by the engine.
 - **`sandbox/`** – a minimal example app that links the engine and draws a rotating vertex-colored triangle
-  in pixel space with its own HLSL shaders through SDL GPU, plus 2D line shapes and a keyboard-driven arrow.
+  in pixel space with its own HLSL shaders through SDL GPU, plus 2D line shapes and an arrow driven by
+  keyboard or gamepad (with ImGui on, the panel lists connected pads and their live stick values).
 - **`tests/`** – small unit-test executables run with `ctest`.
 
 All dependencies are fetched automatically with CMake `FetchContent` and pinned to specific versions.
@@ -190,6 +191,10 @@ Emerald::PmrUnorderedMap<u32, Emerald::PmrString> names(GetPoolAllocator());
   warning is logged once ("increase `ApplicationSpec::FrameArenaSize`"); the heap chunks are released
   at the next `Reset()`. This was chosen over `std::pmr::null_memory_resource()`, which would throw
   `std::bad_alloc` mid-frame and turn a one-off spike into a crash.
+- **MSVC note**: `Reset()` rebuilds the monotonic resource instead of calling its `release()`. MSVC's
+  `release()` does not go back to the initial buffer ([LWG 3120](https://cplusplus.github.io/LWG/issue3120),
+  [microsoft/STL#1468](https://github.com/microsoft/STL/issues/1468)), so with MSVC every frame
+  after the first went to the heap and counted as an overflow. `MemoryTests` checks this.
 - **Thread-safety rule**: the frame arena and the unsynchronized pool belong to the main thread
   (debug builds assert this for the arena). Worker tasks should use the shared pool, their own
   `FrameArena`, or normal allocations.
@@ -248,8 +253,8 @@ structure-of-arrays layout instead (all x together, all y together).
 | `MathTestsScalar` | the same tests compiled with `EMERALD_MATH_SIMD=0` (only added when the option is on) |
 | `LogTests` | log file creation, truncation, relative paths, empty path, failure fallback |
 | `ThreadPoolTests` | futures return values, exceptions through futures, `WaitIdle`, shutdown with pending tasks, `ParallelFor` covers every index once |
-| `MemoryTests` | frame arena reset/alignment/overflow, pmr containers use their resource, tracking counts, pools (incl. the synchronized pool from many threads) |
-| `InputTests` | key down/pressed/released edges, taps within one frame, fixed-step edges, `ReleaseAll`; actions with several keys, action taps across fixed steps, axes, rebinding; `FixedTimestep` accumulation, average rate at 144 fps / 120 Hz, slow-frame clamp |
+| `MemoryTests` | frame arena reset/alignment/overflow, many resets stay in the buffer, pmr containers use their resource, tracking counts, pools (incl. the synchronized pool from many threads) |
+| `InputTests` | key down/pressed/released edges, taps within one frame, fixed-step edges, `ReleaseAll`; actions with several keys, action taps across fixed steps, axes, rebinding; gamepads (synthetic pads, no hardware): deadzone math (per-axis, radial), trigger/stick virtual buttons with hysteresis, button edges across fixed steps, several pads, labels, gamepad bindings and largest-magnitude axes; `FixedTimestep` accumulation, average rate at 144 fps / 120 Hz, slow-frame clamp |
 | `Renderer2DTests` | `Renderer2D` batching and shape generation on the CPU (no GPU), `Transform2D`, color packing |
 
 ```sh
@@ -360,7 +365,8 @@ position. The recording side needs no GPU, which is what `Renderer2DTests` check
 
 ## Input (actions)
 
-Games use **actions**: name what the player can do, bind keys to it, and query the name.
+Games use **actions**: name what the player can do, bind keys and gamepad inputs to it, and query
+the name.
 `Application::GetInput()` returns the `Emerald::Input` (`include/Emerald/Input/Input.h`):
 
 ```cpp
@@ -371,11 +377,18 @@ input.BindAction("Thrust", {Key::W, Key::Up});     // any number of keys per act
 input.BindAxis("Rotate", Key::A, Key::D);           // negative key, positive key
 input.BindAxis("Rotate", Key::Left, Key::Right);    // more pairs for the same axis
 
+// Gamepads (SDL's standard layout, so one set works for Xbox, PlayStation and Switch pads):
+input.BindAction("Fire", {GamepadButton::South, GamepadButton::RightShoulder});
+input.BindAction("Thrust", {GamepadButton::RightTrigger});  // trigger as a button
+input.BindAxis("Rotate", GamepadAxis::LeftX);                // analog, deadzoned
+input.BindAxis("Rotate", GamepadButton::DPadLeft, GamepadButton::DPadRight);
+
 // In OnFixedUpdate / OnUpdate:
 if (input.IsActionDown("Thrust"))    Accelerate(dt); // held
 if (input.WasActionPressed("Fire"))  Shoot();        // once per press
 if (input.WasActionReleased("Fire")) StopCharging();
-angle += input.GetAxis("Rotate") * turnSpeed * dt;   // -1, 0 or +1
+angle += input.GetAxis("Rotate") * turnSpeed * dt;   // -1..+1 (keys: -1, 0 or +1)
+input.Rumble(0.6f, 0.3f, 200);                        // low/high motor 0..1, milliseconds
 
 // Remapping at runtime, e.g. from an options menu:
 input.RebindAction("Fire", {Key::LeftCtrl});
@@ -385,13 +398,38 @@ input.RebindAxis("Rotate", Key::J, Key::L);
 A second key held for an action does not count as a new press, and the action is only released
 when its last key is. Opposite axis keys cancel out. Underneath, `Emerald::Keyboard`
 (`Keyboard.h`, `input.GetKeyboard()`) tracks raw key state; `Key` values are physical keys (SDL
-scancodes, so `Key::W` is the key left of `E` on any layout). Gamepads can later be added as more
-binding types without changing the queries.
+scancodes, so `Key::W` is the key left of `E` on any layout). `GetAxis` returns the binding with
+the largest magnitude, so a full key press beats a half-tilted stick. Rebinding keys keeps the pad
+bindings and vice versa.
+
+### Gamepads
+
+`Emerald::Gamepads` (`Gamepads.h`, `input.GetGamepads()`) uses SDL3's `SDL_Gamepad` API. Every
+connected pad is opened (also when plugged in later), connects and disconnects are logged with
+the pad's name and type, and all pads drive the same actions (single player: pick up any pad).
+
+- **Buttons** are named by position (`South`, `East`, `West`, `North`, shoulders, d-pad, `Start`,
+  ...). South is A on Xbox, Cross on PlayStation and **B** on Switch. For prompts use
+  `gamepads.GetButtonLabel(GamepadButton::South)` (labels of the pad used last, e.g. "Cross") or
+  `GetGamepadButtonLabel(button, type)`; `GetGamepadTypeName(type)` gives "PS4", "Switch Pro", ...
+- **Virtual buttons** make analog inputs bindable to actions: `LeftTrigger`/`RightTrigger` and
+  `LeftStickUp/Down/Left/Right` (same for the right stick) press at `ButtonThreshold` (0.5) and
+  release a bit below it, with the same pressed/released edges as real buttons.
+- **Axes** (`GamepadAxis`): sticks -1..+1 with **+Y down** (bind with scale -1 to make up
+  positive), triggers 0..1. Values inside the deadzone read 0, the rest is rescaled so it still runs
+  smoothly from 0 to 1. Settings via `gamepads.SetSettings(...)`: `StickDeadzone` (0.2),
+  `RadialDeadzone` (true: on the stick's length, smooth diagonals; false: per axis),
+  `TriggerDeadzone` (0.1), `ButtonThreshold` (0.5).
+- **Rumble**: `input.Rumble(low, high, ms)` on all pads (ignored by pads without motors).
+- The static SDL build forces `SDL_JOYSTICK`/`SDL_HIDAPI` on, and the HIDAPI hints for PS4, PS5
+  and Switch are set explicitly, so those pads use SDL's own drivers (correct layout, labels and
+  rumble, also over Bluetooth). If Steam is running, Steam Input may take over PlayStation/Switch
+  pads and present them as Xbox controllers; that is a Steam setting, not an engine bug.
 
 "Pressed/released" means *since the last frame* in `OnUpdate`/`OnRender*` and *since the last fixed
 step* in `OnFixedUpdate`, so a tap in a frame that runs no fixed step (which happens at 144 fps with
-120 Hz) still reaches the next step, exactly once. Key repeats are ignored, held keys are released
-when the window loses focus, and with ImGui on, key presses are withheld from the game while an ImGui
+120 Hz) still reaches the next step, exactly once; gamepad buttons follow the same rules. Key
+repeats are ignored, held keys and pad buttons are released when the window loses focus, and with ImGui on, key presses are withheld from the game while an ImGui
 text field is active.
 
 ## Fixed-timestep update

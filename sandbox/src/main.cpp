@@ -19,6 +19,8 @@
 
 namespace {
 
+using Emerald::GamepadAxis;
+using Emerald::GamepadButton;
 using Emerald::Key;
 using Emerald::Mat4;
 using Emerald::Vec2;
@@ -120,31 +122,45 @@ protected:
 #endif
         RunThreadPoolDemo();
 
-        // Controls are actions bound to keys; the code below only uses the action names.
+        // Controls are actions bound to keys and gamepad inputs; the code below only uses the
+        // action names.
         Emerald::Input& input = GetInput();
         input.BindAxis("MoveX", Key::A, Key::D);
         input.BindAxis("MoveX", Key::Left, Key::Right);
+        input.BindAxis("MoveX", GamepadButton::DPadLeft, GamepadButton::DPadRight);
+        input.BindAxis("MoveX", GamepadAxis::LeftX);
         input.BindAxis("MoveY", Key::W, Key::S);
         input.BindAxis("MoveY", Key::Up, Key::Down);
+        input.BindAxis("MoveY", GamepadButton::DPadUp, GamepadButton::DPadDown);
+        input.BindAxis("MoveY", GamepadAxis::LeftY); // +Y is down on screen and on the stick
         input.BindAction("Pulse", {Key::Space});
+        input.BindAction("Pulse", {GamepadButton::South});
         input.BindAction("Quit", {Key::Escape});
     }
 
-    // Input + fixed-step demo: move the arrow with WASD / arrow keys (at 120 Hz, independent of
-    // the frame rate), Space starts a ring pulse.
+    // Input + fixed-step demo: move the arrow with WASD / arrow keys / left stick / d-pad (at
+    // 120 Hz, independent of the frame rate), Space or South (A / Cross) starts a ring pulse and
+    // a short rumble.
     void OnFixedUpdate(f32 dt) override
     {
-        const Emerald::Input& input = GetInput();
-        const Vec2 direction(input.GetAxis("MoveX"), input.GetAxis("MoveY"));
-        if (Emerald::LengthSquared(direction) > 0.0f) {
-            m_ArrowPosition += Emerald::Normalize(direction) * (300.0f * dt);
+        Emerald::Input& input = GetInput();
+        Vec2 direction(input.GetAxis("MoveX"), input.GetAxis("MoveY"));
+        const f32 length = Emerald::Length(direction);
+        if (length > 0.0f) {
+            // Keys give length 1 or 1.41 (diagonal), a stick anything up to 1: cap it at 1 so
+            // diagonals are not faster and a half-tilted stick moves at half speed.
+            if (length > 1.0f)
+                direction = direction / length;
+            m_ArrowPosition += direction * (300.0f * dt);
             m_ArrowAngle = std::atan2(direction.y, direction.x);
         }
         // Keep it on screen.
         m_ArrowPosition = Emerald::Min(Emerald::Max(m_ArrowPosition, Vec2(0.0f)), GetViewSize());
 
-        if (input.WasActionPressed("Pulse"))
+        if (input.WasActionPressed("Pulse")) {
             m_PulseAge = 0.0f;
+            input.Rumble(0.3f, 0.6f, 120);
+        }
         m_PulseAge += dt;
     }
 
@@ -264,7 +280,9 @@ protected:
         const Emerald::Vec2i pixels = GetWindowSizeInPixels();
         ImGui::Text("Window: %d x %d px", pixels.x, pixels.y);
         ImGui::Text("Renderer2D: %u lines", GetRenderer2D().GetLastFrameLineCount());
-        ImGui::Text("Move the arrow: WASD / arrows, pulse: Space");
+        ImGui::Text("Move the arrow: WASD / arrows / left stick, pulse: Space / %s",
+                    GetInput().GetGamepads().GetButtonLabel(GamepadButton::South));
+        ShowGamepads();
         ImGui::Separator();
         ImGui::Text("Workers: %u", GetThreadPool().GetThreadCount());
         const Emerald::FrameArena::Stats arena = GetFrameArena().GetStats();
@@ -279,6 +297,50 @@ protected:
         ImGui::End();
 #endif
     }
+
+#if EMERALD_WITH_IMGUI
+    // Connected gamepads with their live values: raw from SDL, and after the deadzone.
+    void ShowGamepads()
+    {
+        const Emerald::Input& input = GetInput();
+        const Emerald::Gamepads& pads = input.GetGamepads();
+        ImGui::Text("Axes: MoveX %+.2f  MoveY %+.2f", static_cast<f64>(input.GetAxis("MoveX")),
+                    static_cast<f64>(input.GetAxis("MoveY")));
+        if (pads.GetCount() == 0) {
+            ImGui::TextDisabled("No gamepad connected");
+            return;
+        }
+        const auto value = [&](usize pad, GamepadAxis axis) {
+            return static_cast<f64>(pads.GetRawAxis(pad, axis));
+        };
+        const auto deadzoned = [&](usize pad, GamepadAxis axis) {
+            return static_cast<f64>(pads.GetAxis(pad, axis));
+        };
+        for (usize i = 0; i < pads.GetCount(); ++i) {
+            const Emerald::Gamepads::PadInfo& info = pads.GetInfo(i);
+            ImGui::Text("Pad %zu: %s (%s)", i, info.Name.c_str(),
+                        Emerald::GetGamepadTypeName(info.Type));
+            ImGui::Text("  Left  %+.2f %+.2f -> %+.2f %+.2f", value(i, GamepadAxis::LeftX),
+                        value(i, GamepadAxis::LeftY), deadzoned(i, GamepadAxis::LeftX),
+                        deadzoned(i, GamepadAxis::LeftY));
+            ImGui::Text("  Right %+.2f %+.2f -> %+.2f %+.2f", value(i, GamepadAxis::RightX),
+                        value(i, GamepadAxis::RightY), deadzoned(i, GamepadAxis::RightX),
+                        deadzoned(i, GamepadAxis::RightY));
+            ImGui::Text("  Triggers L %.2f  R %.2f", value(i, GamepadAxis::LeftTrigger),
+                        value(i, GamepadAxis::RightTrigger));
+        }
+        // Buttons held on any pad, with the labels of the pad used last.
+        std::string held;
+        for (u32 b = 0; b < static_cast<u32>(GamepadButton::Count); ++b) {
+            const auto button = static_cast<GamepadButton>(b);
+            if (pads.IsButtonDown(button)) {
+                held += pads.GetButtonLabel(button);
+                held += "  ";
+            }
+        }
+        ImGui::Text("Held: %s", held.empty() ? "-" : held.c_str());
+    }
+#endif
 
     void OnShutdown() override
     {

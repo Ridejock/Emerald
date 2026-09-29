@@ -33,6 +33,9 @@ struct Tone {
     f32 EndHz = 0.0f;  // pitch sweep target (exponential); 0 = no sweep
     f32 Duty = 0.5f;   // Square only
     f32 Volume = 0.5f; // peak level, 0..1
+    // Vibrato: the pitch wobbles VibratoHz times a second by +-VibratoDepth (0.2 = +-20%).
+    f32 VibratoHz = 0.0f;
+    f32 VibratoDepth = 0.0f;
 };
 
 // Attack/decay/release in seconds, sustain as a level. The note is held until Release seconds

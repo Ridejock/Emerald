@@ -192,6 +192,22 @@ TEST(SynthOutput)
         changes += (square[i] < 0.0f) != (square[i - 1] < 0.0f) ? 1 : 0;
     CHECK(changes >= 198 && changes <= 201);
 
+    // Vibrato: the pitch rises for the first half of each wobble, but averages out.
+    const std::vector<f32> warble = Generate({.Shape = Wave::Square,
+                                              .Seconds = 1.0f,
+                                              .StartHz = 1000.0f,
+                                              .VibratoHz = 5.0f,
+                                              .VibratoDepth = 0.2f});
+    i32 early = 0;
+    i32 total = 0;
+    for (usize i = 1; i < warble.size(); ++i) {
+        const i32 change = (warble[i] < 0.0f) != (warble[i - 1] < 0.0f) ? 1 : 0;
+        total += change;
+        early += i < kRate / 10 ? change : 0;
+    }
+    CHECK(early > 220);                    // 0..0.1 s: pitch above 1 kHz
+    CHECK(total >= 1990 && total <= 2010); // ...but 1 kHz on average
+
     // A lowpass takes the edge off: neighbors get much closer.
     std::vector<f32> noise = Generate({.Shape = Wave::Noise, .Seconds = 0.1f, .StartHz = 20000.0f});
     std::vector<f32> dull = noise;

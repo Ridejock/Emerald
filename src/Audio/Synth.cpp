@@ -59,8 +59,12 @@ std::vector<f32> Generate(const Tone& tone, u32 seed)
 
         // Exponential sweep: equal musical steps per second (sounds even, unlike linear Hz).
         const f32 t = static_cast<f32>(i) / static_cast<f32>(out.size());
-        const f32 hz = startHz * std::pow(endHz / startHz, t);
-        phase += hz / kRate;
+        f32 hz = startHz * std::pow(endHz / startHz, t);
+        if (tone.VibratoHz > 0.0f) {
+            const f32 seconds = static_cast<f32>(i) / kRate;
+            hz *= 1.0f + tone.VibratoDepth * std::sin(TwoPi * tone.VibratoHz * seconds);
+        }
+        phase += std::max(hz, 0.0f) / kRate;
         if (phase >= 1.0f) {
             phase -= std::floor(phase);
             held = NextNoise(noise); // noise: a new random level every cycle

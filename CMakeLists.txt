@@ -66,6 +66,7 @@ target_compile_definitions(EmeraldMath INTERFACE EMERALD_MATH_SIMD=$<BOOL:${EMER
 # ---------------------------------------------------------------------------
 add_library(Emerald STATIC
     src/Core/Log.cpp
+    src/Core/Paths.cpp
     src/Core/Window.cpp
     src/Core/Application.cpp
     src/Core/ThreadPool.cpp

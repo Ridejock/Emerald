@@ -122,8 +122,13 @@ GPU swapchain). On a machine/VM/CI runner without a GPU, install Mesa's software
 the console (colored) **and to a log file**:
 
 - Default: `logs/Emerald.log` **next to the executable** (e.g. `build/debug/bin/logs/Emerald.log`),
-  found with `SDL_GetBasePath()` so it does not depend on the working directory. The `logs/` folder is
+  found with `Paths::GetBasePath()` so it does not depend on the working directory. The `logs/` folder is
   created if needed.
+- `Emerald/Core/Paths.h` has the two folders a game needs: `Paths::GetBasePath()` (the
+  executable's folder, where assets live) and `Paths::GetPrefPath(org, app)` (a per-user writable
+  folder for saves and settings, e.g. `%APPDATA%\<org>\<app>\` on Windows,
+  `~/.local/share/<org>/<app>/` on Linux; created if missing, empty path on failure). Both return
+  UTF-8-correct `std::filesystem::path`s.
 - The file is **truncated on every run** and uses the console's pattern without color codes:
   `[12:16:06.185] [EMERALD] [info] Emerald starting (SDL 3.4.16)`.
 - Warnings and errors are flushed immediately; everything else is flushed on shutdown (or when
@@ -462,7 +467,7 @@ audio.SetMuted(!audio.IsMuted());
   sound stays valid even if the game drops its `Sound`.
 - **Synth** (`Synth.h`): `Generate(Tone)` makes sine, square/pulse (`Duty`), triangle, saw or
   noise with an optional exponential pitch sweep (`StartHz` → `EndHz`; for noise the frequency sets
-  how bright it is); shape it with `ApplyDecay`, `ApplyAdsr`, `LowPass` (one-pole) and `MixInto`,
+  how bright it is) and vibrato (`VibratoHz`, `VibratoDepth`: e.g. 5 Hz, ±20% for a UFO warble); shape it with `ApplyDecay`, `ApplyAdsr`, `LowPass` (one-pole) and `MixInto`,
   then `ToSound`. Asteroids generates all its sounds this way.
 - **Mixer** (`Mixer.h`, owned by `Audio`): 32 voices. `Play` returns a `VoiceHandle` that remembers
   the voice's generation, so a handle to a sound that has ended (and whose voice was reused) is a

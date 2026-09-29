@@ -7,6 +7,7 @@
 #include "Emerald/Core/Application.h"
 #include "Emerald/Core/FixedTimestep.h"
 #include "Emerald/Core/Log.h"
+#include "Emerald/Core/Paths.h"
 #include "Emerald/Core/ThreadPool.h"
 #include "Emerald/Core/Window.h"
 #include "Emerald/Audio/Audio.h"

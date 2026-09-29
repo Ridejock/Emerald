@@ -1,11 +1,12 @@
 #include "Emerald/Core/Log.h"
 
+#include "Emerald/Core/Paths.h"
+
 #include <exception>
 #include <string>
 #include <system_error>
 #include <vector>
 
-#include <SDL3/SDL_filesystem.h>
 #include <spdlog/sinks/basic_file_sink.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 
@@ -27,11 +28,7 @@ std::filesystem::path ResolveLogPath(const std::filesystem::path& file)
 {
     if (file.is_absolute())
         return file;
-    const char* base = SDL_GetBasePath(); // UTF-8, owned by SDL; works before SDL_Init
-    if (!base)
-        return std::filesystem::absolute(file);
-    // char8_t tells std::filesystem the string is UTF-8 (matters on Windows).
-    return std::filesystem::path(reinterpret_cast<const char8_t*>(base)) / file;
+    return Paths::GetBasePath() / file;
 }
 
 } // namespace

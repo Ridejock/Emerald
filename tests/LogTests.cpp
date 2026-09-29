@@ -8,6 +8,7 @@
 #include <SDL3/SDL_filesystem.h>
 
 #include <Emerald/Core/Log.h>
+#include <Emerald/Core/Paths.h>
 
 #include "Test.h"
 
@@ -101,4 +102,18 @@ TEST(LogRelativePathIsNextToExecutable)
     Log::Shutdown();
     CHECK(fs::exists(expected));
     fs::remove(expected);
+}
+
+TEST(PathsBaseAndPref)
+{
+    const fs::path base = Emerald::Paths::GetBasePath();
+    CHECK(base == fs::path(reinterpret_cast<const char8_t*>(SDL_GetBasePath())));
+    CHECK(fs::is_directory(base));
+
+    // Creates a real per-user folder, so clean it up again.
+    const fs::path pref = Emerald::Paths::GetPrefPath("EmeraldTests", "PathsTest");
+    CHECK(!pref.empty() && fs::is_directory(pref));
+    std::error_code error;
+    fs::remove(pref, error);
+    fs::remove(pref.parent_path().parent_path(), error); // pref ends with a separator
 }

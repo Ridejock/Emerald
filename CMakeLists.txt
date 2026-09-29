@@ -24,6 +24,7 @@ option(EMERALD_USE_IMGUI     "Enable Dear ImGui (SDL3 + SDLRenderer3 backends)" 
 option(EMERALD_USE_ENTT      "Enable the EnTT entity-component system" OFF)
 
 include(cmake/Dependencies.cmake)
+include(cmake/Shaders.cmake)
 
 # ---------------------------------------------------------------------------
 # Engine library

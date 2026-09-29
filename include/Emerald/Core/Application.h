@@ -80,7 +80,9 @@ private:
     std::unique_ptr<Renderer> m_Renderer;
     bool m_SdlInitialized = false;
     bool m_RendererInitialized = false;
+#if EMERALD_WITH_IMGUI
     bool m_ImGuiInitialized = false;
+#endif
     bool m_Running = false;
     u64 m_FrameCount = 0;
 

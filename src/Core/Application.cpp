@@ -89,7 +89,7 @@ int Application::Run()
         // Everything allocated from the frame arena last frame is gone from here on.
         m_FrameArena->Reset();
 
-        m_Input.BeginFrame();
+        m_Keyboard.BeginFrame();
         SDL_Event event;
         while (SDL_PollEvent(&event))
             ProcessEvent(event);
@@ -101,9 +101,9 @@ int Application::Run()
         // Fixed-rate simulation first (0..MaxFixedStepsPerFrame steps), then the per-frame update.
         const u32 steps = m_FixedTimestep.Advance(elapsedNs);
         for (u32 i = 0; i < steps && m_Running; ++i) {
-            m_Input.BeginFixedStep();
+            m_Keyboard.BeginFixedStep();
             OnFixedUpdate(m_FixedTimestep.GetStepSeconds());
-            m_Input.EndFixedStep();
+            m_Keyboard.EndFixedStep();
         }
         OnUpdate(static_cast<f32>(elapsedNs) / 1e9f);
         RenderFrame();
@@ -144,13 +144,13 @@ void Application::ProcessEvent(const SDL_Event& event)
         break;
     case SDL_EVENT_KEY_DOWN:
         if (!event.key.repeat && !imguiWantsKeys)
-            m_Input.OnKeyDown(event.key.scancode);
+            m_Keyboard.OnKeyDown(event.key.scancode);
         break;
     case SDL_EVENT_KEY_UP:
-        m_Input.OnKeyUp(event.key.scancode);
+        m_Keyboard.OnKeyUp(event.key.scancode);
         break;
     case SDL_EVENT_WINDOW_FOCUS_LOST:
-        m_Input.ReleaseAll(); // we will not see the key-ups while another window has focus
+        m_Keyboard.ReleaseAll(); // we will not see the key-ups while another window has focus
         break;
     default:
         break;

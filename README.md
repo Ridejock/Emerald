@@ -249,7 +249,7 @@ structure-of-arrays layout instead (all x together, all y together).
 | `LogTests` | log file creation, truncation, relative paths, empty path, failure fallback |
 | `ThreadPoolTests` | futures return values, exceptions through futures, `WaitIdle`, shutdown with pending tasks, `ParallelFor` covers every index once |
 | `MemoryTests` | frame arena reset/alignment/overflow, pmr containers use their resource, tracking counts, pools (incl. the synchronized pool from many threads) |
-| `InputTests` | key down/pressed/released edges, taps within one frame, fixed-step edges, `ReleaseAll`; `FixedTimestep` accumulation, average rate at 144 fps / 120 Hz, slow-frame clamp |
+| `InputTests` | key down/pressed/released edges, taps within one frame, fixed-step edges, `ReleaseAll`; actions with several keys, action taps across fixed steps, axes, rebinding; `FixedTimestep` accumulation, average rate at 144 fps / 120 Hz, slow-frame clamp |
 | `Renderer2DTests` | `Renderer2D` batching and shape generation on the CPU (no GPU), `Transform2D`, color packing |
 
 ```sh
@@ -358,18 +358,35 @@ give the target size inside `OnRender2D`).
 `Transform2D` applies scale, then rotation (radians, clockwise on screen in y-down space), then
 position. The recording side needs no GPU, which is what `Renderer2DTests` checks.
 
-## Input
+## Input (actions)
 
-`Application::GetInput()` returns an `Emerald::Input` (`include/Emerald/Input/Input.h`) fed from SDL
-key events. Keys are physical positions (`Key::W` is the key left of `E` on any layout); the
-`Key` values are SDL scancodes.
+Games use **actions**: name what the player can do, bind keys to it, and query the name.
+`Application::GetInput()` returns the `Emerald::Input` (`include/Emerald/Input/Input.h`):
 
 ```cpp
-const Emerald::Input& input = GetInput();
-if (input.IsKeyDown(Key::Left))      angle -= turnSpeed * dt; // held
-if (input.WasKeyPressed(Key::Space)) Shoot();                 // once per press
-if (input.WasKeyReleased(Key::W))    StopEngineSound();
+// Once, e.g. in OnStart:
+Emerald::Input& input = GetInput();
+input.BindAction("Fire", {Key::Space});
+input.BindAction("Thrust", {Key::W, Key::Up});     // any number of keys per action
+input.BindAxis("Rotate", Key::A, Key::D);           // negative key, positive key
+input.BindAxis("Rotate", Key::Left, Key::Right);    // more pairs for the same axis
+
+// In OnFixedUpdate / OnUpdate:
+if (input.IsActionDown("Thrust"))    Accelerate(dt); // held
+if (input.WasActionPressed("Fire"))  Shoot();        // once per press
+if (input.WasActionReleased("Fire")) StopCharging();
+angle += input.GetAxis("Rotate") * turnSpeed * dt;   // -1, 0 or +1
+
+// Remapping at runtime, e.g. from an options menu:
+input.RebindAction("Fire", {Key::LeftCtrl});
+input.RebindAxis("Rotate", Key::J, Key::L);
 ```
+
+A second key held for an action does not count as a new press, and the action is only released
+when its last key is. Opposite axis keys cancel out. Underneath, `Emerald::Keyboard`
+(`Keyboard.h`, `input.GetKeyboard()`) tracks raw key state; `Key` values are physical keys (SDL
+scancodes, so `Key::W` is the key left of `E` on any layout). Gamepads can later be added as more
+binding types without changing the queries.
 
 "Pressed/released" means *since the last frame* in `OnUpdate`/`OnRender*` and *since the last fixed
 step* in `OnFixedUpdate`, so a tap in a frame that runs no fixed step (which happens at 144 fps with

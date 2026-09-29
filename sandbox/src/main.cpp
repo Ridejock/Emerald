@@ -119,6 +119,15 @@ protected:
         EM_INFO("EnTT enabled: created entity {}", static_cast<u32>(entity));
 #endif
         RunThreadPoolDemo();
+
+        // Controls are actions bound to keys; the code below only uses the action names.
+        Emerald::Input& input = GetInput();
+        input.BindAxis("MoveX", Key::A, Key::D);
+        input.BindAxis("MoveX", Key::Left, Key::Right);
+        input.BindAxis("MoveY", Key::W, Key::S);
+        input.BindAxis("MoveY", Key::Up, Key::Down);
+        input.BindAction("Pulse", {Key::Space});
+        input.BindAction("Quit", {Key::Escape});
     }
 
     // Input + fixed-step demo: move the arrow with WASD / arrow keys (at 120 Hz, independent of
@@ -126,13 +135,7 @@ protected:
     void OnFixedUpdate(f32 dt) override
     {
         const Emerald::Input& input = GetInput();
-        const auto axis = [&](Key negative, Key negativeAlt, Key positive, Key positiveAlt) {
-            const bool neg = input.IsKeyDown(negative) || input.IsKeyDown(negativeAlt);
-            const bool pos = input.IsKeyDown(positive) || input.IsKeyDown(positiveAlt);
-            return (pos ? 1.0f : 0.0f) - (neg ? 1.0f : 0.0f);
-        };
-        const Vec2 direction(axis(Key::A, Key::Left, Key::D, Key::Right),
-                             axis(Key::W, Key::Up, Key::S, Key::Down));
+        const Vec2 direction(input.GetAxis("MoveX"), input.GetAxis("MoveY"));
         if (Emerald::LengthSquared(direction) > 0.0f) {
             m_ArrowPosition += Emerald::Normalize(direction) * (300.0f * dt);
             m_ArrowAngle = std::atan2(direction.y, direction.x);
@@ -140,7 +143,7 @@ protected:
         // Keep it on screen.
         m_ArrowPosition = Emerald::Min(Emerald::Max(m_ArrowPosition, Vec2(0.0f)), GetViewSize());
 
-        if (input.WasKeyPressed(Key::Space))
+        if (input.WasActionPressed("Pulse"))
             m_PulseAge = 0.0f;
         m_PulseAge += dt;
     }
@@ -148,7 +151,7 @@ protected:
     void OnUpdate(f32 dt) override
     {
         m_Time += dt;
-        if (GetInput().WasKeyPressed(Key::Escape))
+        if (GetInput().WasActionPressed("Quit"))
             Quit();
 
         // Capture the last frame of a --frames run (or frame 60 otherwise).

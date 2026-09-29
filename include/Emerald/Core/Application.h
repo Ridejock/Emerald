@@ -70,7 +70,8 @@ public:
     [[nodiscard]] Window& GetWindow() { return *m_Window; }
     [[nodiscard]] Renderer& GetRenderer() { return *m_Renderer; }
     [[nodiscard]] Renderer2D& GetRenderer2D() { return *m_Renderer2D; }
-    [[nodiscard]] const Input& GetInput() const { return m_Input; }
+    // Action-based input: bind actions/axes to keys (e.g. in OnStart), then query them.
+    [[nodiscard]] Input& GetInput() { return m_Input; }
     [[nodiscard]] u64 GetFrameCount() const { return m_FrameCount; }
 
     // Client-area size in window coordinates / in pixels (see Window.h).
@@ -141,7 +142,8 @@ private:
     std::unique_ptr<Window> m_Window;
     std::unique_ptr<Renderer> m_Renderer;
     std::unique_ptr<Renderer2D> m_Renderer2D;
-    Input m_Input;
+    Keyboard m_Keyboard;       // raw key state, fed from SDL events
+    Input m_Input{m_Keyboard}; // actions on top of it
     FixedTimestep m_FixedTimestep;
     bool m_SdlInitialized = false;
     bool m_RendererInitialized = false;

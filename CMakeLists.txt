@@ -70,6 +70,7 @@ add_library(Emerald STATIC
     src/Core/Application.cpp
     src/Core/ThreadPool.cpp
     src/Input/Input.cpp
+    src/Input/Keyboard.cpp
     src/Memory/FrameArena.cpp
     src/Memory/TrackingResource.cpp
     src/Renderer/Renderer.cpp

@@ -1,88 +1,186 @@
-// Tests for the keyboard edge tracking in Input and the FixedTimestep accumulator.
+// Tests for the keyboard edge tracking, action-based Input on top of it, and the FixedTimestep
+// accumulator.
 
 #include <Emerald/Core/FixedTimestep.h>
 #include <Emerald/Input/Input.h>
+#include <Emerald/Input/Keyboard.h>
 
 #include "Test.h"
 
 using namespace Emerald;
 
-TEST(InputPressAndRelease)
+TEST(KeyboardPressAndRelease)
 {
-    Input input;
-    input.BeginFrame();
-    input.OnKeyDown(SDL_SCANCODE_SPACE);
-    CHECK(input.IsKeyDown(Key::Space));
-    CHECK(input.WasKeyPressed(Key::Space));
-    CHECK(!input.WasKeyReleased(Key::Space));
-    CHECK(!input.IsKeyDown(Key::W));
+    Keyboard keyboard;
+    keyboard.BeginFrame();
+    keyboard.OnKeyDown(SDL_SCANCODE_SPACE);
+    CHECK(keyboard.IsKeyDown(Key::Space));
+    CHECK(keyboard.WasKeyPressed(Key::Space));
+    CHECK(!keyboard.WasKeyReleased(Key::Space));
+    CHECK(!keyboard.IsKeyDown(Key::W));
 
     // Next frame: still held, but no longer "pressed".
-    input.BeginFrame();
-    CHECK(input.IsKeyDown(Key::Space));
-    CHECK(!input.WasKeyPressed(Key::Space));
+    keyboard.BeginFrame();
+    CHECK(keyboard.IsKeyDown(Key::Space));
+    CHECK(!keyboard.WasKeyPressed(Key::Space));
 
-    input.BeginFrame();
-    input.OnKeyUp(SDL_SCANCODE_SPACE);
-    CHECK(!input.IsKeyDown(Key::Space));
-    CHECK(input.WasKeyReleased(Key::Space));
+    keyboard.BeginFrame();
+    keyboard.OnKeyUp(SDL_SCANCODE_SPACE);
+    CHECK(!keyboard.IsKeyDown(Key::Space));
+    CHECK(keyboard.WasKeyReleased(Key::Space));
 }
 
-TEST(InputTapWithinOneFrame)
+TEST(KeyboardTapWithinOneFrame)
 {
     // Down and up before the frame is processed: not held, but the press is not lost.
-    Input input;
-    input.BeginFrame();
-    input.OnKeyDown(SDL_SCANCODE_A);
-    input.OnKeyUp(SDL_SCANCODE_A);
-    CHECK(!input.IsKeyDown(Key::A));
-    CHECK(input.WasKeyPressed(Key::A));
-    CHECK(input.WasKeyReleased(Key::A));
+    Keyboard keyboard;
+    keyboard.BeginFrame();
+    keyboard.OnKeyDown(SDL_SCANCODE_A);
+    keyboard.OnKeyUp(SDL_SCANCODE_A);
+    CHECK(!keyboard.IsKeyDown(Key::A));
+    CHECK(keyboard.WasKeyPressed(Key::A));
+    CHECK(keyboard.WasKeyReleased(Key::A));
 }
 
-TEST(InputIgnoresDuplicateEvents)
+TEST(KeyboardIgnoresDuplicateEvents)
 {
-    Input input;
-    input.OnKeyDown(SDL_SCANCODE_W);
-    input.BeginFrame();
-    input.OnKeyDown(SDL_SCANCODE_W); // already down: not a new press
-    CHECK(!input.WasKeyPressed(Key::W));
-    input.OnKeyUp(SDL_SCANCODE_S); // was never down
-    CHECK(!input.WasKeyReleased(Key::S));
+    Keyboard keyboard;
+    keyboard.OnKeyDown(SDL_SCANCODE_W);
+    keyboard.BeginFrame();
+    keyboard.OnKeyDown(SDL_SCANCODE_W); // already down: not a new press
+    CHECK(!keyboard.WasKeyPressed(Key::W));
+    keyboard.OnKeyUp(SDL_SCANCODE_S); // was never down
+    CHECK(!keyboard.WasKeyReleased(Key::S));
 }
 
-TEST(InputFixedStepEdges)
+TEST(KeyboardFixedStepEdges)
 {
-    Input input;
+    Keyboard keyboard;
 
     // Frame 1 runs no fixed step: the press is visible to OnUpdate...
-    input.BeginFrame();
-    input.OnKeyDown(SDL_SCANCODE_SPACE);
-    CHECK(input.WasKeyPressed(Key::Space));
+    keyboard.BeginFrame();
+    keyboard.OnKeyDown(SDL_SCANCODE_SPACE);
+    CHECK(keyboard.WasKeyPressed(Key::Space));
 
     // ...and frame 2's first fixed step still sees it, the second one does not.
-    input.BeginFrame();
-    CHECK(!input.WasKeyPressed(Key::Space)); // per-frame edge is gone
-    input.BeginFixedStep();
-    CHECK(input.WasKeyPressed(Key::Space));
-    CHECK(input.IsKeyDown(Key::Space));
-    input.EndFixedStep();
-    input.BeginFixedStep();
-    CHECK(!input.WasKeyPressed(Key::Space));
-    CHECK(input.IsKeyDown(Key::Space));
-    input.EndFixedStep();
+    keyboard.BeginFrame();
+    CHECK(!keyboard.WasKeyPressed(Key::Space)); // per-frame edge is gone
+    keyboard.BeginFixedStep();
+    CHECK(keyboard.WasKeyPressed(Key::Space));
+    CHECK(keyboard.IsKeyDown(Key::Space));
+    keyboard.EndFixedStep();
+    keyboard.BeginFixedStep();
+    CHECK(!keyboard.WasKeyPressed(Key::Space));
+    CHECK(keyboard.IsKeyDown(Key::Space));
+    keyboard.EndFixedStep();
 }
 
-TEST(InputReleaseAll)
+TEST(KeyboardReleaseAll)
 {
-    Input input;
-    input.OnKeyDown(SDL_SCANCODE_LEFT);
-    input.OnKeyDown(SDL_SCANCODE_UP);
-    input.BeginFrame();
-    input.ReleaseAll();
-    CHECK(!input.IsKeyDown(Key::Left) && !input.IsKeyDown(Key::Up));
-    CHECK(input.WasKeyReleased(Key::Left) && input.WasKeyReleased(Key::Up));
-    CHECK(!input.WasKeyReleased(Key::Down));
+    Keyboard keyboard;
+    keyboard.OnKeyDown(SDL_SCANCODE_LEFT);
+    keyboard.OnKeyDown(SDL_SCANCODE_UP);
+    keyboard.BeginFrame();
+    keyboard.ReleaseAll();
+    CHECK(!keyboard.IsKeyDown(Key::Left) && !keyboard.IsKeyDown(Key::Up));
+    CHECK(keyboard.WasKeyReleased(Key::Left) && keyboard.WasKeyReleased(Key::Up));
+    CHECK(!keyboard.WasKeyReleased(Key::Down));
+}
+
+TEST(ActionsWithSeveralKeys)
+{
+    Keyboard keyboard;
+    Input input(keyboard);
+    input.BindAction("Fire", {Key::Space, Key::J});
+
+    keyboard.BeginFrame();
+    keyboard.OnKeyDown(SDL_SCANCODE_J);
+    CHECK(input.IsActionDown("Fire"));
+    CHECK(input.WasActionPressed("Fire"));
+
+    // Pressing the second key while the first is held is not a new press...
+    keyboard.BeginFrame();
+    keyboard.OnKeyDown(SDL_SCANCODE_SPACE);
+    CHECK(!input.WasActionPressed("Fire"));
+    // ...and releasing one of two held keys is not a release.
+    keyboard.BeginFrame();
+    keyboard.OnKeyUp(SDL_SCANCODE_J);
+    CHECK(input.IsActionDown("Fire"));
+    CHECK(!input.WasActionReleased("Fire"));
+
+    keyboard.BeginFrame();
+    keyboard.OnKeyUp(SDL_SCANCODE_SPACE);
+    CHECK(!input.IsActionDown("Fire"));
+    CHECK(input.WasActionReleased("Fire"));
+
+    // Unknown names are never active.
+    CHECK(!input.IsActionDown("Jump") && !input.WasActionPressed("Jump"));
+    CHECK(input.GetAxis("Nothing") == 0.0f);
+}
+
+TEST(ActionsTapAndFixedSteps)
+{
+    Keyboard keyboard;
+    Input input(keyboard);
+    input.BindAction("Fire", {Key::Space});
+
+    // A tap within one frame that runs no fixed step reaches the next step exactly once.
+    keyboard.BeginFrame();
+    keyboard.OnKeyDown(SDL_SCANCODE_SPACE);
+    keyboard.OnKeyUp(SDL_SCANCODE_SPACE);
+    CHECK(input.WasActionPressed("Fire") && input.WasActionReleased("Fire"));
+    keyboard.BeginFrame();
+    keyboard.BeginFixedStep();
+    CHECK(input.WasActionPressed("Fire"));
+    keyboard.EndFixedStep();
+    keyboard.BeginFixedStep();
+    CHECK(!input.WasActionPressed("Fire"));
+    keyboard.EndFixedStep();
+}
+
+TEST(ActionsAxis)
+{
+    Keyboard keyboard;
+    Input input(keyboard);
+    input.BindAxis("Rotate", Key::A, Key::D);
+    input.BindAxis("Rotate", Key::Left, Key::Right);
+
+    CHECK(input.GetAxis("Rotate") == 0.0f);
+    keyboard.OnKeyDown(SDL_SCANCODE_A);
+    CHECK(input.GetAxis("Rotate") == -1.0f);
+    keyboard.OnKeyDown(SDL_SCANCODE_LEFT); // two negative keys still give -1
+    CHECK(input.GetAxis("Rotate") == -1.0f);
+    keyboard.OnKeyDown(SDL_SCANCODE_RIGHT); // opposite keys cancel out
+    CHECK(input.GetAxis("Rotate") == 0.0f);
+    keyboard.OnKeyUp(SDL_SCANCODE_A);
+    keyboard.OnKeyUp(SDL_SCANCODE_LEFT);
+    CHECK(input.GetAxis("Rotate") == 1.0f);
+}
+
+TEST(ActionsRebind)
+{
+    Keyboard keyboard;
+    Input input(keyboard);
+    input.BindAction("Thrust", {Key::W, Key::Up});
+    input.BindAction("Thrust", {Key::W}); // duplicates are ignored
+    CHECK(input.GetActionKeys("Thrust").size() == 2);
+
+    input.RebindAction("Thrust", {Key::K});
+    CHECK(input.GetActionKeys("Thrust").size() == 1 && input.GetActionKeys("Thrust")[0] == Key::K);
+    keyboard.OnKeyDown(SDL_SCANCODE_W);
+    CHECK(!input.IsActionDown("Thrust"));
+    keyboard.OnKeyDown(SDL_SCANCODE_K);
+    CHECK(input.IsActionDown("Thrust"));
+
+    input.BindAxis("Turn", Key::A, Key::D);
+    input.RebindAxis("Turn", Key::J, Key::L);
+    keyboard.OnKeyDown(SDL_SCANCODE_D);
+    CHECK(input.GetAxis("Turn") == 0.0f); // D is no longer bound
+    keyboard.OnKeyDown(SDL_SCANCODE_L);
+    CHECK(input.GetAxis("Turn") == 1.0f);
+
+    input.Unbind("Thrust");
+    CHECK(!input.IsActionDown("Thrust") && input.GetActionKeys("Thrust").empty());
 }
 
 TEST(FixedTimestepAccumulates)

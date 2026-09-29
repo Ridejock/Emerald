@@ -10,6 +10,7 @@
 #include "Emerald/Core/ThreadPool.h"
 #include "Emerald/Core/Window.h"
 #include "Emerald/Input/Input.h"
+#include "Emerald/Input/Keyboard.h"
 #include "Emerald/Math/Math.h"
 #include "Emerald/Memory/Memory.h"
 #include "Emerald/Renderer/Pipeline.h"

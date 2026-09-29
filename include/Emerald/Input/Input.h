@@ -1,91 +1,91 @@
 #pragma once
 
-#include <bitset>
-
-#include <SDL3/SDL_scancode.h>
+#include <initializer_list>
+#include <span>
+#include <string>
+#include <string_view>
+#include <vector>
 
 #include "Emerald/Core/Defines.h"
+#include "Emerald/Input/Keyboard.h"
 
 namespace Emerald {
 
-// Physical keys, named after the US layout (the same key is `Key::W` on AZERTY too, where it is
-// labelled Z) - what games want for movement keys. The values are SDL scancodes, so any
-// SDL_Scancode can also be used through Key(scancode).
-// clang-format off
-enum class Key : u16 {
-    A = SDL_SCANCODE_A, B = SDL_SCANCODE_B, C = SDL_SCANCODE_C, D = SDL_SCANCODE_D,
-    E = SDL_SCANCODE_E, F = SDL_SCANCODE_F, G = SDL_SCANCODE_G, H = SDL_SCANCODE_H,
-    I = SDL_SCANCODE_I, J = SDL_SCANCODE_J, K = SDL_SCANCODE_K, L = SDL_SCANCODE_L,
-    M = SDL_SCANCODE_M, N = SDL_SCANCODE_N, O = SDL_SCANCODE_O, P = SDL_SCANCODE_P,
-    Q = SDL_SCANCODE_Q, R = SDL_SCANCODE_R, S = SDL_SCANCODE_S, T = SDL_SCANCODE_T,
-    U = SDL_SCANCODE_U, V = SDL_SCANCODE_V, W = SDL_SCANCODE_W, X = SDL_SCANCODE_X,
-    Y = SDL_SCANCODE_Y, Z = SDL_SCANCODE_Z,
-
-    Num0 = SDL_SCANCODE_0, Num1 = SDL_SCANCODE_1, Num2 = SDL_SCANCODE_2, Num3 = SDL_SCANCODE_3,
-    Num4 = SDL_SCANCODE_4, Num5 = SDL_SCANCODE_5, Num6 = SDL_SCANCODE_6, Num7 = SDL_SCANCODE_7,
-    Num8 = SDL_SCANCODE_8, Num9 = SDL_SCANCODE_9,
-
-    Up = SDL_SCANCODE_UP, Down = SDL_SCANCODE_DOWN,
-    Left = SDL_SCANCODE_LEFT, Right = SDL_SCANCODE_RIGHT,
-
-    Space = SDL_SCANCODE_SPACE, Enter = SDL_SCANCODE_RETURN, Escape = SDL_SCANCODE_ESCAPE,
-    Tab = SDL_SCANCODE_TAB, Backspace = SDL_SCANCODE_BACKSPACE,
-    LeftShift = SDL_SCANCODE_LSHIFT, RightShift = SDL_SCANCODE_RSHIFT,
-    LeftCtrl = SDL_SCANCODE_LCTRL, RightCtrl = SDL_SCANCODE_RCTRL,
-    LeftAlt = SDL_SCANCODE_LALT, RightAlt = SDL_SCANCODE_RALT,
-
-    F1 = SDL_SCANCODE_F1, F2 = SDL_SCANCODE_F2, F3 = SDL_SCANCODE_F3, F4 = SDL_SCANCODE_F4,
-    F5 = SDL_SCANCODE_F5, F6 = SDL_SCANCODE_F6, F7 = SDL_SCANCODE_F7, F8 = SDL_SCANCODE_F8,
-    F9 = SDL_SCANCODE_F9, F10 = SDL_SCANCODE_F10, F11 = SDL_SCANCODE_F11, F12 = SDL_SCANCODE_F12,
-};
-// clang-format on
-
-// Keyboard state with edge tracking. The Application feeds it from SDL events; query it with
-// Application::GetInput():
+// Action-based input: the game names what the player can do ("Fire", "Thrust") and binds keys
+// to those names; game code only asks about actions, so controls can be remapped at runtime
+// without touching it. Get it with Application::GetInput():
 //
-//   if (input.WasKeyPressed(Key::Space)) Shoot();   // true once per press
-//   if (input.IsKeyDown(Key::W))         Thrust();  // true while held
+//   // Once, e.g. in OnStart:
+//   input.BindAction("Fire", {Key::Space, Key::J});
+//   input.BindAxis("Rotate", Key::A, Key::D);          // negative key, positive key
+//   input.BindAxis("Rotate", Key::Left, Key::Right);   // more pairs for the same axis
 //
-// "Was pressed/released" means "since the last frame" in OnUpdate/OnRender, and "since the last
-// fixed step" in OnFixedUpdate. The difference matters when the render rate is higher than the
-// fixed rate (144 Hz vs 120 Hz): some frames run no fixed step at all, and a tap in such a frame
-// must still reach the next fixed step - exactly once.
+//   // Every (fixed) update:
+//   if (input.WasActionPressed("Fire")) Shoot();       // once per press
+//   angle += input.GetAxis("Rotate") * turnSpeed * dt; // -1, 0 or +1
+//
+//   // Rebinding, e.g. from an options menu:
+//   input.RebindAction("Fire", {Key::LeftCtrl});
+//
+// Pressed/released follow the Keyboard rules: since the last frame in OnUpdate, since the last
+// fixed step in OnFixedUpdate. Unknown names are simply "not down" / 0. Only keyboard keys for
+// now; gamepad buttons and sticks would become more binding types here, without changing the
+// queries.
 class Input {
 public:
-    [[nodiscard]] bool IsKeyDown(Key key) const { return m_Down[Index(key)]; }
-    [[nodiscard]] bool WasKeyPressed(Key key) const { return Edges().Pressed[Index(key)]; }
-    [[nodiscard]] bool WasKeyReleased(Key key) const { return Edges().Released[Index(key)]; }
+    explicit Input(const Keyboard& keyboard) : m_Keyboard(keyboard) {}
 
-    // --- Called by the Application (or by tests) ---
-    // Key repeats (holding a key down) must not be passed in; they are not new presses.
-    void OnKeyDown(SDL_Scancode scancode);
-    void OnKeyUp(SDL_Scancode scancode);
-    // Releases every held key, e.g. when the window loses focus and would miss the key-up events.
-    void ReleaseAll();
-    // Starts a new frame: forgets the per-frame edges (pending fixed-step edges are kept).
-    void BeginFrame();
-    // Brackets one OnFixedUpdate: the queries return the fixed-step edges in between, and the
-    // edges are consumed by EndFixedStep.
-    void BeginFixedStep() { m_InFixedStep = true; }
-    void EndFixedStep();
+    // --- Bindings ---
+    // Adds keys to an action (an action can have any number of keys; any of them triggers it).
+    void BindAction(std::string_view action, std::initializer_list<Key> keys);
+    // Replaces all keys of an action.
+    void RebindAction(std::string_view action, std::initializer_list<Key> keys);
+    // Adds a key pair to an axis: `negative` gives -1, `positive` +1, both or neither 0.
+    void BindAxis(std::string_view axis, Key negative, Key positive);
+    // Replaces all key pairs of an axis with one pair.
+    void RebindAxis(std::string_view axis, Key negative, Key positive);
+    // Removes an action or axis with all its bindings.
+    void Unbind(std::string_view name);
+    // The keys bound to an action (empty if there is no such action).
+    [[nodiscard]] std::span<const Key> GetActionKeys(std::string_view action) const;
+
+    // --- Queries ---
+    // True while any bound key is held.
+    [[nodiscard]] bool IsActionDown(std::string_view action) const;
+    // True once when a bound key goes down (holding a second bound key does not repeat it).
+    [[nodiscard]] bool WasActionPressed(std::string_view action) const;
+    // True once when the action stops being down, i.e. its last held key is released.
+    [[nodiscard]] bool WasActionReleased(std::string_view action) const;
+    // -1, 0 or +1 from the axis' key pairs: +1 if any positive key is held, -1 if any negative
+    // one is, 0 for both or neither. (Analog sticks would give values in between.)
+    [[nodiscard]] f32 GetAxis(std::string_view axis) const;
+
+    // Raw key state, for the rare cases actions do not fit (e.g. "press a key to rebind").
+    [[nodiscard]] const Keyboard& GetKeyboard() const { return m_Keyboard; }
 
 private:
-    using KeySet = std::bitset<SDL_SCANCODE_COUNT>;
-    struct EdgeSet {
-        KeySet Pressed;
-        KeySet Released;
+    struct Action {
+        std::string Name;
+        std::vector<Key> Keys;
+    };
+    struct AxisPair {
+        Key Negative;
+        Key Positive;
+    };
+    struct Axis {
+        std::string Name;
+        std::vector<AxisPair> Pairs;
     };
 
-    [[nodiscard]] static usize Index(Key key) { return static_cast<usize>(key); }
-    [[nodiscard]] const EdgeSet& Edges() const
-    {
-        return m_InFixedStep ? m_StepEdges : m_FrameEdges;
-    }
+    // A handful of actions per game: a linear search by name is simple and fast enough.
+    [[nodiscard]] const Action* FindAction(std::string_view name) const;
+    [[nodiscard]] const Axis* FindAxis(std::string_view name) const;
+    Action& GetOrAddAction(std::string_view name);
+    Axis& GetOrAddAxis(std::string_view name);
 
-    KeySet m_Down;
-    EdgeSet m_FrameEdges; // since BeginFrame
-    EdgeSet m_StepEdges;  // since the last EndFixedStep
-    bool m_InFixedStep = false;
+    const Keyboard& m_Keyboard;
+    std::vector<Action> m_Actions;
+    std::vector<Axis> m_Axes;
 };
 
 } // namespace Emerald

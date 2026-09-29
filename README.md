@@ -127,4 +127,4 @@ int main() { return MyGame{}.Run(); }
 
 ## License
 
-No license has been chosen yet.
+Emerald is released under the [MIT License](LICENSE).

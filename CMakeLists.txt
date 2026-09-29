@@ -23,6 +23,8 @@ option(EMERALD_BUILD_SANDBOX "Build the sandbox example application" ON)
 option(EMERALD_USE_IMGUI     "Enable Dear ImGui (SDL3 + SDL GPU backends)" OFF)
 option(EMERALD_USE_ENTT      "Enable the EnTT entity-component system" OFF)
 option(EMERALD_MATH_SIMD     "Use the SSE code paths of the math library on x86/x64" ON)
+option(EMERALD_BUILD_TESTS   "Build the unit tests (run with ctest)" ON)
+option(EMERALD_BUILD_BENCH   "Build the math micro-benchmark" OFF)
 
 include(cmake/Dependencies.cmake)
 include(cmake/Shaders.cmake)
@@ -94,4 +96,16 @@ emerald_set_warnings(Emerald)
 # ---------------------------------------------------------------------------
 if(EMERALD_BUILD_SANDBOX)
     add_subdirectory(sandbox)
+endif()
+
+# ---------------------------------------------------------------------------
+# Tests and benchmark
+# ---------------------------------------------------------------------------
+if(EMERALD_BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
+endif()
+
+if(EMERALD_BUILD_BENCH)
+    add_subdirectory(bench)
 endif()

@@ -3,11 +3,12 @@
 Emerald is a small, modern C++20 game engine built on [SDL3](https://github.com/libsdl-org/SDL).
 It is split into:
 
-- **`Emerald::Emerald`** – the engine library (logging, window, SDL GPU renderer, application loop, image loading,
-  thread pool, `std::pmr` memory helpers).
+- **`Emerald::Emerald`** – the engine library (logging, window, SDL GPU renderer, batched 2D line renderer,
+  keyboard input, application loop with a fixed-timestep update, image loading, thread pool, `std::pmr`
+  memory helpers).
 - **`Emerald::Math`** – a header-only math library (vectors, `Mat4`, optional SSE), included by the engine.
 - **`sandbox/`** – a minimal example app that links the engine and draws a rotating vertex-colored triangle
-  in pixel space with HLSL shaders through SDL GPU.
+  in pixel space with its own HLSL shaders through SDL GPU, plus 2D line shapes and a keyboard-driven arrow.
 - **`tests/`** – small unit-test executables run with `ctest`.
 
 All dependencies are fetched automatically with CMake `FetchContent` and pinned to specific versions.
@@ -214,7 +215,7 @@ Conventions (documented at the top of `Mat4.h`):
 - **Column vectors, column-major storage** – `p' = M * p`, transforms compose right to left
   (`Projection * Translate * RotateZ * Scale`), and the translation is in the last column. This is
   HLSL's default `float4x4` cbuffer layout, so a `Mat4` is pushed as-is and the shader does
-  `mul(Transform, float4(position, 1))` (see `shaders/Triangle.vert.hlsl`).
+  `mul(Transform, float4(position, 1))` (see `sandbox/shaders/Triangle.vert.hlsl`).
 - **Left-handed, depth 0..1** like SDL GPU / D3D12 / Metal: +X right, +Y up, +Z into the screen;
   `Perspective`/`Ortho` map depth to [0, 1].
 - **2D pixel space**: `Mat4::OrthoPixelSpace(width, height)` puts (0, 0) at the top-left with +Y down
@@ -248,6 +249,8 @@ structure-of-arrays layout instead (all x together, all y together).
 | `LogTests` | log file creation, truncation, relative paths, empty path, failure fallback |
 | `ThreadPoolTests` | futures return values, exceptions through futures, `WaitIdle`, shutdown with pending tasks, `ParallelFor` covers every index once |
 | `MemoryTests` | frame arena reset/alignment/overflow, pmr containers use their resource, tracking counts, pools (incl. the synchronized pool from many threads) |
+| `InputTests` | key down/pressed/released edges, taps within one frame, fixed-step edges, `ReleaseAll`; `FixedTimestep` accumulation, average rate at 144 fps / 120 Hz, slow-frame clamp |
+| `Renderer2DTests` | `Renderer2D` batching and shape generation on the CPU (no GPU), `Transform2D`, color packing |
 
 ```sh
 cmake --build --preset debug
@@ -302,6 +305,19 @@ The code lives in `include/Emerald/Renderer/` and `src/Renderer/` and is intenti
 `OnShutdown()` to release them. With ImGui enabled, the `imgui_impl_sdlgpu3` backend draws into the same
 render pass (`ImGui_ImplSDLGPU3_PrepareDrawData` before the pass, `RenderDrawData` inside).
 
+One frame in `Application::Run()`:
+
+```
+events -> Input          OnEvent
+fixed steps (0..N)       OnFixedUpdate(dt)       game logic at ApplicationSpec::FixedUpdateRate
+                         OnUpdate(frameTime)
+BeginFrame               (acquire command buffer + swapchain; vsync waits here)
+                         OnRender2D(renderer2D)  record 2D shapes (CPU only)
+copy passes              Renderer2D upload, ImGui upload
+render pass              OnRender(pass), then the 2D shapes, then ImGui on top
+EndFrame                 submit + present
+```
+
 ### Unsupported GPUs
 
 If no backend is available (no Vulkan / D3D12 / Metal capable driver), the engine logs the
@@ -309,21 +325,84 @@ If no backend is available (no Vulkan / D3D12 / Metal capable driver), the engin
 GPU driver is required, and `Run()` returns exit code `1`. You can try this path with
 `SDL_GPU_DRIVER=invalid ./build/debug/bin/Sandbox`.
 
+## 2D shapes (`Renderer2D`)
+
+`Emerald::Renderer2D` (`include/Emerald/Renderer/Renderer2D.h`) batches 1 px lines: every shape
+becomes line-list vertices (position + packed RGBA color) on the CPU, the whole frame is uploaded
+with **one** transfer buffer + copy pass into a vertex buffer that grows as needed, and each
+`Begin`/`End` batch is **one** draw call with its view-projection matrix pushed as a uniform
+(`shaders/Renderer2D.*.hlsl`, alpha blending on). The Application owns one; record shapes in
+`OnRender2D`:
+
+```cpp
+void OnRender2D(Emerald::Renderer2D& r) override
+{
+    const Vec2 size(GetWindowSize());
+    r.Begin(Mat4::OrthoPixelSpace(size.x, size.y)); // (0, 0) top-left, +Y down
+    r.DrawLine({10, 10}, {200, 60}, {1, 1, 1, 1});
+    r.DrawPolygon(shipPoints, color, {.Position = pos, .Rotation = angle, .Scale = Vec2(2)});
+    r.DrawPolyline(points, color);                  // open; pass closed = true to close it
+    r.DrawCircle({400, 300}, 50, color, 24);        // 24 segments
+    r.DrawRect({20, 20}, {100, 50}, color);
+    r.End();
+}
+```
+
+Why a separate hook instead of drawing in `OnRender`: uploads need a copy pass, and SDL GPU does not
+allow copy passes inside a render pass. So the shapes are recorded first, the Application uploads
+them before `BeginRenderPass`, and draws them inside it (after `OnRender`, below ImGui). Several
+`Begin`/`End` batches per frame are fine (e.g. world and HUD with different projections).
+`Transform2D` applies scale, then rotation (radians, clockwise on screen in y-down space), then
+position. The recording side needs no GPU, which is what `Renderer2DTests` checks.
+
+## Input
+
+`Application::GetInput()` returns an `Emerald::Input` (`include/Emerald/Input/Input.h`) fed from SDL
+key events. Keys are physical positions (`Key::W` is the key left of `E` on any layout); the
+`Key` values are SDL scancodes.
+
+```cpp
+const Emerald::Input& input = GetInput();
+if (input.IsKeyDown(Key::Left))      angle -= turnSpeed * dt; // held
+if (input.WasKeyPressed(Key::Space)) Shoot();                 // once per press
+if (input.WasKeyReleased(Key::W))    StopEngineSound();
+```
+
+"Pressed/released" means *since the last frame* in `OnUpdate`/`OnRender*` and *since the last fixed
+step* in `OnFixedUpdate`, so a tap in a frame that runs no fixed step (which happens at 144 fps with
+120 Hz) still reaches the next step, exactly once. Key repeats are ignored, held keys are released
+when the window loses focus, and with ImGui on, key presses are withheld from the game while an ImGui
+text field is active.
+
+## Fixed-timestep update
+
+`OnFixedUpdate(f32 dt)` runs at `ApplicationSpec::FixedUpdateRate` (default **120 Hz**) with a
+constant `dt`, driven by `Emerald::FixedTimestep`: frame times accumulate (in integer nanoseconds)
+and each whole step runs once, so the simulation is independent of the frame rate. A frame never
+runs more than `MaxFixedStepsPerFrame` (default 8) steps; beyond that the extra time is dropped so a
+slow frame or a breakpoint slows the game briefly instead of making it spiral. `OnUpdate(f32)` still
+runs once per frame with the real frame time. `GetFixedDeltaSeconds()` and `GetFixedUpdateAlpha()`
+(0..1, for interpolating when drawing) are available too, and `GetWindowSize()` /
+`GetWindowSizeInPixels()` return the client area in window coordinates / pixels (`Vec2i`).
+
 ## Shaders
 
-Shaders are written in HLSL in `shaders/` (`*.vert.hlsl`, `*.frag.hlsl`, `*.comp.hlsl`; entry point
-`main`) and compiled **at build time** by the [SDL_shadercross](https://github.com/libsdl-org/SDL_shadercross)
-command line tool:
+Shaders are written in HLSL (`*.vert.hlsl`, `*.frag.hlsl`, `*.comp.hlsl`; entry point `main`) and
+compiled **at build time** by the [SDL_shadercross](https://github.com/libsdl-org/SDL_shadercross)
+command line tool. The engine's own shaders live in `shaders/` (e.g. `Renderer2D`), the sandbox's in
+`sandbox/shaders/`:
 
 ```
-shaders/Triangle.vert.hlsl ──shadercross──► build/<preset>/bin/shaders/Triangle.vert.spv   (Vulkan)
-                                                                       Triangle.vert.dxil  (D3D12)
-                                                                       Triangle.vert.msl   (Metal)
-                                                                       Triangle.vert.json  (reflection)
+sandbox/shaders/Triangle.vert.hlsl ──shadercross──► build/<preset>/bin/shaders/Triangle.vert.spv   (Vulkan)
+                                                               Triangle.vert.dxil  (D3D12)
+                                                               Triangle.vert.msl   (Metal)
+                                                               Triangle.vert.json  (reflection)
 ```
 
-Register them for a target with `emerald_add_shaders(<target> <files...>)` (see `cmake/Shaders.cmake`
-and `sandbox/CMakeLists.txt`). Editing an `.hlsl` (or an `.hlsli` next to it) recompiles just that shader
+Register them for a target with `emerald_add_shaders(<target> [files...])` (see `cmake/Shaders.cmake`
+and `sandbox/CMakeLists.txt`). **Every executable using Emerald must call it once, even with no files**:
+it also compiles the engine's shaders (`Renderer2D`) and puts everything in a `shaders/` folder next to
+that target's executable. Editing an `.hlsl` (or an `.hlsli` next to it) recompiles just that shader
 on the next build. SDL GPU's HLSL binding rules: vertex-stage uniform buffers use `register(bN, space1)`,
 fragment-stage uniform buffers `space3`, textures/samplers `space0` (vertex) / `space2` (fragment);
 vertex inputs use `TEXCOORD<location>` semantics.
@@ -364,10 +443,10 @@ It is always built in Release and lives in `build/_shadercross`, which every pre
 ## Project layout
 
 ```
-include/Emerald/   Public engine headers (Core/, Renderer/, Assets/, Math/, Memory/)
+include/Emerald/   Public engine headers (Core/, Input/, Renderer/, Assets/, Math/, Memory/)
 src/               Engine implementation
-shaders/           HLSL shader sources (compiled at build time)
-sandbox/           Example application
+shaders/           The engine's HLSL shaders (Renderer2D; compiled at build time for every app)
+sandbox/           Example application (src/, and its own shaders/)
 tests/             Unit tests (ctest)
 bench/             Math micro-benchmark (EMERALD_BUILD_BENCH)
 cmake/             Dependency setup (FetchContent) and shader compilation (Shaders.cmake)
@@ -377,16 +456,32 @@ tools/shadercross/ Host-tool project that builds SDL_shadercross
 ## Using Emerald in your own project
 
 ```cmake
-add_subdirectory(Emerald)          # or FetchContent
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin) # optional: exe + shaders in bin/
+
+include(FetchContent)
+FetchContent_Declare(Emerald
+    GIT_REPOSITORY https://github.com/Ridejock/Emerald.git
+    GIT_TAG        <commit hash>)                          # pin a commit
+FetchContent_MakeAvailable(Emerald)                        # or add_subdirectory(Emerald)
+
+add_executable(MyGame src/Main.cpp)
 target_link_libraries(MyGame PRIVATE Emerald::Emerald)
+emerald_add_shaders(MyGame)                                # engine shaders (+ your own .hlsl files)
 ```
+
+As a subproject Emerald does not build its sandbox and tests (`EMERALD_BUILD_SANDBOX`/`_TESTS`
+default to on only when Emerald is the top-level project), keeps the parent's output directories,
+and builds shadercross in `<your project>/build/_shadercross` (shared by your presets; override
+with `EMERALD_SHADERCROSS_BUILD_DIR`, e.g. point it at Emerald's own `build/_shadercross` to reuse
+an existing tool). To work on a local Emerald checkout instead of the pinned commit, configure with
+`-DFETCHCONTENT_SOURCE_DIR_EMERALD=/path/to/Emerald`.
 
 ```cpp
 #include <Emerald/Emerald.h>
 
 class MyGame : public Emerald::Application {
-    void OnUpdate(f32 dt) override { /* ... */ }
-    void OnRender(SDL_GPURenderPass* pass) override { /* bind pipeline, draw ... */ }
+    void OnFixedUpdate(f32 dt) override { /* game logic at 120 Hz */ }
+    void OnRender2D(Emerald::Renderer2D& r) override { /* r.Begin(...); r.DrawLine(...); r.End(); */ }
 };
 
 int main() { return MyGame{}.Run(); }

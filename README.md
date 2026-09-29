@@ -3,7 +3,8 @@
 Emerald is a small, modern C++20 game engine built on [SDL3](https://github.com/libsdl-org/SDL).
 It is split into:
 
-- **`Emerald::Emerald`** – the engine library (logging, window, SDL GPU renderer, application loop, image loading).
+- **`Emerald::Emerald`** – the engine library (logging, window, SDL GPU renderer, application loop, image loading,
+  thread pool, `std::pmr` memory helpers).
 - **`Emerald::Math`** – a header-only math library (vectors, `Mat4`, optional SSE), included by the engine.
 - **`sandbox/`** – a minimal example app that links the engine and draws a rotating vertex-colored triangle
   in pixel space with HLSL shaders through SDL GPU.
@@ -134,6 +135,67 @@ Emerald::ApplicationSpec spec;
 spec.LogFile = "logs/MyGame.log"; // or "" for console only
 ```
 
+## Threads
+
+`Emerald::ThreadPool` (`include/Emerald/Core/ThreadPool.h`) is a small worker pool built on
+`std::jthread`. `Application` owns one: `GetThreadPool()`, sized by `ApplicationSpec::WorkerThreads`
+(0 = hardware threads − 1, at least 1).
+
+```cpp
+Emerald::ThreadPool& pool = GetThreadPool();
+std::future<i32> answer = pool.Submit([] { return 6 * 7; }); // any callable, returns a future
+pool.ParallelFor(items.size(), [&](usize i) { Update(items[i]); }); // chunks on workers + caller
+pool.WaitIdle();                                                    // until the queue is empty
+i32 value = answer.get(); // 42, or rethrows the exception the task threw
+```
+
+- Tasks wait in a mutex-protected queue; idle workers sleep on a `std::condition_variable_any` whose
+  `wait` takes the worker's `std::stop_token`. The destructor calls `request_stop()` and the jthreads
+  join automatically – no hand-written shutdown flag or join loop.
+- **Shutdown policy**: running tasks finish, tasks still queued are dropped and their futures throw
+  `std::future_error` (`broken_promise`). Call `WaitIdle()` first if everything must run.
+  `Application` calls `WaitIdle()` before `OnShutdown()`.
+- `ParallelFor(count, fn)` splits `[0, count)` into ~4 chunks per thread, runs the last chunk on the
+  calling thread, waits for the rest and rethrows the first exception.
+- Don't call `WaitIdle()`/`ParallelFor()` from inside a task (a worker waiting on other workers can
+  deadlock).
+- Workers are named `Emerald-W0`, `Emerald-W1`, … (`SetThreadDescription` on Windows,
+  `pthread_setname_np` on Linux/macOS) so they are recognizable in debuggers and profilers.
+
+## Memory (`std::pmr`)
+
+`include/Emerald/Memory/` (umbrella `Memory.h`, included by `Emerald.h`) builds on the standard
+polymorphic memory resources: a `std::pmr` container takes a `std::pmr::memory_resource*` and
+allocates all its memory from it.
+
+| What | Where | Use it for | Threads |
+|---|---|---|---|
+| Frame arena | `GetFrameAllocator()` (`FrameArena`) | temporary data that lives for one frame | main thread only |
+| Pool | `GetPoolAllocator()` (`std::pmr::unsynchronized_pool_resource`) | long-lived objects created/destroyed often | main thread only |
+| Shared pool | `GetSharedPoolAllocator()` (`std::pmr::synchronized_pool_resource`) | the same, across threads | any thread |
+
+```cpp
+Emerald::PmrVector<DrawItem> draws(GetFrameAllocator()); // freed automatically next frame
+Emerald::PmrUnorderedMap<u32, Emerald::PmrString> names(GetPoolAllocator());
+```
+
+- **Aliases** (`PmrTypes.h`): `PmrVector`, `PmrDeque`, `PmrString`, `PmrUnorderedMap`,
+  `PmrUnorderedSet`, `PmrMap`.
+- **`FrameArena`** wraps `std::pmr::monotonic_buffer_resource` over a preallocated buffer
+  (`ApplicationSpec::FrameArenaSize`, default 1 MiB). Allocating is a pointer bump, freeing does
+  nothing, and `Application` calls `Reset()` at the start of every frame, so never keep frame memory
+  across frames. `GetFrameArena().GetStats()` reports bytes used, the peak and overflows.
+- **Overflow policy**: when a frame needs more than the buffer, the rest comes from the heap and a
+  warning is logged once ("increase `ApplicationSpec::FrameArenaSize`"); the heap chunks are released
+  at the next `Reset()`. This was chosen over `std::pmr::null_memory_resource()`, which would throw
+  `std::bad_alloc` mid-frame and turn a one-off spike into a crash.
+- **Thread-safety rule**: the frame arena and the unsynchronized pool belong to the main thread
+  (debug builds assert this for the arena). Worker tasks should use the shared pool, their own
+  `FrameArena`, or normal allocations.
+- **`TrackingResource`** forwards to another resource and counts bytes/allocations in use, the peak
+  and the total (atomics, so it is thread-safe). Both application pools sit on one
+  (`GetPoolStats()`); with ImGui on, the sandbox panel shows the arena and pool numbers.
+
 ## Math library
 
 Header-only, in `include/Emerald/Math/` (`#include <Emerald/Math/Math.h>`, also included by
@@ -184,10 +246,23 @@ structure-of-arrays layout instead (all x together, all y together).
 | `MathTests` | vectors, scalar helpers, `Mat4` multiply/transforms/inverse/ortho/perspective/look-at, HLSL layout, scalar-vs-SSE agreement |
 | `MathTestsScalar` | the same tests compiled with `EMERALD_MATH_SIMD=0` (only added when the option is on) |
 | `LogTests` | log file creation, truncation, relative paths, empty path, failure fallback |
+| `ThreadPoolTests` | futures return values, exceptions through futures, `WaitIdle`, shutdown with pending tasks, `ParallelFor` covers every index once |
+| `MemoryTests` | frame arena reset/alignment/overflow, pmr containers use their resource, tracking counts, pools (incl. the synchronized pool from many threads) |
 
 ```sh
 cmake --build --preset debug
 ctest --test-dir build/debug --output-on-failure
+```
+
+ThreadSanitizer run (GCC/Clang; a separate build dir without the sandbox, so no shaders and no
+shadercross are built):
+
+```sh
+cmake -S . -B build/tsan -G Ninja -DCMAKE_BUILD_TYPE=Debug -DEMERALD_BUILD_SANDBOX=OFF \
+      -DCMAKE_C_FLAGS=-fsanitize=thread -DCMAKE_CXX_FLAGS=-fsanitize=thread \
+      -DCMAKE_EXE_LINKER_FLAGS=-fsanitize=thread
+cmake --build build/tsan --target EmeraldThreadPoolTests EmeraldMemoryTests
+ctest --test-dir build/tsan -R "ThreadPool|Memory" --output-on-failure
 ```
 
 Benchmark (release build recommended; numbers vary a lot between machines):
@@ -289,7 +364,7 @@ It is always built in Release and lives in `build/_shadercross`, which every pre
 ## Project layout
 
 ```
-include/Emerald/   Public engine headers (Core/, Renderer/, Assets/, Math/)
+include/Emerald/   Public engine headers (Core/, Renderer/, Assets/, Math/, Memory/)
 src/               Engine implementation
 shaders/           HLSL shader sources (compiled at build time)
 sandbox/           Example application

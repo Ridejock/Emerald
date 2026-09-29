@@ -1,5 +1,7 @@
 #include "Emerald/Audio/Audio.h"
 
+#include <array>
+
 #include <SDL3/SDL_error.h>
 
 #include "Emerald/Core/Log.h"
@@ -8,74 +10,102 @@ namespace Emerald {
 
 bool Audio::Init()
 {
-    // Ask for the mix format; SDL converts to whatever the device really uses.
-    m_Device = SDL_OpenAudioDevice(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &kMixSpec);
-    if (m_Device == 0) {
+    // One stream in the mix format on the default device; SDL converts it to whatever the
+    // device really uses and calls Callback whenever it needs more data.
+    m_Stream =
+        SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &kMixSpec, Callback, this);
+    if (!m_Stream) {
         EM_CORE_WARN("No audio output: {}", SDL_GetError());
         return false;
     }
-    for (SDL_AudioStream*& voice : m_Voices) {
-        voice = SDL_CreateAudioStream(&kMixSpec, &kMixSpec);
-        if (voice && !SDL_BindAudioStream(m_Device, voice)) {
-            SDL_DestroyAudioStream(voice);
-            voice = nullptr;
-        }
-    }
+    const SDL_AudioDeviceID device = SDL_GetAudioStreamDevice(m_Stream);
     SDL_AudioSpec deviceSpec{};
-    SDL_GetAudioDeviceFormat(m_Device, &deviceSpec, nullptr);
-    EM_CORE_INFO("Audio output: {} ({} Hz, {} channels)", SDL_GetAudioDeviceName(m_Device),
+    SDL_GetAudioDeviceFormat(device, &deviceSpec, nullptr);
+    EM_CORE_INFO("Audio output: {} ({} Hz, {} channels)", SDL_GetAudioDeviceName(device),
                  deviceSpec.freq, deviceSpec.channels);
+    SDL_ResumeAudioStreamDevice(m_Stream); // devices opened this way start paused
     return true;
 }
 
 void Audio::Shutdown()
 {
-    for (SDL_AudioStream*& voice : m_Voices) {
-        SDL_DestroyAudioStream(voice); // also unbinds it; null is fine
-        voice = nullptr;
-    }
-    if (m_Device != 0) {
-        SDL_CloseAudioDevice(m_Device);
-        m_Device = 0;
+    if (m_Stream) {
+        SDL_DestroyAudioStream(m_Stream); // also closes the device and stops the callback
+        m_Stream = nullptr;
     }
 }
 
-void Audio::Play(const Sound& sound, f32 volume)
+void SDLCALL Audio::Callback(void* userdata, SDL_AudioStream* stream, int additionalBytes,
+                             int /*totalBytes*/)
 {
-    if (m_Device == 0 || sound.Samples.empty())
-        return;
-    // A free voice is one that has played everything it was given.
-    SDL_AudioStream* voice = nullptr;
-    for (SDL_AudioStream* v : m_Voices) {
-        if (v && SDL_GetAudioStreamQueued(v) == 0) {
-            voice = v;
-            break;
-        }
+    // Runs on the audio thread with the stream locked. Mixes in blocks on the stack: no
+    // allocations here.
+    auto* audio = static_cast<Audio*>(userdata);
+    constexpr usize kBlockFrames = 512;
+    std::array<f32, kBlockFrames * 2> block;
+    usize frames = static_cast<usize>(additionalBytes) / (sizeof(f32) * 2);
+    while (frames > 0) {
+        const usize n = frames < kBlockFrames ? frames : kBlockFrames;
+        audio->m_Mixer.Mix(block.data(), n);
+        SDL_PutAudioStreamData(stream, block.data(), static_cast<int>(n * sizeof(f32) * 2));
+        frames -= n;
     }
-    if (!voice) {
-        voice = m_Voices[m_NextSteal];
-        m_NextSteal = (m_NextSteal + 1) % kVoiceCount;
-        if (!voice)
-            return;
-        SDL_ClearAudioStream(voice);
-    }
-    SDL_SetAudioStreamGain(voice, volume);
-    SDL_PutAudioStreamData(voice, sound.Samples.data(),
-                           static_cast<int>(sound.Samples.size() * sizeof(f32)));
 }
 
-void Audio::StopAll()
+VoiceHandle Audio::Play(const Sound& sound, const PlayOptions& options)
 {
-    for (SDL_AudioStream* voice : m_Voices) {
-        if (voice)
-            SDL_ClearAudioStream(voice);
-    }
+    if (!m_Stream)
+        return {};
+    Lock lock(m_Stream);
+    return m_Mixer.Play(sound, options);
+}
+
+void Audio::Stop(VoiceHandle voice, f32 fadeMs)
+{
+    Lock lock(m_Stream);
+    m_Mixer.Stop(voice, fadeMs);
+}
+
+void Audio::StopAll(f32 fadeMs)
+{
+    Lock lock(m_Stream);
+    m_Mixer.StopAll(fadeMs);
+}
+
+void Audio::SetVolume(VoiceHandle voice, f32 volume)
+{
+    Lock lock(m_Stream);
+    m_Mixer.SetVolume(voice, volume);
+}
+
+bool Audio::IsPlaying(VoiceHandle voice) const
+{
+    Lock lock(m_Stream);
+    return m_Mixer.IsPlaying(voice);
+}
+
+usize Audio::GetPlayingCount() const
+{
+    Lock lock(m_Stream);
+    return m_Mixer.GetPlayingCount();
 }
 
 void Audio::SetMasterVolume(f32 volume)
 {
-    if (m_Device != 0)
-        SDL_SetAudioDeviceGain(m_Device, volume);
+    Lock lock(m_Stream);
+    m_Mixer.SetMasterVolume(volume);
+}
+
+void Audio::SetMuted(bool muted)
+{
+    Lock lock(m_Stream);
+    m_Mixer.SetMuted(muted);
+}
+
+void Audio::Update()
+{
+    Lock lock(m_Stream);
+    m_Mixer.ReleaseFinished();
 }
 
 } // namespace Emerald

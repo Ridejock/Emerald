@@ -21,8 +21,8 @@ i32 CountZeroCrossings(const Sound& sound, usize first, usize last)
 {
     i32 count = 0;
     for (usize i = first + 1; i < last; ++i) {
-        const f32 a = sound.Samples[(i - 1) * 2];
-        const f32 b = sound.Samples[i * 2];
+        const f32 a = sound.GetSamples()[(i - 1) * 2];
+        const f32 b = sound.GetSamples()[i * 2];
         if ((a < 0.0f) != (b < 0.0f))
             ++count;
     }
@@ -32,7 +32,7 @@ i32 CountZeroCrossings(const Sound& sound, usize first, usize last)
 f32 Peak(const Sound& sound)
 {
     f32 peak = 0.0f;
-    for (f32 s : sound.Samples)
+    for (f32 s : sound.GetSamples())
         peak = std::max(peak, std::abs(s));
     return peak;
 }
@@ -73,12 +73,12 @@ TEST(Mp3DecodesToMixFormat)
         return;
     // 0.1 s (MP3 frames add some padding), now stereo at 48 kHz.
     CHECK(sound->GetDurationSeconds() > 0.09f && sound->GetDurationSeconds() < 0.16f);
-    CHECK(sound->Samples.size() % 2 == 0);
+    CHECK(sound->GetSamples().size() % 2 == 0);
     // Amplitude 1/8, and the mono source is the same on both channels.
     const f32 peak = Peak(*sound);
     CHECK(peak > 0.1f && peak < 0.15f);
     const usize mid = sound->GetFrameCount() / 2;
-    CHECK_NEAR(sound->Samples[mid * 2], sound->Samples[mid * 2 + 1]);
+    CHECK_NEAR(sound->GetSamples()[mid * 2], sound->GetSamples()[mid * 2 + 1]);
     // Still 440 Hz after resampling 22050 -> 48000: 3000 frames = 62.5 ms = 55 crossings.
     const i32 crossings = CountZeroCrossings(*sound, 1000, 4000);
     CHECK(crossings >= 50 && crossings <= 60);
@@ -131,6 +131,6 @@ TEST(MakeSoundConverts)
     CHECK(sound.has_value());
     if (sound) {
         CHECK(sound->GetFrameCount() > 47900 && sound->GetFrameCount() <= 48000);
-        CHECK_NEAR(sound->Samples[1000], 0.25f);
+        CHECK_NEAR(sound->GetSamples()[1000], 0.25f);
     }
 }

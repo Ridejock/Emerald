@@ -45,8 +45,8 @@ target_link_libraries(EmeraldRenderer2DTests PRIVATE Emerald::Emerald)
 emerald_set_warnings(EmeraldRenderer2DTests)
 add_test(NAME Renderer2DTests COMMAND EmeraldRenderer2DTests)
 
-# Sound loading (WAV, MP3 via dr_mp3) and conversion to the mix format; no audio device needed.
-add_executable(EmeraldAudioTests TestMain.cpp AudioTests.cpp)
+# Sound loading (WAV, MP3 via dr_mp3), mixer and synth; no audio device needed.
+add_executable(EmeraldAudioTests TestMain.cpp AudioTests.cpp MixerTests.cpp)
 target_link_libraries(EmeraldAudioTests PRIVATE Emerald::Emerald)
 emerald_set_warnings(EmeraldAudioTests)
 add_test(NAME AudioTests COMMAND EmeraldAudioTests)

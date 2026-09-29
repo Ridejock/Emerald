@@ -79,6 +79,8 @@ add_library(Emerald STATIC
     src/Renderer/Renderer2D.cpp
     src/Assets/Image.cpp
     src/Audio/Audio.cpp
+    src/Audio/Mixer.cpp
+    src/Audio/Synth.cpp
     src/Audio/Sound.cpp
     src/Vendor/stb_image.cpp
     src/Vendor/stb_image_write.cpp

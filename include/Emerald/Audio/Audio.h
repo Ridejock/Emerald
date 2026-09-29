@@ -1,26 +1,30 @@
 #pragma once
 
-#include <array>
-
 #include <SDL3/SDL_audio.h>
 
+#include "Emerald/Audio/Mixer.h"
 #include "Emerald/Audio/Sound.h"
 #include "Emerald/Core/Defines.h"
 
 namespace Emerald {
 
-// Minimal sound playback: fire-and-forget sounds on the default output device. Each playing
-// sound uses one of a few voices (SDL audio streams bound to the device; SDL mixes them). Get it
-// with Application::GetAudio():
+// Sound playback on the default output device. Get it with Application::GetAudio():
 //
-//   std::optional<Sound> boom = LoadSound("assets/boom.mp3");   // once
-//   if (boom) GetAudio().Play(*boom, 0.8f);                      // any time
+//   std::optional<Sound> boom = LoadSound("assets/boom.mp3");      // or Synth.h
+//   GetAudio().Play(*boom, {.Volume = 0.8f, .Pan = -0.3f});         // fire and forget
+//   VoiceHandle engine = GetAudio().Play(hum, {.Loop = true});      // keep the handle...
+//   GetAudio().SetVolume(engine, 0.5f);                             // ...to change it later
+//   GetAudio().Stop(engine);                                        // fades out (10 ms)
 //
-// Without an audio device (or if SDL audio fails) everything still works, silently.
+// Threads: SDL calls our callback on its audio thread to mix the next block. The callback runs
+// with the audio stream locked, and every method here locks the same stream first, so the game
+// thread and the audio thread never touch the mixer at the same time. Call these from one game
+// thread (the main thread). Locks are held only for a few microseconds (no loading or decoding
+// while locked), so playback never waits for the game.
+//
+// Without an audio device everything still works, silently: Play returns an invalid handle.
 class Audio {
 public:
-    static constexpr usize kVoiceCount = 16;
-
     Audio() = default;
     ~Audio() { Shutdown(); }
     Audio(const Audio&) = delete;
@@ -29,19 +33,51 @@ public:
     // Called by the Application after SDL_INIT_AUDIO. Returns false if there is no device.
     bool Init();
     void Shutdown();
-    [[nodiscard]] bool IsAvailable() const { return m_Device != 0; }
+    [[nodiscard]] bool IsAvailable() const { return m_Stream != nullptr; }
 
-    // Starts playing a sound (its samples are copied, so the Sound may go away afterwards).
-    // When all voices are busy, the oldest started sound is cut off.
-    void Play(const Sound& sound, f32 volume = 1.0f);
-    void StopAll();
-    // Master volume, 0..1 (more amplifies and may clip).
+    VoiceHandle Play(const Sound& sound, const PlayOptions& options = {});
+    void Stop(VoiceHandle voice, f32 fadeMs = Mixer::kDefaultFadeMs);
+    void StopAll(f32 fadeMs = Mixer::kDefaultFadeMs);
+    void SetVolume(VoiceHandle voice, f32 volume);
+    [[nodiscard]] bool IsPlaying(VoiceHandle voice) const;
+    [[nodiscard]] usize GetPlayingCount() const;
+
+    // Master volume 0..1 (applied before the soft limiter) and mute; both fade smoothly.
     void SetMasterVolume(f32 volume);
+    [[nodiscard]] f32 GetMasterVolume() const { return m_Mixer.GetMasterVolume(); }
+    void SetMuted(bool muted);
+    [[nodiscard]] bool IsMuted() const { return m_Mixer.IsMuted(); }
+
+    // Called by the Application once per frame: frees the samples of finished sounds here on the
+    // game thread, never on the audio thread.
+    void Update();
 
 private:
-    SDL_AudioDeviceID m_Device = 0;
-    std::array<SDL_AudioStream*, kVoiceCount> m_Voices{};
-    usize m_NextSteal = 0; // round-robin voice to cut off when all are busy
+    // Locks the audio stream for the lifetime of the object (no-op without a device).
+    class Lock {
+    public:
+        explicit Lock(SDL_AudioStream* stream) : m_Stream(stream)
+        {
+            if (m_Stream)
+                SDL_LockAudioStream(m_Stream);
+        }
+        ~Lock()
+        {
+            if (m_Stream)
+                SDL_UnlockAudioStream(m_Stream);
+        }
+        Lock(const Lock&) = delete;
+        Lock& operator=(const Lock&) = delete;
+
+    private:
+        SDL_AudioStream* m_Stream;
+    };
+
+    static void SDLCALL Callback(void* userdata, SDL_AudioStream* stream, int additionalBytes,
+                                 int totalBytes);
+
+    SDL_AudioStream* m_Stream = nullptr; // device stream: we push mixed audio into it
+    Mixer m_Mixer;
 };
 
 } // namespace Emerald

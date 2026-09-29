@@ -127,6 +127,7 @@ int Application::Run()
             m_Gamepads.EndFixedStep();
         }
         OnUpdate(static_cast<f32>(elapsedNs) / 1e9f);
+        m_Audio.Update();
         RenderFrame();
 
         ++m_FrameCount;

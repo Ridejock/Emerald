@@ -39,11 +39,10 @@ std::optional<Sound> Convert(const SDL_AudioSpec& spec, const void* data, usize 
         LogError("Audio conversion failed: {}", SDL_GetError());
         return std::nullopt;
     }
-    Sound sound;
-    sound.Samples.resize(static_cast<usize>(convertedBytes) / sizeof(f32));
-    SDL_memcpy(sound.Samples.data(), converted, sound.Samples.size() * sizeof(f32));
+    std::vector<f32> samples(static_cast<usize>(convertedBytes) / sizeof(f32));
+    SDL_memcpy(samples.data(), converted, samples.size() * sizeof(f32));
     SDL_free(converted);
-    return sound;
+    return Sound(std::move(samples));
 }
 
 } // namespace

@@ -4,8 +4,10 @@ Emerald is a small, modern C++20 game engine built on [SDL3](https://github.com/
 It is split into:
 
 - **`Emerald::Emerald`** – the engine library (logging, window, SDL GPU renderer, application loop, image loading).
-- **`sandbox/`** – a minimal example app that links the engine and draws a vertex-colored triangle with
-  HLSL shaders through SDL GPU.
+- **`Emerald::Math`** – a header-only math library (vectors, `Mat4`, optional SSE), included by the engine.
+- **`sandbox/`** – a minimal example app that links the engine and draws a rotating vertex-colored triangle
+  in pixel space with HLSL shaders through SDL GPU.
+- **`tests/`** – small unit-test executables run with `ctest`.
 
 All dependencies are fetched automatically with CMake `FetchContent` and pinned to specific versions.
 
@@ -31,8 +33,12 @@ All dependencies are fetched automatically with CMake `FetchContent` and pinned 
 | `EMERALD_SHADERCROSS_EXECUTABLE` | *(empty)* | Use this prebuilt `shadercross` instead of building it |
 | `EMERALD_SHADERCROSS_BUILD_DIR` | `build/_shadercross` | Where the tool is built; shared by all presets |
 | `EMERALD_SHADER_FORMATS` | `SPIRV;DXIL;MSL` | Shader formats generated at build time |
+| `EMERALD_MATH_SIMD` | `ON` | Use the SSE code paths of the math library on x86/x64 (see [Math library](#math-library)) |
+| `EMERALD_BUILD_TESTS` | `ON` | Build the unit tests and register them with CTest |
+| `EMERALD_BUILD_BENCH` | `OFF` | Build `EmeraldMathBench`, a scalar-vs-SSE micro-benchmark |
 
-The engine exports `EMERALD_WITH_IMGUI` / `EMERALD_WITH_ENTT` (0 or 1) as public compile definitions.
+The engine exports `EMERALD_WITH_IMGUI` / `EMERALD_WITH_ENTT` / `EMERALD_MATH_SIMD` (0 or 1) as public
+compile definitions.
 
 ## Requirements
 
@@ -104,6 +110,93 @@ SDL_GPU_DRIVER=vulkan ./build/debug/bin/Sandbox            # force a backend (vu
 The renderer needs a real GPU backend, so a display is required (the `dummy` video driver has no
 GPU swapchain). On a machine/VM/CI runner without a GPU, install Mesa's software Vulkan driver
 (lavapipe) – e.g. `sudo apt install mesa-vulkan-drivers` – and run under X11/Xvfb.
+
+## Logging
+
+`Emerald::Log` wraps [spdlog](https://github.com/gabime/spdlog) with two loggers: **Core** (engine,
+`EM_CORE_TRACE/INFO/WARN/ERROR`) and **Client** (your app, `EM_TRACE/INFO/WARN/ERROR`). Both write to
+the console (colored) **and to a log file**:
+
+- Default: `logs/Emerald.log` **next to the executable** (e.g. `build/debug/bin/logs/Emerald.log`),
+  found with `SDL_GetBasePath()` so it does not depend on the working directory. The `logs/` folder is
+  created if needed.
+- The file is **truncated on every run** and uses the console's pattern without color codes:
+  `[12:16:06.185] [EMERALD] [info] Emerald starting (SDL 3.4.16)`.
+- Warnings and errors are flushed immediately; everything else is flushed on shutdown (or when
+  spdlog's buffer fills), so after a crash the last info/trace lines may be missing.
+- Configure it with `ApplicationSpec::LogFile`: a relative path is resolved against the executable's
+  directory, an absolute path is used as is, and an **empty path disables** the file.
+- If the file cannot be opened (read-only folder, invalid path, …) Emerald prints a warning and keeps
+  logging to the console only.
+
+```cpp
+Emerald::ApplicationSpec spec;
+spec.LogFile = "logs/MyGame.log"; // or "" for console only
+```
+
+## Math library
+
+Header-only, in `include/Emerald/Math/` (`#include <Emerald/Math/Math.h>`, also included by
+`Emerald.h`), namespace `Emerald`:
+
+| Header | Contents |
+|---|---|
+| `Common.h` | `Pi`, `TwoPi`, `HalfPi`, `ToRadians`/`ToDegrees`, `Clamp`, `Min`/`Max`, `Lerp`, `NearlyEqual`/`NearlyEqualRelative`/`NearlyZero`, SIMD configuration |
+| `Vec2.h` | `Vec2` (float) and `Vec2i` (int): arithmetic, `Dot`, 2D `Cross`, `Length`, `Normalize`, `Lerp`, `Min`/`Max` |
+| `Vec3.h` | `Vec3`: the same plus `Cross` |
+| `Vec4.h` | `Vec4` (`alignas(16)`): the same operations, SSE-accelerated |
+| `Mat4.h` | `Mat4`: `*` with `Mat4`/`Vec4`, `Translate`, `Scale`, `RotateZ`, `Rotate(angle, axis)`, `Ortho`, `OrthoPixelSpace`, `Perspective`, `LookAt`, `Transpose`, `Determinant`, `Inverse`, `TransformPoint`/`TransformDirection`, `TransformBatch` |
+
+Conventions (documented at the top of `Mat4.h`):
+
+- **Column vectors, column-major storage** – `p' = M * p`, transforms compose right to left
+  (`Projection * Translate * RotateZ * Scale`), and the translation is in the last column. This is
+  HLSL's default `float4x4` cbuffer layout, so a `Mat4` is pushed as-is and the shader does
+  `mul(Transform, float4(position, 1))` (see `shaders/Triangle.vert.hlsl`).
+- **Left-handed, depth 0..1** like SDL GPU / D3D12 / Metal: +X right, +Y up, +Z into the screen;
+  `Perspective`/`Ortho` map depth to [0, 1].
+- **2D pixel space**: `Mat4::OrthoPixelSpace(width, height)` puts (0, 0) at the top-left with +Y down
+  (like window and mouse coordinates). The sandbox draws everything with it.
+- Angles are in radians; vector components are lowercase `x y z w` like HLSL.
+
+### SIMD (`EMERALD_MATH_SIMD`)
+
+With the option on (default) and an x86/x64 target, `Vec4` operations, `Mat4 * Vec4`, `Mat4 * Mat4`
+and `TransformBatch` use SSE2 intrinsics (`<emmintrin.h>`; `Dot` uses SSE4.1's `_mm_dp_ps` only if the
+compiler targets it, e.g. `-msse4.1` or MSVC `/arch:AVX`). The public API and memory layout are the same
+in both modes; only the implementation behind the operators changes. Both implementations are always
+compiled on x86 (`Emerald::Math::Scalar` and `Emerald::Math::Sse`), so tests and the benchmark can compare
+them. On other CPUs (e.g. ARM) the scalar code is used; a NEON path could be added the same way.
+
+Why only `Vec4`/`Mat4`: four floats fill one 128-bit SSE register, so a `Vec4` add is one instruction
+and `Mat4 * Vec4` is four broadcasts, four multiplies and three adds on whole columns. The win grows
+with batches (`TransformBatch` keeps the matrix in registers for the whole array). A `Vec2` would use
+half a register and the load/shuffle/store overhead eats the gain; fast 2D batches need a
+structure-of-arrays layout instead (all x together, all y together).
+
+## Tests
+
+`EMERALD_BUILD_TESTS=ON` (default) builds small test executables using a minimal harness
+(`tests/Test.h`) and registers them with CTest:
+
+| Test | Covers |
+|---|---|
+| `MathTests` | vectors, scalar helpers, `Mat4` multiply/transforms/inverse/ortho/perspective/look-at, HLSL layout, scalar-vs-SSE agreement |
+| `MathTestsScalar` | the same tests compiled with `EMERALD_MATH_SIMD=0` (only added when the option is on) |
+| `LogTests` | log file creation, truncation, relative paths, empty path, failure fallback |
+
+```sh
+cmake --build --preset debug
+ctest --test-dir build/debug --output-on-failure
+```
+
+Benchmark (release build recommended; numbers vary a lot between machines):
+
+```sh
+cmake --preset release -DEMERALD_BUILD_BENCH=ON
+cmake --build --preset release
+./build/release/bin/EmeraldMathBench
+```
 
 ## Renderer (SDL GPU)
 
@@ -196,10 +289,12 @@ It is always built in Release and lives in `build/_shadercross`, which every pre
 ## Project layout
 
 ```
-include/Emerald/   Public engine headers (Core/, Renderer/, Assets/)
+include/Emerald/   Public engine headers (Core/, Renderer/, Assets/, Math/)
 src/               Engine implementation
 shaders/           HLSL shader sources (compiled at build time)
 sandbox/           Example application
+tests/             Unit tests (ctest)
+bench/             Math micro-benchmark (EMERALD_BUILD_BENCH)
 cmake/             Dependency setup (FetchContent) and shader compilation (Shaders.cmake)
 tools/shadercross/ Host-tool project that builds SDL_shadercross
 ```

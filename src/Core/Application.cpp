@@ -15,7 +15,8 @@
 
 namespace Emerald {
 
-Application::Application(const ApplicationSpec& spec) : m_Spec(spec)
+Application::Application(const ApplicationSpec& spec)
+    : m_Spec(spec), m_FixedTimestep(spec.FixedUpdateRate, spec.MaxFixedStepsPerFrame)
 {
     Log::Init(spec.LogFile);
     EM_CORE_INFO("Emerald starting (SDL {}.{}.{})", SDL_MAJOR_VERSION, SDL_MINOR_VERSION,
@@ -83,21 +84,23 @@ int Application::Run()
         // Everything allocated from the frame arena last frame is gone from here on.
         m_FrameArena->Reset();
 
+        m_Input.BeginFrame();
         SDL_Event event;
-        while (SDL_PollEvent(&event)) {
-#if EMERALD_WITH_IMGUI
-            ImGui_ImplSDL3_ProcessEvent(&event);
-#endif
-            if (event.type == SDL_EVENT_QUIT || event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED)
-                m_Running = false;
-            OnEvent(event);
-        }
+        while (SDL_PollEvent(&event))
+            ProcessEvent(event);
 
         const u64 now = SDL_GetTicksNS();
-        const f32 dt = static_cast<f32>(now - last) / 1e9f;
+        const u64 elapsedNs = now - last;
         last = now;
 
-        OnUpdate(dt);
+        // Fixed-rate simulation first (0..MaxFixedStepsPerFrame steps), then the per-frame update.
+        const u32 steps = m_FixedTimestep.Advance(elapsedNs);
+        for (u32 i = 0; i < steps && m_Running; ++i) {
+            m_Input.BeginFixedStep();
+            OnFixedUpdate(m_FixedTimestep.GetStepSeconds());
+            m_Input.EndFixedStep();
+        }
+        OnUpdate(static_cast<f32>(elapsedNs) / 1e9f);
         RenderFrame();
 
         ++m_FrameCount;
@@ -115,6 +118,39 @@ int Application::Run()
                  "overflowed)",
                  m_FrameCount, arena.PeakBytes, arena.Capacity, arena.OverflowFrames);
     return 0;
+}
+
+void Application::ProcessEvent(const SDL_Event& event)
+{
+#if EMERALD_WITH_IMGUI
+    ImGui_ImplSDL3_ProcessEvent(&event);
+    // While an ImGui text field is being edited, key presses go to ImGui only. (WantTextInput,
+    // not WantCaptureKeyboard: with keyboard navigation on, the latter is true whenever an ImGui
+    // window has focus, which would block the game.) Key-ups always pass, so no key stays stuck.
+    const bool imguiWantsKeys = ImGui::GetIO().WantTextInput;
+#else
+    const bool imguiWantsKeys = false;
+#endif
+
+    switch (event.type) {
+    case SDL_EVENT_QUIT:
+    case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
+        m_Running = false;
+        break;
+    case SDL_EVENT_KEY_DOWN:
+        if (!event.key.repeat && !imguiWantsKeys)
+            m_Input.OnKeyDown(event.key.scancode);
+        break;
+    case SDL_EVENT_KEY_UP:
+        m_Input.OnKeyUp(event.key.scancode);
+        break;
+    case SDL_EVENT_WINDOW_FOCUS_LOST:
+        m_Input.ReleaseAll(); // we will not see the key-ups while another window has focus
+        break;
+    default:
+        break;
+    }
+    OnEvent(event);
 }
 
 void Application::RenderFrame()

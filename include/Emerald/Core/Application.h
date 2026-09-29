@@ -7,9 +7,11 @@
 #include <SDL3/SDL_pixels.h>
 
 #include "Emerald/Core/Defines.h"
+#include "Emerald/Core/FixedTimestep.h"
 #include "Emerald/Core/Log.h"
 #include "Emerald/Core/ThreadPool.h"
 #include "Emerald/Core/Window.h"
+#include "Emerald/Input/Input.h"
 #include "Emerald/Memory/FrameArena.h"
 #include "Emerald/Memory/TrackingResource.h"
 #include "Emerald/Renderer/Renderer.h"
@@ -35,6 +37,11 @@ struct ApplicationSpec {
     // Stop after this many frames (0 = run until the window is closed). Useful for CI/headless
     // runs.
     u64 MaxFrames = 0;
+    // OnFixedUpdate runs this many times per second, independent of the frame rate.
+    f64 FixedUpdateRate = 120.0;
+    // At most this many fixed steps per frame; if a frame is slower than that, the simulation
+    // slows down instead of falling further and further behind (see FixedTimestep.h).
+    u32 MaxFixedStepsPerFrame = 8;
     // Log file written in addition to the console. Relative paths are relative to the executable's
     // directory; the file is truncated on each run. Empty = no log file.
     std::filesystem::path LogFile = Log::DefaultFile;
@@ -61,7 +68,18 @@ public:
 
     [[nodiscard]] Window& GetWindow() { return *m_Window; }
     [[nodiscard]] Renderer& GetRenderer() { return *m_Renderer; }
+    [[nodiscard]] const Input& GetInput() const { return m_Input; }
     [[nodiscard]] u64 GetFrameCount() const { return m_FrameCount; }
+
+    // Client-area size in window coordinates / in pixels (see Window.h).
+    [[nodiscard]] Vec2i GetWindowSize() const { return m_Window->GetSize(); }
+    [[nodiscard]] Vec2i GetWindowSizeInPixels() const { return m_Window->GetSizeInPixels(); }
+
+    // Seconds per OnFixedUpdate step (1 / ApplicationSpec::FixedUpdateRate).
+    [[nodiscard]] f32 GetFixedDeltaSeconds() const { return m_FixedTimestep.GetStepSeconds(); }
+    // How far the current frame is between the last fixed step and the next one (0..1), for
+    // interpolating positions when drawing. Most simple games can ignore it.
+    [[nodiscard]] f32 GetFixedUpdateAlpha() const { return m_FixedTimestep.GetAlpha(); }
 
     // Worker threads for background/parallel work (see ThreadPool.h).
     [[nodiscard]] ThreadPool& GetThreadPool() { return *m_ThreadPool; }
@@ -87,6 +105,10 @@ protected:
     // Create GPU resources (buffers, pipelines) here; the renderer is ready.
     virtual void OnStart() {}
     virtual void OnEvent(const SDL_Event& /*event*/) {}
+    // Game logic at a fixed rate (ApplicationSpec::FixedUpdateRate); dt is always the same.
+    // Runs zero or more times per frame, before OnUpdate.
+    virtual void OnFixedUpdate(f32 /*dt*/) {}
+    // Once per frame with the real (variable) frame time.
     virtual void OnUpdate(f32 /*deltaSeconds*/) {}
     // Record draw calls into the frame's main render pass (already cleared to ClearColor).
     // Not called for frames that are skipped, e.g. while the window is minimized.
@@ -98,6 +120,7 @@ protected:
 private:
     void InitImGui();
     void ShutdownImGui();
+    void ProcessEvent(const SDL_Event& event);
     void RenderFrame();
 
     ApplicationSpec m_Spec;
@@ -112,6 +135,8 @@ private:
 
     std::unique_ptr<Window> m_Window;
     std::unique_ptr<Renderer> m_Renderer;
+    Input m_Input;
+    FixedTimestep m_FixedTimestep;
     bool m_SdlInitialized = false;
     bool m_RendererInitialized = false;
 #if EMERALD_WITH_IMGUI

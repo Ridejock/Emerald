@@ -33,3 +33,9 @@ add_executable(EmeraldMemoryTests TestMain.cpp MemoryTests.cpp)
 target_link_libraries(EmeraldMemoryTests PRIVATE Emerald::Emerald)
 emerald_set_warnings(EmeraldMemoryTests)
 add_test(NAME MemoryTests COMMAND EmeraldMemoryTests)
+
+# Keyboard edge tracking and the fixed timestep.
+add_executable(EmeraldInputTests TestMain.cpp InputTests.cpp)
+target_link_libraries(EmeraldInputTests PRIVATE Emerald::Emerald)
+emerald_set_warnings(EmeraldInputTests)
+add_test(NAME InputTests COMMAND EmeraldInputTests)

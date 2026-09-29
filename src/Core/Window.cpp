@@ -28,4 +28,18 @@ Window::~Window()
         SDL_DestroyWindow(m_Window);
 }
 
+Vec2i Window::GetSize() const
+{
+    Vec2i size;
+    SDL_GetWindowSize(m_Window, &size.x, &size.y);
+    return size;
+}
+
+Vec2i Window::GetSizeInPixels() const
+{
+    Vec2i size;
+    SDL_GetWindowSizeInPixels(m_Window, &size.x, &size.y);
+    return size;
+}
+
 } // namespace Emerald

@@ -142,8 +142,9 @@ private:
     std::unique_ptr<Window> m_Window;
     std::unique_ptr<Renderer> m_Renderer;
     std::unique_ptr<Renderer2D> m_Renderer2D;
-    Keyboard m_Keyboard;       // raw key state, fed from SDL events
-    Input m_Input{m_Keyboard}; // actions on top of it
+    Keyboard m_Keyboard;                   // raw key state, fed from SDL events
+    Gamepads m_Gamepads;                   // raw gamepad state, fed from SDL events
+    Input m_Input{m_Keyboard, m_Gamepads}; // actions on top of both
     FixedTimestep m_FixedTimestep;
     bool m_SdlInitialized = false;
     bool m_RendererInitialized = false;

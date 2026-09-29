@@ -1,10 +1,9 @@
 #pragma once
 
-#include <bitset>
-
 #include <SDL3/SDL_scancode.h>
 
 #include "Emerald/Core/Defines.h"
+#include "Emerald/Input/ButtonStates.h"
 
 namespace Emerald {
 
@@ -41,48 +40,28 @@ enum class Key : u16 {
 // clang-format on
 
 // Low-level keyboard state with edge tracking, fed from SDL events by the Application. Games
-// normally use actions instead (Input.h), which are built on top of this.
-//
-// "Was pressed/released" means "since the last frame" in OnUpdate/OnRender, and "since the last
-// fixed step" in OnFixedUpdate. The difference matters when the render rate is higher than the
-// fixed rate (144 Hz vs 120 Hz): some frames run no fixed step at all, and a tap in such a frame
-// must still reach the next fixed step - exactly once.
+// normally use actions instead (Input.h), which are built on top of this. Pressed/released follow
+// the frame/fixed-step rules described in ButtonStates.h.
 class Keyboard {
 public:
-    [[nodiscard]] bool IsKeyDown(Key key) const { return m_Down[Index(key)]; }
-    [[nodiscard]] bool WasKeyPressed(Key key) const { return Edges().Pressed[Index(key)]; }
-    [[nodiscard]] bool WasKeyReleased(Key key) const { return Edges().Released[Index(key)]; }
+    [[nodiscard]] bool IsKeyDown(Key key) const { return m_Keys.IsDown(Index(key)); }
+    [[nodiscard]] bool WasKeyPressed(Key key) const { return m_Keys.WasPressed(Index(key)); }
+    [[nodiscard]] bool WasKeyReleased(Key key) const { return m_Keys.WasReleased(Index(key)); }
 
     // --- Called by the Application (or by tests) ---
     // Key repeats (holding a key down) must not be passed in; they are not new presses.
-    void OnKeyDown(SDL_Scancode scancode);
-    void OnKeyUp(SDL_Scancode scancode);
+    void OnKeyDown(SDL_Scancode scancode) { m_Keys.Set(static_cast<usize>(scancode), true); }
+    void OnKeyUp(SDL_Scancode scancode) { m_Keys.Set(static_cast<usize>(scancode), false); }
     // Releases every held key, e.g. when the window loses focus and would miss the key-up events.
-    void ReleaseAll();
-    // Starts a new frame: forgets the per-frame edges (pending fixed-step edges are kept).
-    void BeginFrame();
-    // Brackets one OnFixedUpdate: the queries return the fixed-step edges in between, and the
-    // edges are consumed by EndFixedStep.
-    void BeginFixedStep() { m_InFixedStep = true; }
-    void EndFixedStep();
+    void ReleaseAll() { m_Keys.ReleaseAll(); }
+    void BeginFrame() { m_Keys.BeginFrame(); }
+    void BeginFixedStep() { m_Keys.BeginFixedStep(); }
+    void EndFixedStep() { m_Keys.EndFixedStep(); }
 
 private:
-    using KeySet = std::bitset<SDL_SCANCODE_COUNT>;
-    struct EdgeSet {
-        KeySet Pressed;
-        KeySet Released;
-    };
-
     [[nodiscard]] static usize Index(Key key) { return static_cast<usize>(key); }
-    [[nodiscard]] const EdgeSet& Edges() const
-    {
-        return m_InFixedStep ? m_StepEdges : m_FrameEdges;
-    }
 
-    KeySet m_Down;
-    EdgeSet m_FrameEdges; // since BeginFrame
-    EdgeSet m_StepEdges;  // since the last EndFixedStep
-    bool m_InFixedStep = false;
+    ButtonStates<SDL_SCANCODE_COUNT> m_Keys;
 };
 
 } // namespace Emerald

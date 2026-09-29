@@ -34,6 +34,17 @@ Application::Application(const ApplicationSpec& spec)
     m_SdlInitialized = true;
     EM_CORE_INFO("SDL video driver: {}", SDL_GetCurrentVideoDriver());
 
+    // Gamepads: SDL's HIDAPI drivers talk to PS4/PS5 and Switch pads directly (also over
+    // Bluetooth), which gives the proper layout, labels and rumble. They are on by default; the
+    // hints just make that explicit (environment variables still override them). Not fatal if it
+    // fails: the game then runs with the keyboard only. Pads that are already connected arrive as
+    // SDL_EVENT_GAMEPAD_ADDED events like hot-plugged ones.
+    SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_PS4, "1");
+    SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_PS5, "1");
+    SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_SWITCH, "1");
+    if (!SDL_InitSubSystem(SDL_INIT_GAMEPAD))
+        EM_CORE_WARN("Gamepad support unavailable: {}", SDL_GetError());
+
     m_Window = std::make_unique<Window>(spec.Window);
     if (!m_Window->IsValid())
         return;
@@ -68,6 +79,7 @@ Application::~Application()
     m_Renderer2D.reset();
     m_Renderer.reset(); // GPU device must go before the window it renders into
     m_Window.reset();
+    m_Gamepads.CloseAll();
     if (m_SdlInitialized)
         SDL_Quit();
     EM_CORE_INFO("Emerald shut down");
@@ -90,6 +102,7 @@ int Application::Run()
         m_FrameArena->Reset();
 
         m_Keyboard.BeginFrame();
+        m_Gamepads.BeginFrame();
         SDL_Event event;
         while (SDL_PollEvent(&event))
             ProcessEvent(event);
@@ -102,8 +115,10 @@ int Application::Run()
         const u32 steps = m_FixedTimestep.Advance(elapsedNs);
         for (u32 i = 0; i < steps && m_Running; ++i) {
             m_Keyboard.BeginFixedStep();
+            m_Gamepads.BeginFixedStep();
             OnFixedUpdate(m_FixedTimestep.GetStepSeconds());
             m_Keyboard.EndFixedStep();
+            m_Gamepads.EndFixedStep();
         }
         OnUpdate(static_cast<f32>(elapsedNs) / 1e9f);
         RenderFrame();
@@ -150,7 +165,25 @@ void Application::ProcessEvent(const SDL_Event& event)
         m_Keyboard.OnKeyUp(event.key.scancode);
         break;
     case SDL_EVENT_WINDOW_FOCUS_LOST:
-        m_Keyboard.ReleaseAll(); // we will not see the key-ups while another window has focus
+        // We will not see key-ups (or gamepad events) while another window has focus.
+        m_Keyboard.ReleaseAll();
+        m_Gamepads.ReleaseAll();
+        break;
+    case SDL_EVENT_GAMEPAD_ADDED:
+        m_Gamepads.Open(event.gdevice.which);
+        break;
+    case SDL_EVENT_GAMEPAD_REMOVED:
+        m_Gamepads.Close(event.gdevice.which);
+        break;
+    case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
+    case SDL_EVENT_GAMEPAD_BUTTON_UP:
+        m_Gamepads.OnButton(event.gbutton.which, static_cast<GamepadButton>(event.gbutton.button),
+                            event.gbutton.down);
+        break;
+    case SDL_EVENT_GAMEPAD_AXIS_MOTION:
+        // Sticks are -32768..32767, triggers 0..32767.
+        m_Gamepads.OnAxis(event.gaxis.which, static_cast<GamepadAxis>(event.gaxis.axis),
+                          static_cast<f32>(event.gaxis.value) / 32767.0f);
         break;
     default:
         break;

@@ -9,6 +9,11 @@ set(SDL_STATIC       ON  CACHE BOOL "" FORCE)
 set(SDL_TEST_LIBRARY OFF CACHE BOOL "" FORCE)
 set(SDL_TESTS        OFF CACHE BOOL "" FORCE)
 set(SDL_EXAMPLES     OFF CACHE BOOL "" FORCE)
+# Gamepads: joystick + HIDAPI (direct PS4/PS5/Switch drivers) are SDL's defaults; forced on so a
+# cached or inherited setting cannot silently drop controller support from the static build.
+set(SDL_JOYSTICK       ON  CACHE BOOL "" FORCE)
+set(SDL_HIDAPI         ON  CACHE BOOL "" FORCE)
+set(SDL_HIDAPI_JOYSTICK ON CACHE BOOL "" FORCE)
 FetchContent_Declare(SDL3
     GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
     GIT_TAG        release-3.4.16

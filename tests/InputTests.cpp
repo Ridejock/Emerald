@@ -90,7 +90,8 @@ TEST(KeyboardReleaseAll)
 TEST(ActionsWithSeveralKeys)
 {
     Keyboard keyboard;
-    Input input(keyboard);
+    Gamepads pads;
+    Input input(keyboard, pads);
     input.BindAction("Fire", {Key::Space, Key::J});
 
     keyboard.BeginFrame();
@@ -121,7 +122,8 @@ TEST(ActionsWithSeveralKeys)
 TEST(ActionsTapAndFixedSteps)
 {
     Keyboard keyboard;
-    Input input(keyboard);
+    Gamepads pads;
+    Input input(keyboard, pads);
     input.BindAction("Fire", {Key::Space});
 
     // A tap within one frame that runs no fixed step reaches the next step exactly once.
@@ -141,7 +143,8 @@ TEST(ActionsTapAndFixedSteps)
 TEST(ActionsAxis)
 {
     Keyboard keyboard;
-    Input input(keyboard);
+    Gamepads pads;
+    Input input(keyboard, pads);
     input.BindAxis("Rotate", Key::A, Key::D);
     input.BindAxis("Rotate", Key::Left, Key::Right);
 
@@ -160,7 +163,8 @@ TEST(ActionsAxis)
 TEST(ActionsRebind)
 {
     Keyboard keyboard;
-    Input input(keyboard);
+    Gamepads pads;
+    Input input(keyboard, pads);
     input.BindAction("Thrust", {Key::W, Key::Up});
     input.BindAction("Thrust", {Key::W}); // duplicates are ignored
     CHECK(input.GetActionKeys("Thrust").size() == 2);

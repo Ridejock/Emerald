@@ -34,8 +34,8 @@ target_link_libraries(EmeraldMemoryTests PRIVATE Emerald::Emerald)
 emerald_set_warnings(EmeraldMemoryTests)
 add_test(NAME MemoryTests COMMAND EmeraldMemoryTests)
 
-# Keyboard, actions and fixed timestep; Renderer2D's CPU-side batching (no GPU needed).
-add_executable(EmeraldInputTests TestMain.cpp InputTests.cpp)
+# Keyboard, gamepads, actions and fixed timestep; Renderer2D's CPU-side batching (no GPU needed).
+add_executable(EmeraldInputTests TestMain.cpp InputTests.cpp GamepadTests.cpp)
 target_link_libraries(EmeraldInputTests PRIVATE Emerald::Emerald)
 emerald_set_warnings(EmeraldInputTests)
 add_test(NAME InputTests COMMAND EmeraldInputTests)

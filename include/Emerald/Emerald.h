@@ -9,6 +9,7 @@
 #include "Emerald/Core/Log.h"
 #include "Emerald/Core/ThreadPool.h"
 #include "Emerald/Core/Window.h"
+#include "Emerald/Input/Gamepads.h"
 #include "Emerald/Input/Input.h"
 #include "Emerald/Input/Keyboard.h"
 #include "Emerald/Math/Math.h"

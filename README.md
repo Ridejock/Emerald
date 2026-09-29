@@ -181,6 +181,17 @@ It is always built in Release and lives in `build/_shadercross`, which every pre
   `-DEMERALD_SHADER_FORMATS="SPIRV;MSL"`.
 - With the vendored build **all three formats (SPIR-V, DXIL, MSL) are produced on Linux**; DXC and its
   `libdxil` validator are built from source, so the DXIL is signed.
+- The built `dxcompiler`/`dxil` libraries are copied next to the executable (`build/_shadercross/bin/`)
+  and the tool is smoke-tested (HLSL → SPIR-V and DXIL) right after it is built. This matters on
+  Windows, which has no RPATH: without the copies `shadercross.exe` picks up another
+  `dxcompiler.dll` (Windows SDK / System32) that lacks SPIR-V codegen, and since HLSL → DXIL
+  round-trips through SPIR-V every DXIL compile fails with *"SPIR-V CodeGen not available"*.
+  If you hit that with an older checkout: pull, delete `build/_shadercross`, re-run `cmake --preset …`
+  and build.
+- Prebuilt Windows binaries: SDL_shadercross's GitHub Actions "Build" workflow uploads a
+  `SDL3_shadercross-*-windows-VC-x64` artifact (shadercross.exe with SDL3.dll, dxcompiler.dll and
+  dxil.dll beside it; downloading needs a GitHub login, artifacts expire after ~90 days). Unzip it and
+  pass `-DEMERALD_SHADERCROSS_EXECUTABLE=<dir>/bin/shadercross.exe`.
 
 ## Project layout
 

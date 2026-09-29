@@ -49,12 +49,23 @@ function(_emerald_setup_shadercross)
                 -DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}
                 -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER})
         endif()
+        # The tool dir is shared, but ExternalProject's stamps live in each engine build dir. If
+        # the tool dir is missing or predates the dxcompiler copy next to the exe (older Emerald),
+        # drop the stamps so configure + build of the tool run again instead of being skipped.
+        set(stamp_dir "${CMAKE_BINARY_DIR}/_emerald_shadercross-stamp")
+        set(dxc_lib "${CMAKE_SHARED_LIBRARY_PREFIX}dxcompiler${CMAKE_SHARED_LIBRARY_SUFFIX}")
+        if(NOT EXISTS "${EMERALD_SHADERCROSS_BUILD_DIR}/CMakeCache.txt" OR
+           NOT EXISTS "${EMERALD_SHADERCROSS_BUILD_DIR}/bin/${dxc_lib}")
+            file(REMOVE_RECURSE "${stamp_dir}")
+        endif()
         ExternalProject_Add(emerald_shadercross
+            STAMP_DIR         "${stamp_dir}"
             SOURCE_DIR        "${PROJECT_SOURCE_DIR}/tools/shadercross"
             BINARY_DIR        "${EMERALD_SHADERCROSS_BUILD_DIR}"
             CMAKE_ARGS        ${tool_args}
+            # shadercross_bundle = shadercross + dxcompiler/dxil copied next to it + smoke test.
             BUILD_COMMAND     ${CMAKE_COMMAND} --build <BINARY_DIR> --config Release
-                              --target shadercross
+                              --target shadercross_bundle
             INSTALL_COMMAND   ""
             BUILD_BYPRODUCTS  "${exe}"
             USES_TERMINAL_CONFIGURE TRUE
@@ -81,10 +92,19 @@ function(_emerald_setup_shadercross)
         execute_process(
             COMMAND "${exe}" "${probe_dir}/probe.frag.hlsl" -s HLSL -d DXIL -t fragment
                     -o "${probe_dir}/probe.dxil"
-            RESULT_VARIABLE probe_result OUTPUT_QUIET ERROR_QUIET)
+            RESULT_VARIABLE probe_result OUTPUT_VARIABLE probe_output ERROR_VARIABLE probe_output)
         if(NOT probe_result EQUAL 0)
-            message(WARNING "Emerald: '${exe}' cannot produce DXIL (no DXC?). DXIL shaders are "
-                            "skipped, so the D3D12 backend will not find its shaders.")
+            string(STRIP "${probe_output}" probe_output)
+            set(hint "")
+            if(probe_output MATCHES "SPIR-V CodeGen not available")
+                string(CONCAT hint " It loaded a dxcompiler without SPIR-V codegen (on Windows usually the "
+                         "Windows SDK's or System32's dxcompiler.dll because the one built with "
+                         "shadercross is not next to the .exe); shadercross needs it because "
+                         "HLSL -> DXIL round-trips through SPIR-V. Put the matching dxcompiler.dll "
+                         "and dxil.dll next to shadercross.")
+            endif()
+            message(WARNING "Emerald: '${exe}' cannot produce DXIL: ${probe_output}${hint} DXIL "
+                            "shaders are skipped, so the D3D12 backend will not find its shaders.")
             list(REMOVE_ITEM formats DXIL)
         endif()
     endif()

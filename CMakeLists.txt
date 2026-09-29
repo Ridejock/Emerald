@@ -20,7 +20,7 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 
 option(EMERALD_BUILD_SANDBOX "Build the sandbox example application" ON)
-option(EMERALD_USE_IMGUI     "Enable Dear ImGui (SDL3 + SDLRenderer3 backends)" OFF)
+option(EMERALD_USE_IMGUI     "Enable Dear ImGui (SDL3 + SDL GPU backends)" OFF)
 option(EMERALD_USE_ENTT      "Enable the EnTT entity-component system" OFF)
 
 include(cmake/Dependencies.cmake)

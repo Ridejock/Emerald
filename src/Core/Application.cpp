@@ -1,5 +1,7 @@
 #include "Emerald/Core/Application.h"
 
+#include <string>
+
 #include <SDL3/SDL.h>
 
 #include "Emerald/Core/Defines.h"
@@ -8,7 +10,7 @@
 #if EMERALD_WITH_IMGUI
 #include <imgui.h>
 #include <imgui_impl_sdl3.h>
-#include <imgui_impl_sdlrenderer3.h>
+#include <imgui_impl_sdlgpu3.h>
 #endif
 
 namespace Emerald {
@@ -27,13 +29,32 @@ Application::Application(const ApplicationSpec& spec) : m_Spec(spec)
     EM_CORE_INFO("SDL video driver: {}", SDL_GetCurrentVideoDriver());
 
     m_Window = std::make_unique<Window>(spec.Window);
-    if (m_Window->IsValid())
-        InitImGui();
+    if (!m_Window->IsValid())
+        return;
+
+    m_Renderer = std::make_unique<Renderer>();
+    if (!m_Renderer->Init(m_Window->GetNativeWindow(), spec.Window.VSync, spec.ShaderFormats)) {
+        EM_CORE_ERROR("Failed to create SDL GPU device: {}", SDL_GetError());
+        // Hide the (empty) main window so only the explanation is visible.
+        SDL_HideWindow(m_Window->GetNativeWindow());
+        const std::string message =
+            std::string("Emerald could not initialize the GPU.\n\n"
+                        "A graphics driver supporting Vulkan, Direct3D 12 or Metal\n"
+                        "is required. Please update your graphics drivers.\n\n"
+                        "Details: ") +
+            SDL_GetError();
+        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Emerald - unsupported GPU", message.c_str(),
+                                 nullptr);
+        return;
+    }
+    m_RendererInitialized = true;
+    InitImGui();
 }
 
 Application::~Application()
 {
     ShutdownImGui();
+    m_Renderer.reset(); // GPU device must go before the window it renders into
     m_Window.reset();
     if (m_SdlInitialized)
         SDL_Quit();
@@ -43,12 +64,11 @@ Application::~Application()
 
 int Application::Run()
 {
-    if (!m_Window || !m_Window->IsValid()) {
-        EM_CORE_ERROR("Cannot run: window/renderer initialization failed");
+    if (!m_RendererInitialized) {
+        EM_CORE_ERROR("Cannot run: window/GPU initialization failed");
         return 1;
     }
 
-    SDL_Renderer* renderer = m_Window->GetRenderer();
     m_Running = true;
     OnStart();
 
@@ -69,22 +89,7 @@ int Application::Run()
         last = now;
 
         OnUpdate(dt);
-
-#if EMERALD_WITH_IMGUI
-        ImGui_ImplSDLRenderer3_NewFrame();
-        ImGui_ImplSDL3_NewFrame();
-        ImGui::NewFrame();
-        OnImGui();
-        ImGui::Render();
-#endif
-
-        SDL_SetRenderDrawColor(renderer, 18, 24, 22, 255);
-        SDL_RenderClear(renderer);
-        OnRender();
-#if EMERALD_WITH_IMGUI
-        ImGui_ImplSDLRenderer3_RenderDrawData(ImGui::GetDrawData(), renderer);
-#endif
-        SDL_RenderPresent(renderer);
+        RenderFrame();
 
         ++m_FrameCount;
         if (m_Spec.MaxFrames != 0 && m_FrameCount >= m_Spec.MaxFrames) {
@@ -98,6 +103,34 @@ int Application::Run()
     return 0;
 }
 
+void Application::RenderFrame()
+{
+#if EMERALD_WITH_IMGUI
+    ImGui_ImplSDLGPU3_NewFrame();
+    ImGui_ImplSDL3_NewFrame();
+    ImGui::NewFrame();
+    OnImGui();
+    ImGui::Render();
+    ImDrawData* drawData = ImGui::GetDrawData();
+#endif
+
+    if (!m_Renderer->BeginFrame())
+        return; // minimized: nothing to draw this frame
+
+#if EMERALD_WITH_IMGUI
+    // Uploads ImGui's vertex/index data with a copy pass, which must happen outside a render pass.
+    ImGui_ImplSDLGPU3_PrepareDrawData(drawData, m_Renderer->GetCommandBuffer());
+#endif
+
+    SDL_GPURenderPass* pass = m_Renderer->BeginRenderPass(m_Spec.ClearColor);
+    OnRender(pass);
+#if EMERALD_WITH_IMGUI
+    ImGui_ImplSDLGPU3_RenderDrawData(drawData, m_Renderer->GetCommandBuffer(), pass);
+#endif
+    m_Renderer->EndRenderPass();
+    m_Renderer->EndFrame();
+}
+
 void Application::InitImGui()
 {
 #if EMERALD_WITH_IMGUI
@@ -108,10 +141,14 @@ void Application::InitImGui()
     io.IniFilename = nullptr;
     ImGui::StyleColorsDark();
 
-    ImGui_ImplSDL3_InitForSDLRenderer(m_Window->GetNativeWindow(), m_Window->GetRenderer());
-    ImGui_ImplSDLRenderer3_Init(m_Window->GetRenderer());
+    ImGui_ImplSDL3_InitForSDLGPU(m_Window->GetNativeWindow());
+    ImGui_ImplSDLGPU3_InitInfo info{};
+    info.Device = m_Renderer->GetDevice();
+    info.ColorTargetFormat = m_Renderer->GetSwapchainFormat(); // ImGui draws into the swapchain
+    info.MSAASamples = SDL_GPU_SAMPLECOUNT_1;
+    ImGui_ImplSDLGPU3_Init(&info);
     m_ImGuiInitialized = true;
-    EM_CORE_INFO("Dear ImGui {} initialized", IMGUI_VERSION);
+    EM_CORE_INFO("Dear ImGui {} initialized (SDL GPU backend)", IMGUI_VERSION);
 #endif
 }
 
@@ -120,7 +157,8 @@ void Application::ShutdownImGui()
 #if EMERALD_WITH_IMGUI
     if (!m_ImGuiInitialized)
         return;
-    ImGui_ImplSDLRenderer3_Shutdown();
+    SDL_WaitForGPUIdle(m_Renderer->GetDevice());
+    ImGui_ImplSDLGPU3_Shutdown();
     ImGui_ImplSDL3_Shutdown();
     ImGui::DestroyContext();
     m_ImGuiInitialized = false;

@@ -5,7 +5,6 @@
 #include "Emerald/Core/Defines.h"
 
 struct SDL_Window;
-struct SDL_Renderer;
 
 namespace Emerald {
 
@@ -14,10 +13,10 @@ struct WindowSpec {
     u32 Width = 1280;
     u32 Height = 720;
     bool Resizable = true;
-    bool VSync = true;
+    bool VSync = true; // applied by the Renderer through the swapchain present mode
 };
 
-// Owns an SDL3 window and its 2D renderer.
+// Owns an SDL3 window. Rendering into it is done by Emerald::Renderer (SDL GPU).
 class Window {
 public:
     explicit Window(const WindowSpec& spec);
@@ -26,15 +25,13 @@ public:
     Window(const Window&) = delete;
     Window& operator=(const Window&) = delete;
 
-    [[nodiscard]] bool IsValid() const { return m_Window && m_Renderer; }
+    [[nodiscard]] bool IsValid() const { return m_Window != nullptr; }
     [[nodiscard]] SDL_Window* GetNativeWindow() const { return m_Window; }
-    [[nodiscard]] SDL_Renderer* GetRenderer() const { return m_Renderer; }
     [[nodiscard]] const WindowSpec& GetSpec() const { return m_Spec; }
 
 private:
     WindowSpec m_Spec;
     SDL_Window* m_Window = nullptr;
-    SDL_Renderer* m_Renderer = nullptr;
 };
 
 } // namespace Emerald

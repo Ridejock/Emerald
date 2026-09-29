@@ -1,6 +1,7 @@
 #include "Emerald/Assets/Image.h"
 
 #include <stb_image.h>
+#include <stb_image_write.h>
 
 #include "Emerald/Core/Log.h"
 
@@ -39,6 +40,13 @@ std::optional<Image> Image::LoadFromMemory(const u8* data, usize size)
     if (!pixels)
         EM_CORE_ERROR("Failed to decode image from memory: {}", stbi_failure_reason());
     return FromStb(pixels, w, h);
+}
+
+bool Image::SavePNG(const std::filesystem::path& path) const
+{
+    if (Width <= 0 || Height <= 0 || Pixels.size() != static_cast<usize>(Width) * Height * 4)
+        return false;
+    return stbi_write_png(path.string().c_str(), Width, Height, 4, Pixels.data(), Width * 4) != 0;
 }
 
 } // namespace Emerald

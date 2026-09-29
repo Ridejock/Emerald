@@ -7,3 +7,6 @@
 #include "Emerald/Core/Application.h"
 #include "Emerald/Core/Log.h"
 #include "Emerald/Core/Window.h"
+#include "Emerald/Renderer/Pipeline.h"
+#include "Emerald/Renderer/Renderer.h"
+#include "Emerald/Renderer/Shader.h"

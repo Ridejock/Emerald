@@ -16,6 +16,9 @@ struct Image {
 
     static std::optional<Image> LoadFromFile(const std::filesystem::path& path);
     static std::optional<Image> LoadFromMemory(const u8* data, usize size);
+
+    // Writes the image as a PNG (stb_image_write). Returns false on failure.
+    [[nodiscard]] bool SavePNG(const std::filesystem::path& path) const;
 };
 
 } // namespace Emerald

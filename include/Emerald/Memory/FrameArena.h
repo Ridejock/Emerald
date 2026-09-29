@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <memory_resource>
+#include <optional>
 #include <thread>
 
 #include "Emerald/Core/Defines.h"
@@ -15,7 +16,10 @@ namespace Emerald {
 //   PmrVector<Mat4> transforms(app.GetFrameAllocator()); // valid until the next frame starts
 //
 // Built on std::pmr::monotonic_buffer_resource. Application owns one and calls Reset() at the
-// start of every frame, so memory from it must not be kept across frames.
+// start of every frame, so memory from it must not be kept across frames. Reset() rebuilds the
+// monotonic resource instead of calling its release(): MSVC's release() does not go back to the
+// initial buffer (LWG 3120, microsoft/STL#1468), which sent every frame after the first to the
+// heap there.
 //
 // Overflow policy: if a frame needs more than `capacity` bytes, the extra comes from the heap
 // (new/delete) instead of failing, and a warning is logged the first time it happens. Using
@@ -36,7 +40,7 @@ public:
         usize LastFrameBytes = 0; // BytesUsed at the last Reset, i.e. of the previous frame
         usize PeakBytes = 0;      // highest BytesUsed of any frame so far
         usize OverflowBytes = 0;  // heap memory taken since the last Reset (0 = fits)
-        u64 OverflowFrames = 0;   // how many frames needed the heap
+        u64 OverflowFrames = 0;   // frames whose allocations did not fit and used the heap
     };
 
     explicit FrameArena(usize capacity);
@@ -79,7 +83,8 @@ private:
     std::unique_ptr<std::byte[]> m_Buffer;
     usize m_Capacity;
     OverflowResource m_Overflow;
-    std::pmr::monotonic_buffer_resource m_Arena; // declared after its buffer and upstream
+    // Declared after its buffer and upstream; optional so Reset() can rebuild it in place.
+    std::optional<std::pmr::monotonic_buffer_resource> m_Arena;
     usize m_BytesUsed = 0;
     usize m_Allocations = 0;
     usize m_LastFrameBytes = 0;

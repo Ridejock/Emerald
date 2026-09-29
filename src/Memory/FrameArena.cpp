@@ -8,9 +8,10 @@ namespace Emerald {
 
 FrameArena::FrameArena(usize capacity)
     : m_Buffer(std::make_unique<std::byte[]>(capacity)), m_Capacity(capacity),
-      m_Arena(m_Buffer.get(), capacity, &m_Overflow), m_Owner(std::this_thread::get_id())
+      m_Owner(std::this_thread::get_id())
 {
     m_Overflow.Capacity = capacity;
+    m_Arena.emplace(m_Buffer.get(), capacity, &m_Overflow);
 }
 
 FrameArena::~FrameArena() = default;
@@ -25,7 +26,7 @@ void FrameArena::CheckThread() const
 void* FrameArena::do_allocate(usize bytes, usize alignment)
 {
     CheckThread();
-    void* p = m_Arena.allocate(bytes, alignment);
+    void* p = m_Arena->allocate(bytes, alignment);
     m_BytesUsed += bytes;
     ++m_Allocations;
     if (m_BytesUsed > m_PeakBytes)
@@ -36,7 +37,7 @@ void* FrameArena::do_allocate(usize bytes, usize alignment)
 void FrameArena::do_deallocate(void* p, usize bytes, usize alignment)
 {
     // A monotonic resource ignores individual frees; memory comes back on Reset().
-    m_Arena.deallocate(p, bytes, alignment);
+    m_Arena->deallocate(p, bytes, alignment);
 }
 
 void FrameArena::Reset()
@@ -44,8 +45,10 @@ void FrameArena::Reset()
     CheckThread();
     if (m_Overflow.Bytes > 0)
         ++m_OverflowFrames;
-    // release() hands the overflow chunks back to the heap and rewinds to the initial buffer.
-    m_Arena.release();
+    // Destroying the resource hands the overflow chunks back to the heap; the new one starts at
+    // the beginning of the buffer again. (Not release(): see the header.)
+    m_Arena.reset();
+    m_Arena.emplace(m_Buffer.get(), m_Capacity, &m_Overflow);
     m_Overflow.Bytes = 0;
     m_LastFrameBytes = m_BytesUsed;
     m_BytesUsed = 0;

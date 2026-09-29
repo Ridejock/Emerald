@@ -268,9 +268,10 @@ protected:
         ImGui::Separator();
         ImGui::Text("Workers: %u", GetThreadPool().GetThreadCount());
         const Emerald::FrameArena::Stats arena = GetFrameArena().GetStats();
-        ImGui::Text("Frame arena: %zu B last frame, peak %zu / %zu B", arena.LastFrameBytes,
-                    arena.PeakBytes, arena.Capacity);
-        ImGui::Text("Frames over capacity: %llu",
+        ImGui::Text("Frame arena: %zu B last frame, peak %zu B of %zu KiB", arena.LastFrameBytes,
+                    arena.PeakBytes, arena.Capacity / 1024);
+        // Frames whose arena allocations did not fit and went to the heap (should stay 0).
+        ImGui::Text("Frames that spilled to the heap: %llu",
                     static_cast<unsigned long long>(arena.OverflowFrames));
         const Emerald::TrackingResource::Stats pools = GetPoolStats();
         ImGui::Text("Pools: %zu B in use (peak %zu B), %zu chunks", pools.BytesInUse,

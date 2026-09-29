@@ -70,6 +70,21 @@ TEST(FrameArenaOverflowFallsBackToHeap)
     CHECK(arena.allocate(128, 8) == inBuffer);
 }
 
+// Regression test: MSVC's monotonic_buffer_resource::release() does not rewind to the initial
+// buffer, so after the first Reset() every small allocation used to count as heap overflow.
+TEST(FrameArenaManyResetsStayInBuffer)
+{
+    FrameArena arena(1024);
+    void* first = arena.allocate(256, 16);
+    for (i32 frame = 0; frame < 100; ++frame) {
+        arena.Reset();
+        void* p = arena.allocate(256, 16);
+        CHECK(p == first);
+    }
+    CHECK(arena.GetStats().OverflowFrames == 0);
+    CHECK(arena.GetStats().OverflowBytes == 0);
+}
+
 TEST(PmrContainersUseTheResource)
 {
     TrackingResource tracker;

@@ -14,4 +14,5 @@
 #include "Emerald/Memory/Memory.h"
 #include "Emerald/Renderer/Pipeline.h"
 #include "Emerald/Renderer/Renderer.h"
+#include "Emerald/Renderer/Renderer2D.h"
 #include "Emerald/Renderer/Shader.h"

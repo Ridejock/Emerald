@@ -34,8 +34,13 @@ target_link_libraries(EmeraldMemoryTests PRIVATE Emerald::Emerald)
 emerald_set_warnings(EmeraldMemoryTests)
 add_test(NAME MemoryTests COMMAND EmeraldMemoryTests)
 
-# Keyboard edge tracking and the fixed timestep.
+# Keyboard edge tracking + fixed timestep, and Renderer2D's CPU-side batching (no GPU needed).
 add_executable(EmeraldInputTests TestMain.cpp InputTests.cpp)
 target_link_libraries(EmeraldInputTests PRIVATE Emerald::Emerald)
 emerald_set_warnings(EmeraldInputTests)
 add_test(NAME InputTests COMMAND EmeraldInputTests)
+
+add_executable(EmeraldRenderer2DTests TestMain.cpp Renderer2DTests.cpp)
+target_link_libraries(EmeraldRenderer2DTests PRIVATE Emerald::Emerald)
+emerald_set_warnings(EmeraldRenderer2DTests)
+add_test(NAME Renderer2DTests COMMAND EmeraldRenderer2DTests)

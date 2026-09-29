@@ -75,6 +75,7 @@ add_library(Emerald STATIC
     src/Renderer/Renderer.cpp
     src/Renderer/Shader.cpp
     src/Renderer/Pipeline.cpp
+    src/Renderer/Renderer2D.cpp
     src/Assets/Image.cpp
     src/Vendor/stb_image.cpp
     src/Vendor/stb_image_write.cpp

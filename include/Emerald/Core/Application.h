@@ -15,6 +15,7 @@
 #include "Emerald/Memory/FrameArena.h"
 #include "Emerald/Memory/TrackingResource.h"
 #include "Emerald/Renderer/Renderer.h"
+#include "Emerald/Renderer/Renderer2D.h"
 
 #if EMERALD_WITH_ENTT
 #include <entt/entt.hpp>
@@ -68,6 +69,7 @@ public:
 
     [[nodiscard]] Window& GetWindow() { return *m_Window; }
     [[nodiscard]] Renderer& GetRenderer() { return *m_Renderer; }
+    [[nodiscard]] Renderer2D& GetRenderer2D() { return *m_Renderer2D; }
     [[nodiscard]] const Input& GetInput() const { return m_Input; }
     [[nodiscard]] u64 GetFrameCount() const { return m_FrameCount; }
 
@@ -110,8 +112,11 @@ protected:
     virtual void OnFixedUpdate(f32 /*dt*/) {}
     // Once per frame with the real (variable) frame time.
     virtual void OnUpdate(f32 /*deltaSeconds*/) {}
+    // Record 2D shapes (Begin / Draw* / End, see Renderer2D.h). Runs before the render pass
+    // starts; the shapes are uploaded and then drawn after OnRender, below the ImGui overlay.
+    virtual void OnRender2D(Renderer2D& /*renderer2D*/) {}
     // Record draw calls into the frame's main render pass (already cleared to ClearColor).
-    // Not called for frames that are skipped, e.g. while the window is minimized.
+    // OnRender2D/OnRender are not called for skipped frames, e.g. while the window is minimized.
     virtual void OnRender(SDL_GPURenderPass* /*renderPass*/) {}
     virtual void OnImGui() {} // Only called when built with EMERALD_USE_IMGUI=ON
     // Release GPU resources here; the renderer is still alive.
@@ -135,6 +140,7 @@ private:
 
     std::unique_ptr<Window> m_Window;
     std::unique_ptr<Renderer> m_Renderer;
+    std::unique_ptr<Renderer2D> m_Renderer2D;
     Input m_Input;
     FixedTimestep m_FixedTimestep;
     bool m_SdlInitialized = false;

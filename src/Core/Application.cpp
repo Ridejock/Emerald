@@ -54,6 +54,10 @@ Application::Application(const ApplicationSpec& spec)
         return;
     }
     m_RendererInitialized = true;
+
+    // Not fatal if it fails (logged): the app still runs, only 2D shapes are not drawn.
+    m_Renderer2D = std::make_unique<Renderer2D>();
+    m_Renderer2D->Init(m_Renderer->GetDevice(), m_Renderer->GetSwapchainFormat());
     InitImGui();
 }
 
@@ -61,6 +65,7 @@ Application::~Application()
 {
     m_ThreadPool.reset(); // stops and joins the workers while everything they might use exists
     ShutdownImGui();
+    m_Renderer2D.reset();
     m_Renderer.reset(); // GPU device must go before the window it renders into
     m_Window.reset();
     if (m_SdlInitialized)
@@ -167,15 +172,21 @@ void Application::RenderFrame()
     if (!m_Renderer->BeginFrame())
         return; // minimized: nothing to draw this frame
 
+    // Copy passes (uploads) must happen before the render pass: first record the app's 2D shapes
+    // and upload them, then ImGui's vertex/index data.
+    SDL_GPUCommandBuffer* cmd = m_Renderer->GetCommandBuffer();
+    OnRender2D(*m_Renderer2D);
+    m_Renderer2D->Upload(cmd);
 #if EMERALD_WITH_IMGUI
-    // Uploads ImGui's vertex/index data with a copy pass, which must happen outside a render pass.
-    ImGui_ImplSDLGPU3_PrepareDrawData(drawData, m_Renderer->GetCommandBuffer());
+    ImGui_ImplSDLGPU3_PrepareDrawData(drawData, cmd);
 #endif
 
+    // Draw order: the app's own draw calls, then the 2D shapes, then the ImGui overlay on top.
     SDL_GPURenderPass* pass = m_Renderer->BeginRenderPass(m_Spec.ClearColor);
     OnRender(pass);
+    m_Renderer2D->Render(cmd, pass);
 #if EMERALD_WITH_IMGUI
-    ImGui_ImplSDLGPU3_RenderDrawData(drawData, m_Renderer->GetCommandBuffer(), pass);
+    ImGui_ImplSDLGPU3_RenderDrawData(drawData, cmd, pass);
 #endif
     m_Renderer->EndRenderPass();
     m_Renderer->EndFrame();

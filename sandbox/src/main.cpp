@@ -15,42 +15,48 @@
 
 namespace {
 
+using Emerald::Mat4;
+using Emerald::Vec2;
+using Emerald::Vec3;
+
 // Layout of one vertex in the vertex buffer; must match `Input` in Triangle.vert.hlsl.
 struct Vertex {
-    f32 X, Y;    // TEXCOORD0: position in normalized device coordinates (-1..1)
-    f32 R, G, B; // TEXCOORD1: color
+    Vec2 Position; // TEXCOORD0: model-space position
+    Vec3 Color;    // TEXCOORD1
 };
 
-// Uniform data pushed per draw; must match `cbuffer Transform` in Triangle.vert.hlsl.
-struct Transform {
-    f32 OffsetX = 0.0f, OffsetY = 0.0f;
-    f32 ScaleX = 1.0f, ScaleY = 1.0f;
+// Uniform data pushed per draw; must match `cbuffer Uniforms` in Triangle.vert.hlsl.
+// Mat4 is column-major like HLSL's float4x4, so it can be copied as-is.
+struct Uniforms {
+    Mat4 Transform; // projection * model
 };
 
+// Equilateral triangle around the origin with radius 1, in a y-down space (top vertex at y = -1)
+// to match the pixel-space projection used for drawing.
 constexpr std::array<Vertex, 3> kTriangle{{
-    {0.0f, 0.6f, 1.0f, 0.2f, 0.2f},   // top: red
-    {-0.6f, -0.5f, 0.2f, 1.0f, 0.3f}, // bottom left: green
-    {0.6f, -0.5f, 0.2f, 0.4f, 1.0f},  // bottom right: blue
+    {{0.0f, -1.0f}, {1.0f, 0.2f, 0.2f}},   // top: red
+    {{-0.866f, 0.5f}, {0.2f, 1.0f, 0.3f}}, // bottom left: green
+    {{0.866f, 0.5f}, {0.2f, 0.4f, 1.0f}},  // bottom right: blue
 }};
 
 #if EMERALD_WITH_ENTT
-// Unit quad with its top-left corner at the origin (y points up in NDC, so it extends down).
-constexpr f32 kG = 0.8f, kR = 0.18f, kB = 0.44f; // emerald green
+// Unit quad from (0, 0) (top-left) to (1, 1) (bottom-right) in pixel space (+Y down).
+constexpr Vec3 kEmerald{0.18f, 0.8f, 0.44f};
 constexpr std::array<Vertex, 6> kQuad{{
-    {0.0f, 0.0f, kR, kG, kB},
-    {1.0f, 0.0f, kR, kG, kB},
-    {1.0f, -1.0f, kR, kG, kB},
-    {0.0f, 0.0f, kR, kG, kB},
-    {1.0f, -1.0f, kR, kG, kB},
-    {0.0f, -1.0f, kR, kG, kB},
+    {{0.0f, 0.0f}, kEmerald},
+    {{1.0f, 0.0f}, kEmerald},
+    {{1.0f, 1.0f}, kEmerald},
+    {{0.0f, 0.0f}, kEmerald},
+    {{1.0f, 1.0f}, kEmerald},
+    {{0.0f, 1.0f}, kEmerald},
 }};
 constexpr f32 kQuadSize = 50.0f; // pixels
 
 struct Position {
-    f32 X = 0.0f, Y = 0.0f; // pixels, top-left origin
+    Vec2 Value; // pixels, top-left origin
 };
 struct Velocity {
-    f32 X = 0.0f, Y = 0.0f;
+    Vec2 Value; // pixels per second
 };
 #endif
 
@@ -78,8 +84,8 @@ protected:
 #if EMERALD_WITH_ENTT
         auto& registry = GetRegistry();
         const auto entity = registry.create();
-        registry.emplace<Position>(entity, 100.0f, 100.0f);
-        registry.emplace<Velocity>(entity, 120.0f, 80.0f);
+        registry.emplace<Position>(entity, Vec2(100.0f, 100.0f));
+        registry.emplace<Velocity>(entity, Vec2(120.0f, 80.0f));
         EM_INFO("EnTT enabled: created entity {}", static_cast<u32>(entity));
 #endif
     }
@@ -100,15 +106,14 @@ protected:
             GetRenderer().RequestScreenshot(m_Options.ScreenshotPath);
 
 #if EMERALD_WITH_ENTT
-        i32 w = 0, h = 0;
-        SDL_GetWindowSize(GetWindow().GetNativeWindow(), &w, &h);
+        // Bounce the quads off the window edges.
+        const Vec2 limit = GetWindowSize() - Vec2(kQuadSize);
         GetRegistry().view<Position, Velocity>().each([&](Position& p, Velocity& v) {
-            p.X += v.X * dt;
-            p.Y += v.Y * dt;
-            if (p.X < 0.0f || p.X > static_cast<f32>(w) - kQuadSize)
-                v.X = -v.X;
-            if (p.Y < 0.0f || p.Y > static_cast<f32>(h) - kQuadSize)
-                v.Y = -v.Y;
+            p.Value += v.Value * dt;
+            if (p.Value.x < 0.0f || p.Value.x > limit.x)
+                v.Value.x = -v.Value.x;
+            if (p.Value.y < 0.0f || p.Value.y > limit.y)
+                v.Value.y = -v.Value.y;
         });
 #endif
     }
@@ -118,25 +123,32 @@ protected:
         SDL_GPUCommandBuffer* cmd = GetRenderer().GetCommandBuffer();
         SDL_BindGPUGraphicsPipeline(pass, m_Pipeline);
 
-        // The triangle: identity transform. Uniform data is pushed into the command buffer and
-        // applies to the draws that follow (slot 0 = register(b0, space1)).
-        const Transform identity;
-        SDL_PushGPUVertexUniformData(cmd, 0, &identity, sizeof(identity));
+        // Everything is drawn in pixel space: (0, 0) top-left, window size bottom-right, +Y down.
+        // Window size is in the same units as mouse/window coordinates; the projection maps it to
+        // the whole swapchain whatever its pixel size.
+        const Vec2 size = GetWindowSize();
+        const Mat4 projection = Mat4::OrthoPixelSpace(size.x, size.y);
+
+        // The triangle: scaled to 40% of the window, slowly rotating, centered. Read right to
+        // left: scale the unit triangle, rotate it, move it to the center, then project.
+        const f32 radius = 0.4f * Emerald::Min(size.x, size.y);
+        const Mat4 model =
+            Mat4::Translate(size * 0.5f) * Mat4::RotateZ(0.5f * m_Time) * Mat4::Scale(Vec2(radius));
+        // Uniform data is pushed into the command buffer and applies to the draws that follow
+        // (slot 0 = register(b0, space1)).
+        const Uniforms triangleUniforms{projection * model};
+        SDL_PushGPUVertexUniformData(cmd, 0, &triangleUniforms, sizeof(triangleUniforms));
         const SDL_GPUBufferBinding triangle{m_TriangleBuffer, 0};
         SDL_BindGPUVertexBuffers(pass, 0, &triangle, 1);
         SDL_DrawGPUPrimitives(pass, static_cast<u32>(kTriangle.size()), 1, 0, 0);
 
 #if EMERALD_WITH_ENTT
-        // One quad per entity, positioned by converting its pixel position to NDC.
-        i32 w = 0, h = 0;
-        SDL_GetWindowSize(GetWindow().GetNativeWindow(), &w, &h);
-        const f32 fw = static_cast<f32>(w), fh = static_cast<f32>(h);
+        // One quad per entity: the unit quad scaled to kQuadSize pixels and moved to its position.
         const SDL_GPUBufferBinding quad{m_QuadBuffer, 0};
         SDL_BindGPUVertexBuffers(pass, 0, &quad, 1);
         GetRegistry().view<Position>().each([&](const Position& p) {
-            const Transform t{p.X / fw * 2.0f - 1.0f, 1.0f - p.Y / fh * 2.0f, kQuadSize / fw * 2.0f,
-                              kQuadSize / fh * 2.0f};
-            SDL_PushGPUVertexUniformData(cmd, 0, &t, sizeof(t));
+            const Uniforms u{projection * Mat4::Translate(p.Value) * Mat4::Scale(kQuadSize)};
+            SDL_PushGPUVertexUniformData(cmd, 0, &u, sizeof(u));
             SDL_DrawGPUPrimitives(pass, static_cast<u32>(kQuad.size()), 1, 0, 0);
         });
 #endif
@@ -167,6 +179,13 @@ protected:
     }
 
 private:
+    [[nodiscard]] Vec2 GetWindowSize()
+    {
+        i32 w = 0, h = 0;
+        SDL_GetWindowSize(GetWindow().GetNativeWindow(), &w, &h);
+        return {static_cast<f32>(w), static_cast<f32>(h)};
+    }
+
     bool CreateGpuResources()
     {
         Emerald::Renderer& renderer = GetRenderer();
@@ -187,11 +206,11 @@ private:
             {.location = 0, // TEXCOORD0
              .buffer_slot = 0,
              .format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2,
-             .offset = offsetof(Vertex, X)},
+             .offset = offsetof(Vertex, Position)},
             {.location = 1, // TEXCOORD1
              .buffer_slot = 0,
              .format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3,
-             .offset = offsetof(Vertex, R)},
+             .offset = offsetof(Vertex, Color)},
         };
 
         if (vertex && fragment) {

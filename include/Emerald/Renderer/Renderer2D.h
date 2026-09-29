@@ -54,6 +54,9 @@ public:
         Mat4 ViewProjection;
         u32 FirstVertex = 0;
         u32 VertexCount = 0;
+        // Explicit padding to a multiple of Mat4's 16-byte alignment; implicit padding caused by
+        // an alignas member triggers MSVC warning C4324 at /W4.
+        u32 Padding[2]{};
     };
 
     Renderer2D() = default;

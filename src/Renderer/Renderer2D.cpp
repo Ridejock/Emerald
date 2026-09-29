@@ -95,7 +95,10 @@ void Renderer2D::Shutdown()
 void Renderer2D::Begin(const Mat4& viewProjection)
 {
     assert(!m_InBatch && "Renderer2D::Begin called twice without End");
-    m_Batches.push_back({viewProjection, static_cast<u32>(m_Vertices.size()), 0});
+    Batch batch;
+    batch.ViewProjection = viewProjection;
+    batch.FirstVertex = static_cast<u32>(m_Vertices.size());
+    m_Batches.push_back(batch);
     m_InBatch = true;
 }
 

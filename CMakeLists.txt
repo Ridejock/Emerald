@@ -22,9 +22,32 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 option(EMERALD_BUILD_SANDBOX "Build the sandbox example application" ON)
 option(EMERALD_USE_IMGUI     "Enable Dear ImGui (SDL3 + SDL GPU backends)" OFF)
 option(EMERALD_USE_ENTT      "Enable the EnTT entity-component system" OFF)
+option(EMERALD_MATH_SIMD     "Use the SSE code paths of the math library on x86/x64" ON)
 
 include(cmake/Dependencies.cmake)
 include(cmake/Shaders.cmake)
+
+# Warning flags for Emerald's own targets (not third-party code).
+function(emerald_set_warnings target)
+    if(MSVC)
+        target_compile_options(${target} PRIVATE /W4 /permissive-)
+    else()
+        target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+endfunction()
+
+# ---------------------------------------------------------------------------
+# Math library (header-only, include/Emerald/Math/)
+# ---------------------------------------------------------------------------
+add_library(EmeraldMath INTERFACE)
+add_library(Emerald::Math ALIAS EmeraldMath)
+target_include_directories(EmeraldMath INTERFACE
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>
+)
+target_compile_features(EmeraldMath INTERFACE cxx_std_20)
+# Public, so every target including the math headers agrees on the implementation.
+target_compile_definitions(EmeraldMath INTERFACE EMERALD_MATH_SIMD=$<BOOL:${EMERALD_MATH_SIMD}>)
 
 # ---------------------------------------------------------------------------
 # Engine library
@@ -48,7 +71,7 @@ target_include_directories(Emerald PUBLIC
 )
 
 target_link_libraries(Emerald
-    PUBLIC  SDL3::SDL3 spdlog::spdlog
+    PUBLIC  Emerald::Math SDL3::SDL3 spdlog::spdlog
     PRIVATE Emerald::stb
 )
 
@@ -64,11 +87,7 @@ if(EMERALD_USE_ENTT)
     target_link_libraries(Emerald PUBLIC EnTT::EnTT)
 endif()
 
-if(MSVC)
-    target_compile_options(Emerald PRIVATE /W4 /permissive-)
-else()
-    target_compile_options(Emerald PRIVATE -Wall -Wextra -Wpedantic)
-endif()
+emerald_set_warnings(Emerald)
 
 # ---------------------------------------------------------------------------
 # Sandbox

@@ -7,8 +7,4 @@ emerald_add_shaders(Sandbox
     ${PROJECT_SOURCE_DIR}/shaders/Triangle.frag.hlsl
 )
 
-if(MSVC)
-    target_compile_options(Sandbox PRIVATE /W4 /permissive-)
-else()
-    target_compile_options(Sandbox PRIVATE -Wall -Wextra -Wpedantic)
-endif()
+emerald_set_warnings(Sandbox)

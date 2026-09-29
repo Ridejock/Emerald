@@ -50,7 +50,10 @@ void Log::Init(const std::filesystem::path& file)
     std::string fileError;
     if (!file.empty()) {
         try {
-            const std::filesystem::path path = ResolveLogPath(file);
+            // make_preferred: native separators, so on Windows the log shows C:\...\logs\x.log
+            // instead of mixing in the '/' from "logs/x.log".
+            std::filesystem::path path = ResolveLogPath(file);
+            path.make_preferred();
             if (path.has_parent_path())
                 std::filesystem::create_directories(path.parent_path()); // throws on failure
             // truncate = true: every run starts with a fresh file.
@@ -75,8 +78,8 @@ void Log::Init(const std::filesystem::path& file)
     }
 
     if (!fileError.empty())
-        EM_CORE_WARN("Could not open log file '{}', logging to the console only: {}", file.string(),
-                     fileError);
+        EM_CORE_WARN("Could not open log file '{}', logging to the console only: {}",
+                     std::filesystem::path(file).make_preferred().string(), fileError);
     else if (!s_FilePath.empty())
         EM_CORE_INFO("Logging to {}", s_FilePath.string());
 }

@@ -36,7 +36,8 @@ struct Transform2D {
 //       r.DrawPolygon(shipPoints, color, {.Position = pos, .Rotation = angle});
 //       r.DrawCircle({400, 300}, 50, color);
 //       r.End();
-//       r.Begin(hudProjection); ... r.End(); // more batches with other projections are fine
+//       r.Begin(hudProjection, clipRect); ... r.End(); // more batches, other projections or clip
+//                                                       // rectangles are fine
 //   }
 //
 // Why the split: SDL GPU uploads need a copy pass, and copy passes cannot run inside a render
@@ -52,6 +53,7 @@ public:
     // One Begin/End pair: a range of vertices drawn with one view-projection matrix.
     struct Batch {
         Mat4 ViewProjection;
+        SDL_Rect Clip{}; // render-target pixels; w or h == 0: no clipping
         u32 FirstVertex = 0;
         u32 VertexCount = 0;
         // Explicit padding to a multiple of Mat4's 16-byte alignment; implicit padding caused by
@@ -72,7 +74,9 @@ public:
     void Shutdown();
 
     // --- Recording (CPU only) ---
-    void Begin(const Mat4& viewProjection);
+    // `clip` (optional) limits the batch to a rectangle of the render target, in pixels with
+    // (0, 0) at the top-left, e.g. to keep a letterboxed playfield out of the black bars.
+    void Begin(const Mat4& viewProjection, const SDL_Rect& clip = {});
     void End();
 
     void DrawLine(const Vec2& a, const Vec2& b, const Vec4& color);
@@ -88,8 +92,10 @@ public:
     // --- GPU side (the Application calls these) ---
     // Copies this frame's vertices to the GPU. Must be called outside of any render pass.
     void Upload(SDL_GPUCommandBuffer* commandBuffer);
-    // Draws the uploaded batches into `renderPass`, then clears everything for the next frame.
-    void Render(SDL_GPUCommandBuffer* commandBuffer, SDL_GPURenderPass* renderPass);
+    // Draws the uploaded batches into `renderPass`, whose target is targetWidth x targetHeight
+    // pixels, then clears everything for the next frame.
+    void Render(SDL_GPUCommandBuffer* commandBuffer, SDL_GPURenderPass* renderPass, u32 targetWidth,
+                u32 targetHeight);
     // Drops everything recorded so far (Render does this too).
     void Clear();
 

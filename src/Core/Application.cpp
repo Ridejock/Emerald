@@ -184,7 +184,7 @@ void Application::RenderFrame()
     // Draw order: the app's own draw calls, then the 2D shapes, then the ImGui overlay on top.
     SDL_GPURenderPass* pass = m_Renderer->BeginRenderPass(m_Spec.ClearColor);
     OnRender(pass);
-    m_Renderer2D->Render(cmd, pass);
+    m_Renderer2D->Render(cmd, pass, m_Renderer->GetFrameWidth(), m_Renderer->GetFrameHeight());
 #if EMERALD_WITH_IMGUI
     ImGui_ImplSDLGPU3_RenderDrawData(drawData, cmd, pass);
 #endif

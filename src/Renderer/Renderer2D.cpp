@@ -92,11 +92,12 @@ void Renderer2D::Shutdown()
     m_Device = nullptr;
 }
 
-void Renderer2D::Begin(const Mat4& viewProjection)
+void Renderer2D::Begin(const Mat4& viewProjection, const SDL_Rect& clip)
 {
     assert(!m_InBatch && "Renderer2D::Begin called twice without End");
     Batch batch;
     batch.ViewProjection = viewProjection;
+    batch.Clip = clip;
     batch.FirstVertex = static_cast<u32>(m_Vertices.size());
     m_Batches.push_back(batch);
     m_InBatch = true;
@@ -250,7 +251,8 @@ void Renderer2D::Upload(SDL_GPUCommandBuffer* commandBuffer)
     m_Uploaded = true;
 }
 
-void Renderer2D::Render(SDL_GPUCommandBuffer* commandBuffer, SDL_GPURenderPass* renderPass)
+void Renderer2D::Render(SDL_GPUCommandBuffer* commandBuffer, SDL_GPURenderPass* renderPass,
+                        u32 targetWidth, u32 targetHeight)
 {
     m_LastFrameLines = m_Uploaded ? GetLineCount() : 0;
     if (m_Uploaded) {
@@ -260,6 +262,15 @@ void Renderer2D::Render(SDL_GPUCommandBuffer* commandBuffer, SDL_GPURenderPass* 
         for (const Batch& batch : m_Batches) {
             if (batch.VertexCount == 0)
                 continue;
+            // The scissor rectangle stays set for later draws, so set it for every batch: the
+            // clip rectangle (kept inside the target, as Metal requires), or the whole target.
+            const SDL_Rect full{0, 0, static_cast<i32>(targetWidth),
+                                static_cast<i32>(targetHeight)};
+            SDL_Rect scissor = full;
+            if (batch.Clip.w > 0 && batch.Clip.h > 0 &&
+                !SDL_GetRectIntersection(&batch.Clip, &full, &scissor))
+                continue; // clipped away entirely
+            SDL_SetGPUScissor(renderPass, &scissor);
             // Uniform slot 0 = register(b0, space1) in Renderer2D.vert.hlsl.
             SDL_PushGPUVertexUniformData(commandBuffer, 0, &batch.ViewProjection, sizeof(Mat4));
             SDL_DrawGPUPrimitives(renderPass, batch.VertexCount, 1, batch.FirstVertex, 0);

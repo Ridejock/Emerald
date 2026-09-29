@@ -351,7 +351,10 @@ void OnRender2D(Emerald::Renderer2D& r) override
 Why a separate hook instead of drawing in `OnRender`: uploads need a copy pass, and SDL GPU does not
 allow copy passes inside a render pass. So the shapes are recorded first, the Application uploads
 them before `BeginRenderPass`, and draws them inside it (after `OnRender`, below ImGui). Several
-`Begin`/`End` batches per frame are fine (e.g. world and HUD with different projections).
+`Begin`/`End` batches per frame are fine (e.g. world and HUD with different projections), and
+`Begin(viewProjection, clip)` takes an optional `SDL_Rect` clip rectangle in render-target pixels
+(e.g. to keep a letterboxed playfield out of the black bars; `GetRenderer().GetFrameWidth()/Height()`
+give the target size inside `OnRender2D`).
 `Transform2D` applies scale, then rotation (radians, clockwise on screen in y-down space), then
 position. The recording side needs no GPU, which is what `Renderer2DTests` checks.
 

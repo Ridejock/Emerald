@@ -35,7 +35,7 @@ TEST(Renderer2DBatches)
     r.DrawPolygon(triangle, kWhite, {.Position = {5.0f, 5.0f}});
     r.End();
 
-    r.Begin(Mat4::OrthoPixelSpace(100.0f, 100.0f));
+    r.Begin(Mat4::OrthoPixelSpace(100.0f, 100.0f), {10, 20, 30, 40});
     r.DrawCircle({0.0f, 0.0f}, 10.0f, kWhite, 16);
     r.DrawPolyline(triangle, kWhite); // open: 2 segments
     r.DrawRect({0.0f, 0.0f}, {4.0f, 2.0f}, kWhite);
@@ -45,6 +45,9 @@ TEST(Renderer2DBatches)
     CHECK(batches.size() == 2);
     CHECK(batches[0].FirstVertex == 0 && batches[0].VertexCount == 2 + 6);
     CHECK(batches[1].FirstVertex == 8 && batches[1].VertexCount == 32 + 4 + 8);
+    CHECK(batches[0].Clip.w == 0); // no clip rectangle by default
+    CHECK(batches[1].Clip.x == 10 && batches[1].Clip.y == 20 && batches[1].Clip.w == 30 &&
+          batches[1].Clip.h == 40);
     CHECK(r.GetLineCount() == 4 + 22);
 
     // The polygon is closed and moved: its last segment ends at the (moved) first point.

@@ -19,9 +19,11 @@
 
 namespace {
 
+using Emerald::Key;
 using Emerald::Mat4;
 using Emerald::Vec2;
 using Emerald::Vec3;
+using Emerald::Vec4;
 
 // Layout of one vertex in the vertex buffer; must match `Input` in Triangle.vert.hlsl.
 struct Vertex {
@@ -71,6 +73,23 @@ struct DrawItem {
     u32 VertexCount = 0;
 };
 
+// A small arrow-shaped marker for the input demo, pointing along +X (model space, pixels).
+constexpr std::array<Vec2, 4> kArrow{
+    {{14.0f, 0.0f}, {-10.0f, -9.0f}, {-5.0f, 0.0f}, {-10.0f, 9.0f}}};
+
+// A five-pointed star (alternating outer/inner radius), built once at startup.
+std::array<Vec2, 10> MakeStar()
+{
+    std::array<Vec2, 10> points{};
+    for (usize i = 0; i < points.size(); ++i) {
+        const f32 angle = Emerald::TwoPi * static_cast<f32>(i) / 10.0f - Emerald::HalfPi;
+        const f32 radius = (i % 2 == 0) ? 1.0f : 0.45f;
+        points[i] = Vec2(std::cos(angle), std::sin(angle)) * radius;
+    }
+    return points;
+}
+const std::array<Vec2, 10> kStar = MakeStar();
+
 struct SandboxOptions {
     u64 Frames = 0;
     std::string ScreenshotPath;
@@ -102,15 +121,35 @@ protected:
         RunThreadPoolDemo();
     }
 
-    void OnEvent(const SDL_Event& event) override
+    // Input + fixed-step demo: move the arrow with WASD / arrow keys (at 120 Hz, independent of
+    // the frame rate), Space starts a ring pulse.
+    void OnFixedUpdate(f32 dt) override
     {
-        if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_ESCAPE)
-            Quit();
+        const Emerald::Input& input = GetInput();
+        const auto axis = [&](Key negative, Key negativeAlt, Key positive, Key positiveAlt) {
+            const bool neg = input.IsKeyDown(negative) || input.IsKeyDown(negativeAlt);
+            const bool pos = input.IsKeyDown(positive) || input.IsKeyDown(positiveAlt);
+            return (pos ? 1.0f : 0.0f) - (neg ? 1.0f : 0.0f);
+        };
+        const Vec2 direction(axis(Key::A, Key::Left, Key::D, Key::Right),
+                             axis(Key::W, Key::Up, Key::S, Key::Down));
+        if (Emerald::LengthSquared(direction) > 0.0f) {
+            m_ArrowPosition += Emerald::Normalize(direction) * (300.0f * dt);
+            m_ArrowAngle = std::atan2(direction.y, direction.x);
+        }
+        // Keep it on screen.
+        m_ArrowPosition = Emerald::Min(Emerald::Max(m_ArrowPosition, Vec2(0.0f)), GetViewSize());
+
+        if (input.WasKeyPressed(Key::Space))
+            m_PulseAge = 0.0f;
+        m_PulseAge += dt;
     }
 
     void OnUpdate(f32 dt) override
     {
         m_Time += dt;
+        if (GetInput().WasKeyPressed(Key::Escape))
+            Quit();
 
         // Capture the last frame of a --frames run (or frame 60 otherwise).
         const u64 shotFrame = m_Options.Frames != 0 ? m_Options.Frames : 60;
@@ -119,7 +158,7 @@ protected:
 
 #if EMERALD_WITH_ENTT
         // Bounce the quads off the window edges.
-        const Vec2 limit = GetWindowSize() - Vec2(kQuadSize);
+        const Vec2 limit = GetViewSize() - Vec2(kQuadSize);
         GetRegistry().view<Position, Velocity>().each([&](Position& p, Velocity& v) {
             p.Value += v.Value * dt;
             if (p.Value.x < 0.0f || p.Value.x > limit.x)
@@ -130,6 +169,44 @@ protected:
 #endif
     }
 
+    // 2D shapes: recorded here, drawn by the engine on top of OnRender's triangle.
+    void OnRender2D(Emerald::Renderer2D& r) override
+    {
+        const Vec2 size = GetViewSize();
+        const Vec4 green{0.18f, 0.8f, 0.44f, 1.0f};
+        const Vec4 white{1.0f, 1.0f, 1.0f, 1.0f};
+        const Vec4 dim{1.0f, 1.0f, 1.0f, 0.25f}; // the pipeline alpha-blends
+
+        r.Begin(Mat4::OrthoPixelSpace(size.x, size.y));
+
+        // Frame around the window and a faint grid.
+        r.DrawRect({10.0f, 10.0f}, size - Vec2(20.0f), green);
+        for (f32 x = 80.0f; x < size.x - 10.0f; x += 80.0f)
+            r.DrawLine({x, 10.0f}, {x, size.y - 10.0f}, Vec4(1.0f, 1.0f, 1.0f, 0.06f));
+
+        // Spinning stars in the bottom corners, one of them pulsing in size.
+        const f32 pulse = 1.0f + 0.2f * std::sin(3.0f * m_Time);
+        r.DrawPolygon(
+            kStar, {1.0f, 0.85f, 0.2f, 1.0f},
+            {.Position = {90.0f, size.y - 90.0f}, .Rotation = m_Time, .Scale = Vec2(60.0f)});
+        r.DrawPolygon(kStar, {0.3f, 0.7f, 1.0f, 1.0f},
+                      {.Position = size - Vec2(90.0f),
+                       .Rotation = -0.7f * m_Time,
+                       .Scale = Vec2(60.0f * pulse)});
+
+        // Concentric circles around the center with increasing segment counts.
+        for (u32 i = 0; i < 4; ++i)
+            r.DrawCircle(size * 0.5f, 60.0f + 40.0f * static_cast<f32>(i), dim, 8u << i);
+
+        // The input demo arrow and its Space pulse (a ring growing for half a second).
+        r.DrawPolygon(kArrow, white, {.Position = m_ArrowPosition, .Rotation = m_ArrowAngle});
+        if (m_PulseAge < 0.5f)
+            r.DrawCircle(m_ArrowPosition, 20.0f + 200.0f * m_PulseAge,
+                         {1.0f, 1.0f, 1.0f, 1.0f - 2.0f * m_PulseAge});
+
+        r.End();
+    }
+
     void OnRender(SDL_GPURenderPass* pass) override
     {
         SDL_GPUCommandBuffer* cmd = GetRenderer().GetCommandBuffer();
@@ -138,7 +215,7 @@ protected:
         // Everything is drawn in pixel space: (0, 0) top-left, window size bottom-right, +Y down.
         // Window size is in the same units as mouse/window coordinates; the projection maps it to
         // the whole swapchain whatever its pixel size.
-        const Vec2 size = GetWindowSize();
+        const Vec2 size = GetViewSize();
         const Mat4 projection = Mat4::OrthoPixelSpace(size.x, size.y);
 
         // First collect this frame's draws into a list, then record them. The list lives in the
@@ -180,6 +257,11 @@ protected:
         ImGui::Text("Renderer: SDL GPU (%s)", SDL_GetGPUDeviceDriver(GetRenderer().GetDevice()));
         ImGui::Text("Frame: %llu", static_cast<unsigned long long>(GetFrameCount()));
         ImGui::Text("Time:  %.2f s", static_cast<f64>(m_Time));
+        ImGui::Text("Fixed update: %.0f Hz", static_cast<f64>(1.0f / GetFixedDeltaSeconds()));
+        const Emerald::Vec2i pixels = GetWindowSizeInPixels();
+        ImGui::Text("Window: %d x %d px", pixels.x, pixels.y);
+        ImGui::Text("Renderer2D: %u lines", GetRenderer2D().GetLastFrameLineCount());
+        ImGui::Text("Move the arrow: WASD / arrows, pulse: Space");
         ImGui::Separator();
         ImGui::Text("Workers: %u", GetThreadPool().GetThreadCount());
         const Emerald::FrameArena::Stats arena = GetFrameArena().GetStats();
@@ -229,12 +311,8 @@ private:
                 kCount, pool.GetThreadCount(), total, ms);
     }
 
-    [[nodiscard]] Vec2 GetWindowSize()
-    {
-        i32 w = 0, h = 0;
-        SDL_GetWindowSize(GetWindow().GetNativeWindow(), &w, &h);
-        return {static_cast<f32>(w), static_cast<f32>(h)};
-    }
+    // Window size in window coordinates as floats: the pixel-space projections use it.
+    [[nodiscard]] Vec2 GetViewSize() const { return Vec2(GetWindowSize()); }
 
     bool CreateGpuResources()
     {
@@ -290,6 +368,9 @@ private:
 
     SandboxOptions m_Options;
     f32 m_Time = 0.0f;
+    Vec2 m_ArrowPosition{200.0f, 400.0f};
+    f32 m_ArrowAngle = 0.0f;
+    f32 m_PulseAge = 1.0f; // seconds since Space was pressed
     SDL_GPUGraphicsPipeline* m_Pipeline = nullptr;
     SDL_GPUBuffer* m_TriangleBuffer = nullptr;
     SDL_GPUBuffer* m_QuadBuffer = nullptr;

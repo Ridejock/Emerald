@@ -27,6 +27,7 @@ option(EMERALD_BUILD_TESTS   "Build the unit tests (run with ctest)" ON)
 option(EMERALD_BUILD_BENCH   "Build the math micro-benchmark" OFF)
 
 include(cmake/Dependencies.cmake)
+find_package(Threads REQUIRED) # ThreadPool (pthreads on Linux/macOS)
 include(cmake/Shaders.cmake)
 
 # Warning flags for Emerald's own targets (not third-party code).
@@ -58,6 +59,7 @@ add_library(Emerald STATIC
     src/Core/Log.cpp
     src/Core/Window.cpp
     src/Core/Application.cpp
+    src/Core/ThreadPool.cpp
     src/Renderer/Renderer.cpp
     src/Renderer/Shader.cpp
     src/Renderer/Pipeline.cpp
@@ -73,7 +75,7 @@ target_include_directories(Emerald PUBLIC
 )
 
 target_link_libraries(Emerald
-    PUBLIC  Emerald::Math SDL3::SDL3 spdlog::spdlog
+    PUBLIC  Emerald::Math SDL3::SDL3 spdlog::spdlog Threads::Threads
     PRIVATE Emerald::stb
 )
 

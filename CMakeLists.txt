@@ -60,6 +60,8 @@ add_library(Emerald STATIC
     src/Core/Window.cpp
     src/Core/Application.cpp
     src/Core/ThreadPool.cpp
+    src/Memory/FrameArena.cpp
+    src/Memory/TrackingResource.cpp
     src/Renderer/Renderer.cpp
     src/Renderer/Shader.cpp
     src/Renderer/Pipeline.cpp

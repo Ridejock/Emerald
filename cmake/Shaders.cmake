@@ -53,9 +53,28 @@ function(_emerald_setup_shadercross)
         set(exe "${EMERALD_SHADERCROSS_BUILD_DIR}/bin/shadercross${CMAKE_EXECUTABLE_SUFFIX}")
         set(tool_args -DCMAKE_BUILD_TYPE=Release)
         if(CMAKE_GENERATOR MATCHES "Ninja|Makefiles")
-            list(APPEND tool_args
-                -DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}
-                -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER})
+            set(tool_c "${CMAKE_C_COMPILER}")
+            set(tool_cxx "${CMAKE_CXX_COMPILER}")
+            # GCC 14 miscompiles DXC: the tool builds and compiles simple shaders, but every
+            # texture sample then fails DXIL validation ("sample_* instructions require resource
+            # to be declared to return UNORM, SNORM or FLOAT"). Build the tool with Clang instead
+            # when it is installed (the engine and game still use the chosen compiler).
+            if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND
+               CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 14)
+                find_program(EMERALD_TOOL_CLANG NAMES clang)
+                find_program(EMERALD_TOOL_CLANGXX NAMES clang++)
+                if(EMERALD_TOOL_CLANG AND EMERALD_TOOL_CLANGXX)
+                    set(tool_c "${EMERALD_TOOL_CLANG}")
+                    set(tool_cxx "${EMERALD_TOOL_CLANGXX}")
+                    message(STATUS "Emerald: building shadercross with Clang (GCC 14+ miscompiles DXC)")
+                else()
+                    message(WARNING "Emerald: GCC ${CMAKE_CXX_COMPILER_VERSION} miscompiles DXC, so "
+                                    "DXIL shaders that sample textures will fail to build. Install "
+                                    "clang (it is then used for the shadercross tool), or set "
+                                    "EMERALD_SHADERCROSS_EXECUTABLE to a prebuilt shadercross.")
+                endif()
+            endif()
+            list(APPEND tool_args -DCMAKE_C_COMPILER=${tool_c} -DCMAKE_CXX_COMPILER=${tool_cxx})
         endif()
         # The tool's source must be the same path for every build sharing the tool dir, or its
         # CMake cache refuses it. A game that FetchContent's Emerald has one Emerald copy per

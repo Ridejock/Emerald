@@ -45,6 +45,12 @@ target_link_libraries(EmeraldRenderer2DTests PRIVATE Emerald::Emerald)
 emerald_set_warnings(EmeraldRenderer2DTests)
 add_test(NAME Renderer2DTests COMMAND EmeraldRenderer2DTests)
 
+# Particle pool: spawning, physics, swap-remove, and the scalar and SSE updates agreeing.
+add_executable(EmeraldParticleTests TestMain.cpp ParticleTests.cpp)
+target_link_libraries(EmeraldParticleTests PRIVATE Emerald::Emerald)
+emerald_set_warnings(EmeraldParticleTests)
+add_test(NAME ParticleTests COMMAND EmeraldParticleTests)
+
 # Sound loading (WAV, MP3 via dr_mp3), mixer and synth; no audio device needed.
 add_executable(EmeraldAudioTests TestMain.cpp AudioTests.cpp MixerTests.cpp)
 target_link_libraries(EmeraldAudioTests PRIVATE Emerald::Emerald)

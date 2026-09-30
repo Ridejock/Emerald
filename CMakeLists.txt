@@ -80,6 +80,7 @@ add_library(Emerald STATIC
     src/Renderer/Renderer2D.cpp
     src/Renderer/Texture.cpp
     src/Renderer/TextureAtlas.cpp
+    src/Particles/ParticleSystem.cpp
     src/Assets/Image.cpp
     src/Audio/Audio.cpp
     src/Audio/Mixer.cpp

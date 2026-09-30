@@ -19,6 +19,7 @@
 #include "Emerald/Input/Keyboard.h"
 #include "Emerald/Math/Math.h"
 #include "Emerald/Memory/Memory.h"
+#include "Emerald/Particles/ParticleSystem.h"
 #include "Emerald/Renderer/Pipeline.h"
 #include "Emerald/Renderer/Renderer.h"
 #include "Emerald/Renderer/Renderer2D.h"

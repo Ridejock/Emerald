@@ -264,7 +264,8 @@ structure-of-arrays layout instead (all x together, all y together).
 | `MemoryTests` | frame arena reset/alignment/overflow, many resets stay in the buffer, pmr containers use their resource, tracking counts, pools (incl. the synchronized pool from many threads) |
 | `InputTests` | key down/pressed/released edges, taps within one frame, fixed-step edges, `ReleaseAll`; actions with several keys, action taps across fixed steps, axes, rebinding; gamepads (synthetic pads, no hardware): deadzone math (per-axis, radial), trigger/stick virtual buttons with hysteresis, button edges across fixed steps, several pads, labels, gamepad bindings and largest-magnitude axes; `FixedTimestep` accumulation, average rate at 144 fps / 120 Hz, slow-frame clamp |
 | `AudioTests` | MP3 decoding from an embedded 809-byte file (length, level, channels, pitch after resampling), garbage rejected, WAV loading, `LoadSound` by extension incl. unknown/missing files, `MakeSound` conversion; mixer handles (stale handles, reuse, releasing samples), fade-in/out and volume ramps without clicks, looping, pitch, pan, master volume/mute, voice stealing, soft limiter; synth waveforms (length, no NaN, peak), envelopes, lowpass |
-| `Renderer2DTests` | `Renderer2D` batching and shape generation on the CPU (no GPU), `Transform2D`, color packing; sprite quads (UVs, rotation, origin, flips, pixel snap), draw order across lines/sprites/texture switches, atlas JSON parsing |
+| `Renderer2DTests` | `Renderer2D` batching and shape generation on the CPU (no GPU), `Transform2D`, color packing; sprite quads (UVs, rotation, origin, flips, pixel snap), draw order across lines/sprites/texture switches and blend modes, atlas JSON parsing |
+| `ParticleTests` | particle spawning (shapes, ranges, base velocity), capacity limit, drag/gravity step, swap-remove, continuous rate, color/size fade when drawing, scalar and SSE updates agreeing over 240 steps |
 
 ```sh
 cmake --build --preset debug
@@ -288,6 +289,7 @@ Benchmark (release build recommended; numbers vary a lot between machines):
 cmake --preset release -DEMERALD_BUILD_BENCH=ON
 cmake --build --preset release
 ./build/release/bin/EmeraldMathBench
+./build/release/bin/EmeraldParticleBench
 ```
 
 ## Renderer (SDL GPU)
@@ -377,6 +379,10 @@ give the target size inside `OnRender2D`).
 position. The recording side needs no GPU, which is what `Renderer2DTests` checks. Textured
 sprites go through the same batches; see [Textures and sprites](#textures-and-sprites).
 
+`r.SetBlendMode(BlendMode::Additive)` switches the following draws of the batch to additive
+blending (`out = src * alpha + dst`): overlapping lines or sprites add up and glow, which suits
+light such as sparks and fire. `Begin` resets it to `Alpha`; each change starts a new draw call.
+
 ## Textures and sprites
 
 `Emerald::Texture` (`Renderer/Texture.h`) is an RGBA8 GPU texture plus its sampler. It is
@@ -433,6 +439,66 @@ How it is drawn:
 - Blending uses **straight (non-premultiplied) alpha**, like PNG files: `src × a + dst × (1 − a)`.
   With `Linear` filtering, fully transparent pixels still get blended with their neighbours, so give
   them the edge color (most tools do) or you get dark fringes; `Nearest` has no such problem.
+
+## Particles
+
+`Emerald::ParticleSystem` (`include/Emerald/Particles/ParticleSystem.h`) is a fixed-capacity pool of
+simple particles: position, velocity, drag, gravity, and a color and size that fade from a start to
+an end value over each particle's life. An effect is a `ParticleEmitterConfig`:
+
+```cpp
+const ParticleEmitterConfig kSparks{.StartColor = {1.0f, 0.8f, 0.4f, 1.0f},
+                                    .EndColor = {1.0f, 0.3f, 0.1f, 0.0f},
+                                    .Shape = EmitterShape::Circle, .Radius = 6.0f, // or Point/Line
+                                    .Speed = {80.0f, 220.0f}, .Lifetime = {0.3f, 0.7f},
+                                    .Drag = 2.0f, .StartSize = 6.0f, .EndSize = 1.0f};
+
+ParticleSystem m_Particles{4096};   // allocates once, never again
+ContinuousEmitter m_Engine;         // remembers fractions of a particle between frames
+
+m_Particles.Emit(kSparks, position, 30);                          // a burst
+m_Particles.EmitContinuous(kExhaust, m_Engine, nozzle, dt,        // kExhaust.Rate per second
+                           backwardsAngle, shipVelocity);         // direction, base velocity
+m_Particles.Update(dt);                                           // move, age, remove dead
+m_Particles.Draw(r);   // in OnRender2D: streaks along the velocity, additive by default
+m_Particles.Draw(r, {.Sprite = &dot, .Blend = BlendMode::Alpha}); // or textured quads
+```
+
+The data is a **structure of arrays**: one array per field (all X positions, all Y positions, ...).
+The update applies the same few operations to every element of a handful of arrays, which is the
+shape SIMD wants: `UpdateSse` loads four particles' X velocities with one `_mm_loadu_ps`, and so on.
+A dead particle is overwritten by the last one (**swap-remove**), so live particles always fill
+`0..count-1` and removal is O(1) (the order changes, which does not matter for particles). A full pool
+drops new particles and counts them (`GetDroppedCount`). `Update` uses the SSE path when the math
+library does (`EMERALD_MATH_SIMD` on x86); `UpdateScalar` and `UpdateSse` are public, and
+`ParticleTests` checks that they agree.
+
+### When is SIMD worth it?
+
+`EmeraldParticleBench` (Release, `-DEMERALD_BUILD_BENCH=ON`) times both paths. On an 8-core Intel Xeon
+VM (GCC 14, `-O3`), best of many runs, including the dead-particle pass:
+
+| Particles | Scalar | SSE | Speedup |
+|---:|---:|---:|---:|
+| 1,000 | 0.0028 ms (2.8 ns each) | 0.0012 ms (1.2 ns) | ~2.3x |
+| 10,000 | 0.027 ms (2.7 ns) | 0.012 ms (1.2 ns) | ~2.3x |
+| 100,000 | 0.33-0.36 ms (3.4 ns) | 0.15 ms (1.5 ns) | ~2.3x |
+| 1,000,000 | 3.5 ms (3.5 ns) | 1.64 ms (1.6 ns) | ~2.2x |
+
+What to take from it:
+
+- **About 2x, not 4x.** Four lanes only speed up the arithmetic; the loads and stores, the scalar
+  tail and the removal pass stay. At 1M particles the SSE loop streams about 48 bytes per particle,
+  roughly 30 GB/s, so memory bandwidth starts to cap it.
+- **It only matters when the work is big.** A game with a few thousand particles spends
+  microseconds either way (10k scalar = 0.03 ms of a 16.7 ms frame). SIMD starts to pay off when a
+  loop like this costs a noticeable part of the frame: hundreds of thousands of elements, or many
+  such loops.
+- **Layout first.** The structure-of-arrays layout is what makes the SSE version short; with an
+  array of `Particle` structs it would need shuffles, and it would load fields it does not use.
+- **Measure.** The compiler did not auto-vectorize the scalar loop here (seven separate arrays that
+  might alias), not even with `__restrict` pointers; other compilers or flags may, which would
+  close the gap. Your numbers will differ from these.
 
 ## Input (actions)
 
@@ -624,12 +690,12 @@ It is always built in Release and lives in `build/_shadercross`, which every pre
 ## Project layout
 
 ```
-include/Emerald/   Public engine headers (Core/, Input/, Audio/, Renderer/, Assets/, Math/, Memory/)
+include/Emerald/   Public engine headers (Core/, Input/, Audio/, Renderer/, Particles/, Assets/, Math/, Memory/)
 src/               Engine implementation
 shaders/           The engine's HLSL shaders (Renderer2D lines, Sprite; compiled at build time for every app)
 sandbox/           Example application (src/, and its own shaders/)
 tests/             Unit tests (ctest)
-bench/             Math micro-benchmark (EMERALD_BUILD_BENCH)
+bench/             Math and particle micro-benchmarks (EMERALD_BUILD_BENCH)
 cmake/             Dependency setup (FetchContent) and shader compilation (Shaders.cmake)
 tools/shadercross/ Host-tool project that builds SDL_shadercross
 ```

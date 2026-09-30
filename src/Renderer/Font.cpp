@@ -47,7 +47,6 @@ bool PackGlyphs(const std::vector<u8>& data, const FontOptions& options, i32 sid
     if (!stbtt_PackBegin(&context, bitmap.data(), side, side, 0, kPadding, nullptr))
         return false;
     stbtt_PackSetOversampling(&context, options.Oversample, options.Oversample);
-    stbtt_PackSetSkipMissingCodepoints(&context, 1);
 
     std::vector<stbtt_pack_range> ranges;
     packed.assign(options.Ranges.size(), {});
@@ -64,6 +63,26 @@ bool PackGlyphs(const std::vector<u8>& data, const FontOptions& options, i32 sid
                                         static_cast<int>(ranges.size()));
     stbtt_PackEnd(&context);
     return ok != 0;
+}
+
+// The requested ranges split into runs of codepoints the font has. stb reports a failed pack
+// for a missing codepoint (its rectangle is empty), so those are left out before packing.
+std::vector<GlyphRange> ExistingRuns(const stbtt_fontinfo& info,
+                                     const std::vector<GlyphRange>& ranges)
+{
+    std::vector<GlyphRange> runs;
+    for (const GlyphRange& range : ranges) {
+        for (u32 i = 0; i < range.Count; ++i) {
+            const u32 codepoint = range.First + i;
+            if (stbtt_FindGlyphIndex(&info, static_cast<int>(codepoint)) == 0)
+                continue;
+            if (!runs.empty() && runs.back().First + runs.back().Count == codepoint)
+                ++runs.back().Count;
+            else
+                runs.push_back({codepoint, 1});
+        }
+    }
+    return runs;
 }
 
 } // namespace
@@ -110,6 +129,11 @@ std::optional<Font> Font::LoadFromMemory(SDL_GPUDevice* device, std::span<const 
     }
     FontOptions bake = options;
     bake.Oversample = Clamp(options.Oversample, 1u, 8u); // stb's limit
+    bake.Ranges = ExistingRuns(face.Info, options.Ranges);
+    if (bake.Ranges.empty()) {
+        EM_CORE_ERROR("The font has none of the requested glyphs");
+        return std::nullopt;
+    }
 
     // Vertical metrics, font units -> pixels at the em size.
     font.m_Size = bake.Size;
@@ -138,13 +162,11 @@ std::optional<Font> Font::LoadFromMemory(SDL_GPUDevice* device, std::span<const 
         side *= 2;
     }
 
-    // Keep the glyphs the font really has (missing ones were skipped, glyph index 0).
+    // Every baked codepoint exists in the font (ExistingRuns).
     for (usize r = 0; r < bake.Ranges.size(); ++r) {
         for (u32 i = 0; i < bake.Ranges[r].Count; ++i) {
             const u32 codepoint = bake.Ranges[r].First + i;
             const int index = stbtt_FindGlyphIndex(&face.Info, static_cast<int>(codepoint));
-            if (index == 0)
-                continue;
             const stbtt_packedchar& c = packed[r][i];
             font.m_Glyphs[codepoint] = {
                 .Region = {{static_cast<f32>(c.x0), static_cast<f32>(c.y0)},

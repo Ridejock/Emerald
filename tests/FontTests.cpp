@@ -146,6 +146,23 @@ TEST(FontDecodesUtf8)
                  "A") == std::vector<u32>({0xFFFD, 'A'})); // truncated
 }
 
+TEST(FontSkipsMissingCodepoints)
+{
+    // U+2600.. (weather symbols) and U+0100.. are not in the font: the rest still bakes.
+    Log::Init({});
+    const std::optional<Font> font =
+        Font::Load(nullptr, EMERALD_TEST_FONT,
+                   {.Size = 16.0f, .Ranges = {kAsciiGlyphs, {0x2600, 16}, {0x100, 4}}});
+    CHECK(font.has_value());
+    if (!font)
+        return;
+    CHECK(font->FindGlyph('A') != nullptr);
+    CHECK(font->FindGlyph(0x2600) == nullptr);
+    CHECK_NEAR(font->MeasureText("HELLO"), Vec2(80.0f, 16.0f));
+    // Nothing requested exists: an error, not an endless atlas search.
+    CHECK(!Font::Load(nullptr, EMERALD_TEST_FONT, {.Ranges = {{0x1F600, 16}}}).has_value());
+}
+
 TEST(FontRejectsBadInput)
 {
     Log::Init({});

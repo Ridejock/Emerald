@@ -50,6 +50,11 @@ public:
     // Saves the next rendered frame as a PNG (read back from the GPU after submission).
     void RequestScreenshot(std::filesystem::path path) { m_ScreenshotPath = std::move(path); }
 
+    // Vsync on: frames wait for the display (no tearing, no wasted frames). Off: the fastest
+    // mode the window supports (mailbox, else immediate). Takes effect from the next frame.
+    bool SetVSync(bool vsync);
+    [[nodiscard]] bool IsVSync() const { return m_VSync; }
+
     [[nodiscard]] SDL_GPUDevice* GetDevice() const { return m_Device; }
     [[nodiscard]] SDL_GPUCommandBuffer* GetCommandBuffer() const { return m_CommandBuffer; }
     [[nodiscard]] SDL_GPURenderPass* GetRenderPass() const { return m_RenderPass; }
@@ -63,6 +68,7 @@ private:
 
     SDL_GPUDevice* m_Device = nullptr;
     SDL_Window* m_Window = nullptr;
+    bool m_VSync = true;
 
     // Per-frame state (valid between BeginFrame and EndFrame).
     SDL_GPUCommandBuffer* m_CommandBuffer = nullptr;

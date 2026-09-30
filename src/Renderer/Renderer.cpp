@@ -66,6 +66,7 @@ bool Renderer::Init(SDL_Window* window, bool vsync, SDL_GPUShaderFormat shaderFo
         return false;
     }
     m_Window = window;
+    m_VSync = vsync;
 
     const SDL_GPUPresentMode presentMode = ChoosePresentMode(m_Device, window, vsync);
     if (!SDL_SetGPUSwapchainParameters(m_Device, window, SDL_GPU_SWAPCHAINCOMPOSITION_SDR,
@@ -97,6 +98,21 @@ void Renderer::Shutdown()
     SDL_DestroyGPUDevice(m_Device);
     m_Device = nullptr;
     m_Window = nullptr;
+}
+
+bool Renderer::SetVSync(bool vsync)
+{
+    if (!m_Device)
+        return false;
+    const SDL_GPUPresentMode mode = ChoosePresentMode(m_Device, m_Window, vsync);
+    if (!SDL_SetGPUSwapchainParameters(m_Device, m_Window, SDL_GPU_SWAPCHAINCOMPOSITION_SDR,
+                                       mode)) {
+        EM_CORE_WARN("SDL_SetGPUSwapchainParameters failed: {}", SDL_GetError());
+        return false;
+    }
+    m_VSync = vsync;
+    EM_CORE_INFO("Present mode {}", PresentModeName(mode));
+    return true;
 }
 
 SDL_GPUTextureFormat Renderer::GetSwapchainFormat() const

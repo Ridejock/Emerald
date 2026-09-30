@@ -307,6 +307,10 @@ The code lives in `include/Emerald/Renderer/` and `src/Renderer/` and is intenti
   (swapchain), and runs the frame: `BeginFrame()` acquires a command buffer and the swapchain texture,
   `BeginRenderPass(clearColor)` / `EndRenderPass()`, `EndFrame()` submits and presents. VSync is applied
   through the swapchain present mode (`WindowSpec::VSync`; off = mailbox/immediate when available).
+  `Renderer::SetVSync(bool)` changes it at runtime (e.g. from an options menu).
+- `Window::SetFullscreen(bool)` switches to borderless fullscreen on the current display and back
+  (`WindowSpec::Fullscreen` starts that way); `Window::SetIcon(image)` sets the title bar /
+  taskbar icon from an RGBA `Image`.
   When the window is minimized the swapchain texture is null and the frame is skipped.
   `CreateBuffer()` shows the upload path (transfer buffer → copy pass → GPU buffer) and
   `RequestScreenshot()` reads the next frame back into a PNG.

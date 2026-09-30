@@ -93,6 +93,47 @@ std::array<Vec2, 10> MakeStar()
 }
 const std::array<Vec2, 10> kStar = MakeStar();
 
+// A tiny procedural sprite sheet (no image files needed): a 16 x 16 pixel-art gem at (0, 0) and
+// a ring at (16, 0). Real games load one with TextureAtlas::Load(device, "atlas.png", ...).
+Emerald::Image MakeSpriteSheet()
+{
+    Emerald::Image image;
+    image.Width = 32;
+    image.Height = 16;
+    image.Pixels.assign(static_cast<usize>(image.Width * image.Height) * 4, 0); // transparent
+    const auto put = [&](i32 x, i32 y, u8 r, u8 g, u8 b) {
+        u8* p = &image.Pixels[static_cast<usize>(y * image.Width + x) * 4];
+        p[0] = r;
+        p[1] = g;
+        p[2] = b;
+        p[3] = 255;
+    };
+    for (i32 y = 0; y < 16; ++y) {
+        for (i32 x = 0; x < 16; ++x) {
+            // Gem: a diamond, lighter on the top-left facets, with a dark outline.
+            const i32 dx = x < 8 ? 7 - x : x - 8;
+            const i32 dy = y < 8 ? 7 - y : y - 8;
+            if (dx + dy <= 7) {
+                const bool edge = dx + dy == 7;
+                const bool light = (x < 8) == (y < 8);
+                if (edge)
+                    put(x, y, 10, 70, 40);
+                else if (x == 5 && y == 4)
+                    put(x, y, 230, 255, 240); // highlight
+                else
+                    put(x, y, light ? 70 : 30, light ? 220 : 160, light ? 120 : 90);
+            }
+            // Ring: pixels between two radii.
+            const f32 rx = static_cast<f32>(x) - 7.5f;
+            const f32 ry = static_cast<f32>(y) - 7.5f;
+            const f32 d = std::sqrt(rx * rx + ry * ry);
+            if (d > 4.5f && d < 7.5f)
+                put(16 + x, y, 255, d < 6.0f ? 220 : 170, 60);
+        }
+    }
+    return image;
+}
+
 struct SandboxOptions {
     u64 Frames = 0;
     std::string ScreenshotPath;
@@ -148,6 +189,15 @@ protected:
                                           .Volume = 0.4f});
         ApplyDecay(blip, 0.03f);
         m_Blip = ToSound(blip);
+
+        // Sprites: upload the generated sheet (nearest filtering: crisp pixel art) and name its
+        // two regions, like an atlas.json would.
+        if (std::optional<Emerald::Texture> sheet =
+                Emerald::Texture::Create(GetRenderer().GetDevice(), MakeSpriteSheet())) {
+            m_Atlas = Emerald::TextureAtlas::Create(std::move(*sheet),
+                                                    {{"gem", {{0.0f, 0.0f}, {16.0f, 16.0f}}},
+                                                     {"ring", {{16.0f, 0.0f}, {16.0f, 16.0f}}}});
+        }
     }
 
     // Input + fixed-step demo: move the arrow with WASD / arrow keys / left stick / d-pad (at
@@ -233,12 +283,44 @@ protected:
             r.DrawCircle(size * 0.5f, 60.0f + 40.0f * static_cast<f32>(i), dim, 8u << i);
 
         // The input demo arrow and its Space pulse (a ring growing for half a second).
+        DrawSprites(r, size);
+
         r.DrawPolygon(kArrow, white, {.Position = m_ArrowPosition, .Rotation = m_ArrowAngle});
         if (m_PulseAge < 0.5f)
             r.DrawCircle(m_ArrowPosition, 20.0f + 200.0f * m_PulseAge,
                          {1.0f, 1.0f, 1.0f, 1.0f - 2.0f * m_PulseAge});
 
         r.End();
+    }
+
+    // Sprite demo: scaling, rotation, flipping, tint and alpha, pixel snapping, and layering in
+    // call order with lines.
+    void DrawSprites(Emerald::Renderer2D& r, const Vec2& size)
+    {
+        if (!m_Atlas)
+            return;
+        const Emerald::Sprite gem = m_Atlas->Get("gem");
+        const Emerald::Sprite ring = m_Atlas->Get("ring");
+
+        // A row along the top: plain, flipped, tinted, half transparent (4x, snapped to pixels).
+        const f32 y = 70.0f;
+        const Emerald::SpriteOptions big{.Scale = Vec2(4.0f), .PixelSnap = true};
+        r.DrawSprite(gem, {size.x * 0.5f - 200.0f, y}, big);
+        r.DrawSprite(gem, {size.x * 0.5f - 120.0f, y}, {.Scale = Vec2(4.0f), .FlipX = true});
+        r.DrawSprite(gem, {size.x * 0.5f - 40.0f, y},
+                     {.Scale = Vec2(4.0f), .Tint = {1.0f, 0.4f, 0.4f, 1.0f}});
+        r.DrawSprite(gem, {size.x * 0.5f + 40.0f, y},
+                     {.Scale = Vec2(4.0f), .Tint = {0.5f, 0.7f, 1.0f, 1.0f}});
+        r.DrawSprite(gem, {size.x * 0.5f + 120.0f, y},
+                     {.Scale = Vec2(4.0f), .Tint = {1.0f, 1.0f, 1.0f, 0.4f}});
+        r.DrawSprite(ring, {size.x * 0.5f + 200.0f, y}, big);
+
+        // Layering: a spinning gem, a line on top of it, then a ring on top of the line.
+        const Vec2 center = size * 0.5f;
+        r.DrawSprite(gem, center, {.Scale = Vec2(8.0f), .Rotation = 0.6f * m_Time});
+        r.DrawLine(center - Vec2(90.0f, 0.0f), center + Vec2(90.0f, 0.0f),
+                   {1.0f, 1.0f, 1.0f, 1.0f});
+        r.DrawSprite(ring, center + Vec2(40.0f, 0.0f), {.Scale = Vec2(3.0f), .Rotation = -m_Time});
     }
 
     void OnRender(SDL_GPURenderPass* pass) override
@@ -294,7 +376,10 @@ protected:
         ImGui::Text("Fixed update: %.0f Hz", static_cast<f64>(1.0f / GetFixedDeltaSeconds()));
         const Emerald::Vec2i pixels = GetWindowSizeInPixels();
         ImGui::Text("Window: %d x %d px", pixels.x, pixels.y);
-        ImGui::Text("Renderer2D: %u lines", GetRenderer2D().GetLastFrameLineCount());
+        ImGui::Text("Renderer2D: %u lines, %u sprites, %u draw calls",
+                    GetRenderer2D().GetLastFrameLineCount(),
+                    GetRenderer2D().GetLastFrameSpriteCount(),
+                    GetRenderer2D().GetLastFrameDrawCalls());
         ImGui::Text("Move the arrow: WASD / arrows / left stick, pulse: Space / %s",
                     GetInput().GetGamepads().GetButtonLabel(GamepadButton::South));
         ShowGamepads();
@@ -453,7 +538,8 @@ private:
     Vec2 m_ArrowPosition{200.0f, 400.0f};
     Emerald::Sound m_Blip;
     f32 m_ArrowAngle = 0.0f;
-    f32 m_PulseAge = 1.0f; // seconds since Space was pressed
+    f32 m_PulseAge = 1.0f;                        // seconds since Space was pressed
+    std::optional<Emerald::TextureAtlas> m_Atlas; // the sprite demo's sheet
     SDL_GPUGraphicsPipeline* m_Pipeline = nullptr;
     SDL_GPUBuffer* m_TriangleBuffer = nullptr;
     SDL_GPUBuffer* m_QuadBuffer = nullptr;

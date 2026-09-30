@@ -80,6 +80,7 @@ add_library(Emerald STATIC
     src/Renderer/Renderer2D.cpp
     src/Renderer/Texture.cpp
     src/Renderer/TextureAtlas.cpp
+    src/Renderer/Font.cpp
     src/Particles/ParticleSystem.cpp
     src/Assets/Image.cpp
     src/Audio/Audio.cpp
@@ -88,6 +89,7 @@ add_library(Emerald STATIC
     src/Audio/Sound.cpp
     src/Vendor/stb_image.cpp
     src/Vendor/stb_image_write.cpp
+    src/Vendor/stb_truetype.cpp
     src/Vendor/dr_mp3.cpp
 )
 add_library(Emerald::Emerald ALIAS Emerald)

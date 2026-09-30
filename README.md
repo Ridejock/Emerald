@@ -21,7 +21,7 @@ All dependencies are fetched automatically with CMake `FetchContent` and pinned 
 |---|---|---|
 | [SDL3](https://github.com/libsdl-org/SDL) | `release-3.4.16` | Built statically |
 | [spdlog](https://github.com/gabime/spdlog) | `v1.17.0` | Uses bundled fmt |
-| [stb](https://github.com/nothings/stb) | commit `2c980bb` | Header-only, exposed as `Emerald::stb` (INTERFACE) |
+| [stb](https://github.com/nothings/stb) | commit `2c980bb` | Header-only (stb_image, stb_image_write, stb_truetype + stb_rect_pack for fonts), exposed as `Emerald::stb` (INTERFACE) |
 | [nlohmann/json](https://github.com/nlohmann/json) | `v3.12.0` | Texture atlas JSON; release tarball (SHA-256 pinned), linked PRIVATE |
 | [dr_libs](https://github.com/mackron/dr_libs) | commit `dfe8377` | Only `dr_mp3.h` (MP3 decoding); header-only, public domain / MIT-0 |
 | [Dear ImGui](https://github.com/ocornut/imgui) | `v1.92.9b-docking` | Optional, SDL3 + SDLGPU3 backends |
@@ -440,6 +440,48 @@ How it is drawn:
   With `Linear` filtering, fully transparent pixels still get blended with their neighbours, so give
   them the edge color (most tools do) or you get dark fringes; `Nearest` has no such problem.
 
+## Text (`Font`)
+
+`Emerald::Font` (`Renderer/Font.h`) loads a TrueType/OpenType file with stb_truetype and bakes its
+glyphs at one size into an atlas texture (`stbtt_PackFontRanges`, packed with stb_rect_pack). Text
+is drawn through the sprite batch, so a run of text in one font is one draw call:
+
+```cpp
+const std::filesystem::path path = Emerald::Paths::GetBasePath() / "assets/fonts/MyFont.ttf";
+// Smooth text: Linear filtering, 2x oversampling (the defaults), 24 px em size, ASCII 32..126.
+std::optional<Emerald::Font> ui = Emerald::Font::Load(device, path, {.Size = 24.0f});
+// A pixel font: bake at a multiple of its grid, no oversampling, Nearest (snapped to whole pixels).
+auto pixel = Emerald::Font::Load(device, path, {.Size = 16.0f,
+                                                .Ranges = {Emerald::kAsciiGlyphs, Emerald::kLatin1Glyphs},
+                                                .Oversample = 1,
+                                                .Filter = Emerald::TextureFilter::Nearest});
+
+r.DrawText(*ui, "Score: 1200\nLives: 3", {20, 20}, {1, 1, 1, 1});             // top-left at (20, 20)
+r.DrawText(*pixel, "GAME OVER", {640, 300}, {1, 0.3f, 0.3f, 1}, 3.0f,        // 3x, centered on x
+           Emerald::TextAlign::Center);
+const Vec2 size = ui->MeasureText("Score: 1200");                           // width, height in px
+```
+
+- `DrawText(font, text, position, color, scale = 1, align = Left)`: UTF-8 text, `'\n'` starts a
+  new line, pairs are kerned (the font's GPOS or `kern` table). `position` is the top-left of the
+  first line (its ascent line), or its top center / top right for `TextAlign::Center` / `Right`;
+  every line is aligned on its own.
+- `MeasureText(text, scale)` returns the widest line's advance and the height of all lines (the
+  last one ascent to descent, the others a full line height). `GetAscent()`, `GetDescent()`
+  (negative, below the baseline) and `GetLineHeight()` give the metrics at the baked size;
+  `LayoutText` returns the placed glyphs for custom effects.
+- `FontOptions` (in this order): `Size` (em size in pixels, like CSS `font-size`), `Ranges`
+  (codepoint blocks; `kAsciiGlyphs` by default, add `kLatin1Glyphs` or your own `{first, count}`),
+  `Oversample` (1..8: the glyphs are rendered that much larger for smoother, sub-pixel placed
+  edges), `Filter`. Characters that were not baked are drawn as `?`.
+- Load one `Font` per size you need; each has its own atlas texture. Scaling a baked font works too
+  (pixel fonts at whole multiples, smooth fonts a little up or down), but a bake at the target size
+  looks best. `Font::Load(nullptr, ...)` works without a GPU (measuring and layout, e.g. in tests).
+- `Font::LoadFromMemory(device, bytes, options)` takes a font embedded in the executable.
+
+The sandbox's text demo uses Press Start 2P (SIL Open Font License, in `sandbox/assets/fonts/`,
+see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)); the engine itself ships no fonts.
+
 ## Particles
 
 `Emerald::ParticleSystem` (`include/Emerald/Particles/ParticleSystem.h`) is a fixed-capacity pool of
@@ -693,7 +735,7 @@ It is always built in Release and lives in `build/_shadercross`, which every pre
 include/Emerald/   Public engine headers (Core/, Input/, Audio/, Renderer/, Particles/, Assets/, Math/, Memory/)
 src/               Engine implementation
 shaders/           The engine's HLSL shaders (Renderer2D lines, Sprite; compiled at build time for every app)
-sandbox/           Example application (src/, and its own shaders/)
+sandbox/           Example application (src/, its own shaders/, assets/ for the demo font)
 tests/             Unit tests (ctest)
 bench/             Math and particle micro-benchmarks (EMERALD_BUILD_BENCH)
 cmake/             Dependency setup (FetchContent) and shader compilation (Shaders.cmake)
@@ -737,4 +779,5 @@ int main() { return MyGame{}.Run(); }
 
 ## License
 
-Emerald is released under the [MIT License](LICENSE).
+Emerald is released under the [MIT License](LICENSE). Third-party code and the sandbox's demo font
+are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

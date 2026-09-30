@@ -1,6 +1,7 @@
 #pragma once
 
 #include <span>
+#include <string_view>
 #include <vector>
 
 #include <SDL3/SDL_gpu.h>
@@ -9,6 +10,7 @@
 #include "Emerald/Math/Mat4.h"
 #include "Emerald/Math/Vec2.h"
 #include "Emerald/Math/Vec4.h"
+#include "Emerald/Renderer/Font.h"
 #include "Emerald/Renderer/Sprite.h"
 
 namespace Emerald {
@@ -137,6 +139,13 @@ public:
     void DrawSprite(const Texture& texture, const Vec2& position,
                     const SpriteOptions& options = {});
 
+    // Text in `font` (UTF-8, '\n' = new line) as sprites from the font's atlas, one draw call per
+    // run. `position` is the top-left of the first line for TextAlign::Left, its top center or
+    // top right for Center / Right (every line is aligned on its own). `scale` resizes the baked
+    // glyphs; pixel fonts are snapped to whole units.
+    void DrawText(const Font& font, std::string_view text, const Vec2& position, const Vec4& color,
+                  f32 scale = 1.0f, TextAlign align = TextAlign::Left);
+
     // --- GPU side (the Application calls these) ---
     // Copies this frame's vertices to the GPU. Must be called outside of any render pass.
     void Upload(SDL_GPUCommandBuffer* commandBuffer);
@@ -192,6 +201,7 @@ private:
     std::vector<SpriteVertex> m_SpriteVertices;
     std::vector<DrawCommand> m_Commands;
     std::vector<Batch> m_Batches;
+    std::vector<PlacedGlyph> m_TextGlyphs; // DrawText's scratch list, reused every call
     bool m_InBatch = false;
     BlendMode m_BlendMode = BlendMode::Alpha;
     bool m_LinesUploaded = false;

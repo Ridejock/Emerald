@@ -318,6 +318,23 @@ void Renderer2D::DrawSprite(const Sprite& sprite, const Vec2& position,
                             {topLeft, topRight, bottomRight, topLeft, bottomRight, bottomLeft});
 }
 
+void Renderer2D::DrawText(const Font& font, std::string_view text, const Vec2& position,
+                          const Vec4& color, f32 scale, TextAlign align)
+{
+    if (!CanDraw() || text.empty())
+        return;
+    m_TextGlyphs.clear();
+    font.LayoutText(text, align, m_TextGlyphs);
+    for (const PlacedGlyph& placed : m_TextGlyphs) {
+        const Sprite sprite{&font.GetTexture(), placed.Source->Region};
+        DrawSprite(sprite, position + placed.Position * scale,
+                   {.Size = placed.Source->Size * scale,
+                    .Origin = {0.0f, 0.0f},
+                    .Tint = color,
+                    .PixelSnap = font.IsPixelFont()});
+    }
+}
+
 u32 Renderer2D::PackColor(const Vec4& color)
 {
     const auto channel = [](f32 v) {

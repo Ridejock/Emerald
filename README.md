@@ -3,12 +3,13 @@
 Emerald is a small, modern C++20 game engine built on [SDL3](https://github.com/libsdl-org/SDL).
 It is split into:
 
-- **`Emerald::Emerald`** – the engine library (logging, window, SDL GPU renderer, batched 2D line renderer,
-  keyboard input, application loop with a fixed-timestep update, image loading, thread pool, `std::pmr`
+- **`Emerald::Emerald`** – the engine library (logging, window, SDL GPU renderer, batched 2D renderer for lines and
+  textured sprites, textures and texture atlases, keyboard input, application loop with a fixed-timestep update, image loading, thread pool, `std::pmr`
   memory helpers).
 - **`Emerald::Math`** – a header-only math library (vectors, `Mat4`, optional SSE), included by the engine.
 - **`sandbox/`** – a minimal example app that links the engine and draws a rotating vertex-colored triangle
-  in pixel space with its own HLSL shaders through SDL GPU, plus 2D line shapes and an arrow driven by
+  in pixel space with its own HLSL shaders through SDL GPU, plus 2D line shapes, sprites from a
+  procedurally generated atlas (scaled, rotated, flipped, tinted, and layered with lines), and an arrow driven by
   keyboard or gamepad (with ImGui on, the panel lists connected pads and their live stick values).
 - **`tests/`** – small unit-test executables run with `ctest`.
 
@@ -21,6 +22,7 @@ All dependencies are fetched automatically with CMake `FetchContent` and pinned 
 | [SDL3](https://github.com/libsdl-org/SDL) | `release-3.4.16` | Built statically |
 | [spdlog](https://github.com/gabime/spdlog) | `v1.17.0` | Uses bundled fmt |
 | [stb](https://github.com/nothings/stb) | commit `2c980bb` | Header-only, exposed as `Emerald::stb` (INTERFACE) |
+| [nlohmann/json](https://github.com/nlohmann/json) | `v3.12.0` | Texture atlas JSON; release tarball (SHA-256 pinned), linked PRIVATE |
 | [dr_libs](https://github.com/mackron/dr_libs) | commit `dfe8377` | Only `dr_mp3.h` (MP3 decoding); header-only, public domain / MIT-0 |
 | [Dear ImGui](https://github.com/ocornut/imgui) | `v1.92.9b-docking` | Optional, SDL3 + SDLGPU3 backends |
 | [EnTT](https://github.com/skypjack/entt) | `v3.16.0` | Optional |
@@ -262,7 +264,7 @@ structure-of-arrays layout instead (all x together, all y together).
 | `MemoryTests` | frame arena reset/alignment/overflow, many resets stay in the buffer, pmr containers use their resource, tracking counts, pools (incl. the synchronized pool from many threads) |
 | `InputTests` | key down/pressed/released edges, taps within one frame, fixed-step edges, `ReleaseAll`; actions with several keys, action taps across fixed steps, axes, rebinding; gamepads (synthetic pads, no hardware): deadzone math (per-axis, radial), trigger/stick virtual buttons with hysteresis, button edges across fixed steps, several pads, labels, gamepad bindings and largest-magnitude axes; `FixedTimestep` accumulation, average rate at 144 fps / 120 Hz, slow-frame clamp |
 | `AudioTests` | MP3 decoding from an embedded 809-byte file (length, level, channels, pitch after resampling), garbage rejected, WAV loading, `LoadSound` by extension incl. unknown/missing files, `MakeSound` conversion; mixer handles (stale handles, reuse, releasing samples), fade-in/out and volume ramps without clicks, looping, pitch, pan, master volume/mute, voice stealing, soft limiter; synth waveforms (length, no NaN, peak), envelopes, lowpass |
-| `Renderer2DTests` | `Renderer2D` batching and shape generation on the CPU (no GPU), `Transform2D`, color packing |
+| `Renderer2DTests` | `Renderer2D` batching and shape generation on the CPU (no GPU), `Transform2D`, color packing; sprite quads (UVs, rotation, origin, flips, pixel snap), draw order across lines/sprites/texture switches, atlas JSON parsing |
 
 ```sh
 cmake --build --preset debug
@@ -324,9 +326,9 @@ events -> Input          OnEvent
 fixed steps (0..N)       OnFixedUpdate(dt)       game logic at ApplicationSpec::FixedUpdateRate
                          OnUpdate(frameTime)
 BeginFrame               (acquire command buffer + swapchain; vsync waits here)
-                         OnRender2D(renderer2D)  record 2D shapes (CPU only)
-copy passes              Renderer2D upload, ImGui upload
-render pass              OnRender(pass), then the 2D shapes, then ImGui on top
+                         OnRender2D(renderer2D)  record 2D shapes and sprites (CPU only)
+copy passes              Renderer2D upload (lines + sprites), ImGui upload
+render pass              OnRender(pass), then the 2D shapes/sprites, then ImGui on top
 EndFrame                 submit + present
 ```
 
@@ -368,7 +370,65 @@ them before `BeginRenderPass`, and draws them inside it (after `OnRender`, below
 (e.g. to keep a letterboxed playfield out of the black bars; `GetRenderer().GetFrameWidth()/Height()`
 give the target size inside `OnRender2D`).
 `Transform2D` applies scale, then rotation (radians, clockwise on screen in y-down space), then
-position. The recording side needs no GPU, which is what `Renderer2DTests` checks.
+position. The recording side needs no GPU, which is what `Renderer2DTests` checks. Textured
+sprites go through the same batches; see [Textures and sprites](#textures-and-sprites).
+
+## Textures and sprites
+
+`Emerald::Texture` (`Renderer/Texture.h`) is an RGBA8 GPU texture plus its sampler. It is
+move-only and frees both when destroyed, so keep it alive as long as sprites use it (e.g. a member of
+your Application, created in `OnStart`, which runs after the GPU is set up):
+
+```cpp
+SDL_GPUDevice* device = GetRenderer().GetDevice();
+const std::filesystem::path assets = Emerald::Paths::GetBasePath() / "assets";
+
+// Any file stb_image reads (PNG, JPG, BMP, TGA, ...). Nearest filtering + clamp by default (pixel art).
+std::optional<Emerald::Texture> logo = Emerald::Texture::Load(device, assets / "logo.png");
+auto photo = Emerald::Texture::Load(device, assets / "photo.jpg",
+                                    {.Filter = Emerald::TextureFilter::Linear});
+
+// Several sprites in one image + a JSON file naming their rectangles (pixels, top-left origin):
+//   { "ship": { "x": 1, "y": 1, "w": 38, "h": 80 }, "rock": { ... } }
+// (TexturePacker's "JSON (Hash)" export, {"frames": {name: {"frame": {x, y, w, h}}}}, works too.)
+std::optional<Emerald::TextureAtlas> atlas =
+    Emerald::TextureAtlas::Load(device, assets / "atlas.png", assets / "atlas.json");
+Emerald::Sprite ship = atlas->Get("ship");   // Find() returns std::optional instead
+Emerald::Sprite hull = ship.Crop({0, 0}, {38, 66}); // part of a region, e.g. an animation frame
+```
+
+`Texture::Create(device, image)` uploads an `Emerald::Image` you built yourself (the sandbox makes
+its sprites procedurally). The upload uses its own command buffer and copy pass, so it works at any
+time outside a render pass. Relative paths are resolved against the working directory, which is
+why the example uses `Paths::GetBasePath()` (the executable's folder, where the build copies assets).
+
+Draw sprites with `Renderer2D`, between the same `Begin`/`End` as the shapes:
+
+```cpp
+r.DrawSprite(ship, pos, {.Scale = Vec2(0.5f), .Rotation = angle});      // centered on pos
+r.DrawSprite(ship, pos, {.Size = {32, 32}, .Origin = {0.5f, 1.0f}});    // feet at pos
+r.DrawSprite(*logo, {20, 20}, {.Origin = {0, 0}, .Tint = {1, 1, 1, 0.5f}, .FlipX = true,
+                               .PixelSnap = true});
+```
+
+`SpriteOptions` (all optional, in this order for designated initializers): `Size` (world units;
+zero = region size × `Scale`), `Scale`, `Rotation` (radians, clockwise on screen), `Origin` (pivot
+as a fraction of the size, default center), `Tint` (multiplies color and alpha), `FlipX`/`FlipY`,
+`PixelSnap` (moves the unrotated top-left corner onto a whole unit, which is a whole pixel with a
+pixel-space projection, so pixel art stays crisp).
+
+How it is drawn:
+
+- Every sprite is a quad of 6 vertices (position, UV, packed tint) in one sprite vertex stream,
+  uploaded in the same copy pass as the lines. The sprite pipeline (`shaders/Sprite.*.hlsl`)
+  samples the texture and multiplies by the tint.
+- **Draw order is call order**, lines and sprites mixed. Consecutive sprites with the same texture
+  share one draw call, and so do consecutive lines; switching between lines and sprites, or to
+  another texture, starts a new one. Put sprites that share an atlas next to each other for fewer
+  draw calls (`GetLastFrameDrawCalls()` shows the count).
+- Blending uses **straight (non-premultiplied) alpha**, like PNG files: `src × a + dst × (1 − a)`.
+  With `Linear` filtering, fully transparent pixels still get blended with their neighbours, so give
+  them the edge color (most tools do) or you get dark fringes; `Nearest` has no such problem.
 
 ## Input (actions)
 
@@ -538,6 +598,13 @@ It is always built in Release and lives in `build/_shadercross`, which every pre
   `-DEMERALD_SHADER_FORMATS="SPIRV;MSL"`.
 - With the vendored build **all three formats (SPIR-V, DXIL, MSL) are produced on Linux**; DXC and its
   `libdxil` validator are built from source, so the DXIL is signed.
+- **GCC 14 miscompiles DXC**: the tool then builds and handles simple shaders, but every texture
+  sample fails DXIL validation (*"sample_\* instructions require resource to be declared to return
+  UNORM, SNORM or FLOAT"*). So when the project compiler is GCC 14 or newer, Emerald builds the tool
+  with Clang if `clang`/`clang++` are installed (and warns otherwise). The smoke test samples a
+  texture, so a broken tool is caught right after it is built. On an older Linux checkout with a
+  GCC-built tool: install clang, delete `build/_shadercross` and rebuild. (Only seen with GCC; the
+  Clang build and the official DXC releases are fine.)
 - The built `dxcompiler`/`dxil` libraries are copied next to the executable (`build/_shadercross/bin/`)
   and the tool is smoke-tested (HLSL → SPIR-V and DXIL) right after it is built. This matters on
   Windows, which has no RPATH: without the copies `shadercross.exe` picks up another
@@ -555,7 +622,7 @@ It is always built in Release and lives in `build/_shadercross`, which every pre
 ```
 include/Emerald/   Public engine headers (Core/, Input/, Audio/, Renderer/, Assets/, Math/, Memory/)
 src/               Engine implementation
-shaders/           The engine's HLSL shaders (Renderer2D; compiled at build time for every app)
+shaders/           The engine's HLSL shaders (Renderer2D lines, Sprite; compiled at build time for every app)
 sandbox/           Example application (src/, and its own shaders/)
 tests/             Unit tests (ctest)
 bench/             Math micro-benchmark (EMERALD_BUILD_BENCH)

@@ -9,3 +9,13 @@ emerald_add_shaders(Sandbox
 )
 
 emerald_set_warnings(Sandbox)
+
+# The text demo's font (Press Start 2P, SIL Open Font License; see assets/fonts/) goes next to the
+# executable, where the sandbox looks for it with Paths::GetBasePath().
+add_custom_command(TARGET Sandbox POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:Sandbox>/assets/fonts
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${CMAKE_CURRENT_SOURCE_DIR}/assets/fonts/PressStart2P-Regular.ttf
+            ${CMAKE_CURRENT_SOURCE_DIR}/assets/fonts/PressStart2P-OFL.txt
+            $<TARGET_FILE_DIR:Sandbox>/assets/fonts/
+    VERBATIM)

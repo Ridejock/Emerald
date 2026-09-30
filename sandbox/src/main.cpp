@@ -2,6 +2,7 @@
 #include <charconv>
 #include <cmath>
 #include <cstddef>
+#include <filesystem>
 #include <future>
 #include <numeric>
 #include <optional>
@@ -198,6 +199,7 @@ protected:
                                                     {{"gem", {{0.0f, 0.0f}, {16.0f, 16.0f}}},
                                                      {"ring", {{16.0f, 0.0f}, {16.0f, 16.0f}}}});
         }
+        LoadFonts();
     }
 
     // Input + fixed-step demo: move the arrow with WASD / arrow keys / left stick / d-pad (at
@@ -290,7 +292,68 @@ protected:
             r.DrawCircle(m_ArrowPosition, 20.0f + 200.0f * m_PulseAge,
                          {1.0f, 1.0f, 1.0f, 1.0f - 2.0f * m_PulseAge});
 
+        DrawTextDemo(r, size);
         r.End();
+    }
+
+    // Text demo: one pixel font baked at three sizes (Nearest: crisp), and smooth (Linear,
+    // oversampled) at a large size, scaling, measuring, alignment and Latin-1 characters.
+    void DrawTextDemo(Emerald::Renderer2D& r, const Vec2& size)
+    {
+        if (!m_PixelFont || !m_SmallFont || !m_SmoothFont)
+            return;
+        using Emerald::TextAlign;
+        const Vec4 white{1.0f, 1.0f, 1.0f, 1.0f};
+        const Vec4 gold{1.0f, 0.85f, 0.3f, 1.0f};
+        const Vec4 grey{0.65f, 0.7f, 0.75f, 1.0f};
+
+        // Header, top-left: the pixel font at 16 px and 8 px.
+        r.DrawText(*m_PixelFont, "EMERALD TEXT", {30.0f, 30.0f}, {0.35f, 0.95f, 0.55f, 1.0f});
+        r.DrawText(*m_SmallFont,
+                   "stb_truetype -> one atlas per font\nsprite batch, 1 draw call each",
+                   {30.0f, 56.0f}, grey);
+
+        // Smooth text in the middle, gently breathing: Linear filtering keeps it soft when scaled.
+        const f32 breathe = 1.0f + 0.08f * std::sin(1.5f * m_Time);
+        r.DrawText(*m_SmoothFont, "Hello, world!", {size.x * 0.5f, 140.0f}, white, breathe,
+                   TextAlign::Center);
+
+        // MeasureText: a box drawn exactly around a string.
+        const std::string_view measured = "MeasureText";
+        const Vec2 box = m_PixelFont->MeasureText(measured, 2.0f);
+        const Vec2 boxAt{size.x - 30.0f - box.x, 30.0f};
+        r.DrawRect(boxAt - Vec2(4.0f), box + Vec2(8.0f), gold);
+        r.DrawText(*m_PixelFont, measured, boxAt, gold, 2.0f);
+        r.DrawText(*m_SmallFont,
+                   std::to_string(static_cast<i32>(box.x)) + " x " +
+                       std::to_string(static_cast<i32>(box.y)) + " px",
+                   {size.x - 30.0f, boxAt.y + box.y + 12.0f}, grey, 1.0f, TextAlign::Right);
+
+        // Alignment: three blocks, each line aligned on the marker line through its anchor.
+        const f32 top = size.y - 190.0f;
+        const TextAlign aligns[] = {TextAlign::Left, TextAlign::Center, TextAlign::Right};
+        const std::string_view texts[] = {"Left\naligned\ntext", "Center\naligned\ntext",
+                                          "Right\naligned\ntext"};
+        for (usize i = 0; i < 3; ++i) {
+            const f32 x = size.x * (0.3f + 0.2f * static_cast<f32>(i));
+            r.DrawLine({x, top - 10.0f}, {x, top + 60.0f}, {0.3f, 0.7f, 1.0f, 0.6f});
+            r.DrawText(*m_PixelFont, texts[i], {x, top}, white, 1.0f, aligns[i]);
+        }
+
+        // Latin-1 from the extra glyph range, and the pixel font scaled 3x (still crisp).
+        r.DrawText(*m_PixelFont,
+                   "Caf\xC3\xA9 \xC2\xBFQu\xC3\xA9 tal? Gr\xC3\xBC\xC3\x9F"
+                   "e \xC2\xA9 2026",
+                   {size.x * 0.5f, size.y - 100.0f}, gold, 1.0f, TextAlign::Center);
+        r.DrawText(*m_PixelFont, "x3", {size.x * 0.5f - 20.0f, size.y - 76.0f}, white, 3.0f);
+
+        // Live stats, bottom-left (last frame's numbers).
+        const Emerald::Renderer2D& stats = GetRenderer2D();
+        r.DrawText(*m_SmallFont,
+                   "frame " + std::to_string(GetFrameCount()) + "  sprites " +
+                       std::to_string(stats.GetLastFrameSpriteCount()) + "  draw calls " +
+                       std::to_string(stats.GetLastFrameDrawCalls()),
+                   {30.0f, size.y - 30.0f}, grey);
     }
 
     // Sprite demo: scaling, rotation, flipping, tint and alpha, pixel snapping, and layering in
@@ -478,6 +541,24 @@ private:
                 kCount, pool.GetThreadCount(), total, ms);
     }
 
+    // The same TTF at three sizes and two filters; each Font is its own atlas texture.
+    void LoadFonts()
+    {
+        SDL_GPUDevice* device = GetRenderer().GetDevice();
+        const std::filesystem::path path =
+            Emerald::Paths::GetBasePath() / "assets/fonts/PressStart2P-Regular.ttf";
+        const auto pixel = [&](f32 px) {
+            return Emerald::Font::Load(device, path,
+                                       {.Size = px,
+                                        .Ranges = {Emerald::kAsciiGlyphs, Emerald::kLatin1Glyphs},
+                                        .Oversample = 1,
+                                        .Filter = Emerald::TextureFilter::Nearest});
+        };
+        m_PixelFont = pixel(16.0f);
+        m_SmallFont = pixel(8.0f);
+        m_SmoothFont = Emerald::Font::Load(device, path, {.Size = 40.0f, .Oversample = 2});
+    }
+
     // Window size in window coordinates as floats: the pixel-space projections use it.
     [[nodiscard]] Vec2 GetViewSize() const { return Vec2(GetWindowSize()); }
 
@@ -540,6 +621,9 @@ private:
     f32 m_ArrowAngle = 0.0f;
     f32 m_PulseAge = 1.0f;                        // seconds since Space was pressed
     std::optional<Emerald::TextureAtlas> m_Atlas; // the sprite demo's sheet
+    std::optional<Emerald::Font> m_PixelFont;     // text demo: 16 px, Nearest
+    std::optional<Emerald::Font> m_SmallFont;     // 8 px, Nearest
+    std::optional<Emerald::Font> m_SmoothFont;    // 40 px, Linear + oversampling
     SDL_GPUGraphicsPipeline* m_Pipeline = nullptr;
     SDL_GPUBuffer* m_TriangleBuffer = nullptr;
     SDL_GPUBuffer* m_QuadBuffer = nullptr;

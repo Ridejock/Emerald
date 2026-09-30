@@ -34,6 +34,14 @@ struct Sprite {
 //   r.DrawSprite(ship, position, {.Scale = Vec2(0.5f), .Rotation = angle});
 //
 // The sprite is scaled, then rotated around its origin, and the origin is put at `position`.
+// (Tint, a Vec4, is 16-byte aligned, so the compiler pads the struct around it. That is fine, but
+// MSVC reports it at /W4 as warning C4324 in every file that includes this header, so it is
+// switched off for this struct only. The member order stays as is: it is the order designated
+// initializers must use.)
+#if defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable : 4324)
+#endif
 struct SpriteOptions {
     // Size in world units; zero = the region's pixel size times Scale.
     Vec2 Size{};
@@ -52,5 +60,8 @@ struct SpriteOptions {
     // only matches if the size is whole pixels too.
     bool PixelSnap = false;
 };
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
 
 } // namespace Emerald

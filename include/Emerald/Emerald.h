@@ -22,4 +22,7 @@
 #include "Emerald/Renderer/Pipeline.h"
 #include "Emerald/Renderer/Renderer.h"
 #include "Emerald/Renderer/Renderer2D.h"
+#include "Emerald/Renderer/Sprite.h"
+#include "Emerald/Renderer/Texture.h"
+#include "Emerald/Renderer/TextureAtlas.h"
 #include "Emerald/Renderer/Shader.h"

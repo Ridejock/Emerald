@@ -47,7 +47,17 @@ FetchContent_Declare(dr_libs
     SOURCE_SUBDIR  do-not-add
 )
 
-FetchContent_MakeAvailable(SDL3 spdlog stb dr_libs)
+# --- nlohmann/json (header-only; the small release archive, pinned by hash) ---------------
+# Used to read TextureAtlas descriptions.
+set(JSON_BuildTests OFF CACHE INTERNAL "")
+set(JSON_Install    OFF CACHE INTERNAL "")
+FetchContent_Declare(nlohmann_json
+    URL      https://github.com/nlohmann/json/releases/download/v3.12.0/json.tar.xz
+    URL_HASH SHA256=42f6e95cad6ec532fd372391373363b62a14af6d771056dbfc86160e6dfff7aa
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+)
+
+FetchContent_MakeAvailable(SDL3 spdlog stb dr_libs nlohmann_json)
 
 add_library(emerald_stb INTERFACE)
 add_library(Emerald::stb ALIAS emerald_stb)

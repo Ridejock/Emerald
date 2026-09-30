@@ -78,6 +78,8 @@ add_library(Emerald STATIC
     src/Renderer/Shader.cpp
     src/Renderer/Pipeline.cpp
     src/Renderer/Renderer2D.cpp
+    src/Renderer/Texture.cpp
+    src/Renderer/TextureAtlas.cpp
     src/Assets/Image.cpp
     src/Audio/Audio.cpp
     src/Audio/Mixer.cpp
@@ -96,7 +98,7 @@ target_include_directories(Emerald PUBLIC
 
 target_link_libraries(Emerald
     PUBLIC  Emerald::Math SDL3::SDL3 spdlog::spdlog Threads::Threads
-    PRIVATE Emerald::stb Emerald::dr_libs
+    PRIVATE Emerald::stb Emerald::dr_libs nlohmann_json::nlohmann_json
 )
 
 target_compile_definitions(Emerald PUBLIC

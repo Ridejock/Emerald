@@ -9,6 +9,7 @@
 #include "Emerald/Math/Mat4.h"
 #include "Emerald/Math/Vec2.h"
 #include "Emerald/Math/Vec4.h"
+#include "Emerald/Renderer/Sprite.h"
 
 namespace Emerald {
 
@@ -24,21 +25,29 @@ struct Transform2D {
     [[nodiscard]] Vec2 Apply(const Vec2& point) const;
 };
 
-// Batched 2D line renderer: collects lines on the CPU during the frame, uploads them all in one
-// copy pass and draws them with one draw call per Begin/End batch (1 px lines, arcade style).
+// Batched 2D renderer for lines (1 px, arcade style) and textured sprites: collects everything on
+// the CPU during the frame, uploads it all in one copy pass and draws it with as few draw calls as
+// possible.
 //
 // The Application owns one and drives the GPU side; you only record shapes in OnRender2D:
 //
 //   void OnRender2D(Renderer2D& r) override
 //   {
 //       r.Begin(Mat4::OrthoPixelSpace(width, height)); // world -> clip space for this batch
+//       r.DrawSprite(background, {640, 360});
 //       r.DrawLine({10, 10}, {200, 50}, {1, 1, 1, 1});
 //       r.DrawPolygon(shipPoints, color, {.Position = pos, .Rotation = angle});
+//       r.DrawSprite(atlas.Get("ship"), pos, {.Rotation = angle});
 //       r.DrawCircle({400, 300}, 50, color);
 //       r.End();
 //       r.Begin(hudProjection, clipRect); ... r.End(); // more batches, other projections or clip
 //                                                       // rectangles are fine
 //   }
+//
+// Layering: everything is drawn in call order (later calls on top), lines and sprites mixed.
+// Consecutive draws of the same kind - lines, or sprites from the same texture - share one draw
+// call, so group sprites by texture (e.g. use one atlas) to keep the number of draw calls low.
+// Sprites use straight alpha blending; there is no depth buffer.
 //
 // Why the split: SDL GPU uploads need a copy pass, and copy passes cannot run inside a render
 // pass. So every frame the Application calls OnRender2D (CPU only), then Upload() before the
@@ -50,15 +59,34 @@ public:
         Vec2 Position; // TEXCOORD0
         u32 Color;     // TEXCOORD1: RGBA, 8 bits each (red in the lowest byte)
     };
-    // One Begin/End pair: a range of vertices drawn with one view-projection matrix.
+    // Layout of one sprite vertex; must match `Input` in Sprite.vert.hlsl. Six per sprite (two
+    // triangles).
+    struct SpriteVertex {
+        Vec2 Position; // TEXCOORD0
+        Vec2 TexCoord; // TEXCOORD1: 0..1 across the texture
+        u32 Color;     // TEXCOORD2: tint, packed like Vertex::Color
+    };
+    enum class CommandType : u8 { Lines, Sprites };
+    // A run of consecutive draws of one kind: one draw call.
+    struct DrawCommand {
+        CommandType Type = CommandType::Lines;
+        u32 FirstVertex = 0; // into GetVertices() (lines) or GetSpriteVertices() (sprites)
+        u32 VertexCount = 0;
+        // Sprites only: the texture they all use.
+        u32 TextureId = 0;
+        SDL_GPUTexture* GpuTexture = nullptr;
+        SDL_GPUSampler* Sampler = nullptr;
+    };
+    // One Begin/End pair: its commands, drawn with one view-projection matrix and clip rectangle.
+    // (Size is a multiple of Mat4's 16-byte alignment; implicit padding caused by an alignas
+    // member would trigger MSVC warning C4324 at /W4.)
     struct Batch {
         Mat4 ViewProjection;
-        SDL_Rect Clip{}; // render-target pixels; w or h == 0: no clipping
-        u32 FirstVertex = 0;
+        SDL_Rect Clip{};     // render-target pixels; w or h == 0: no clipping
+        u32 FirstVertex = 0; // the batch's line vertices (contiguous in GetVertices())
         u32 VertexCount = 0;
-        // Explicit padding to a multiple of Mat4's 16-byte alignment; implicit padding caused by
-        // an alignas member triggers MSVC warning C4324 at /W4.
-        u32 Padding[2]{};
+        u32 FirstCommand = 0; // into GetCommands()
+        u32 CommandCount = 0;
     };
 
     Renderer2D() = default;
@@ -67,9 +95,10 @@ public:
     Renderer2D(const Renderer2D&) = delete;
     Renderer2D& operator=(const Renderer2D&) = delete;
 
-    // Loads the Renderer2D shaders (compiled for every target by emerald_add_shaders) and builds
-    // the line pipeline for `colorFormat`. Returns false on failure (logged). Recording shapes
-    // works without it (e.g. in tests); Upload/Render then only discard them.
+    // Loads the Renderer2D and Sprite shaders (compiled for every target by emerald_add_shaders)
+    // and builds the line and sprite pipelines for `colorFormat`. Returns false on failure
+    // (logged). Recording shapes works without it (e.g. in tests); Upload/Render then only discard
+    // them.
     bool Init(SDL_GPUDevice* device, SDL_GPUTextureFormat colorFormat);
     void Shutdown();
 
@@ -89,6 +118,13 @@ public:
     void DrawCircle(const Vec2& center, f32 radius, const Vec4& color, u32 segments = 32);
     void DrawRect(const Vec2& topLeft, const Vec2& size, const Vec4& color);
 
+    // A textured quad; see SpriteOptions for size, rotation, origin, tint, flipping and pixel
+    // snapping. `position` is where the sprite's origin (by default its center) goes.
+    void DrawSprite(const Sprite& sprite, const Vec2& position, const SpriteOptions& options = {});
+    // The whole texture as a sprite.
+    void DrawSprite(const Texture& texture, const Vec2& position,
+                    const SpriteOptions& options = {});
+
     // --- GPU side (the Application calls these) ---
     // Copies this frame's vertices to the GPU. Must be called outside of any render pass.
     void Upload(SDL_GPUCommandBuffer* commandBuffer);
@@ -101,30 +137,61 @@ public:
 
     [[nodiscard]] std::span<const Vertex> GetVertices() const { return m_Vertices; }
     [[nodiscard]] std::span<const Batch> GetBatches() const { return m_Batches; }
+    [[nodiscard]] std::span<const SpriteVertex> GetSpriteVertices() const
+    {
+        return m_SpriteVertices;
+    }
+    [[nodiscard]] std::span<const DrawCommand> GetCommands() const { return m_Commands; }
     // Lines recorded so far this frame / drawn by the last Render (for stats overlays).
     [[nodiscard]] u32 GetLineCount() const { return static_cast<u32>(m_Vertices.size() / 2); }
     [[nodiscard]] u32 GetLastFrameLineCount() const { return m_LastFrameLines; }
+    [[nodiscard]] u32 GetSpriteCount() const
+    {
+        return static_cast<u32>(m_SpriteVertices.size() / 6);
+    }
+    [[nodiscard]] u32 GetLastFrameSpriteCount() const { return m_LastFrameSprites; }
+    [[nodiscard]] u32 GetLastFrameDrawCalls() const { return m_LastFrameDrawCalls; }
 
     // RGBA floats in [0, 1] -> the packed vertex color.
     [[nodiscard]] static u32 PackColor(const Vec4& color);
 
 private:
+    // A GPU vertex buffer + the CPU-writable transfer buffer used to fill it. Both grow (never
+    // shrink) to fit the largest frame so far.
+    struct GpuStream {
+        SDL_GPUBuffer* Buffer = nullptr;
+        SDL_GPUTransferBuffer* Transfer = nullptr;
+        u32 Capacity = 0;      // bytes
+        const char* Name = ""; // for log messages
+
+        bool Ensure(SDL_GPUDevice* device, u32 bytes);
+        // Copies `bytes` from `data` into the transfer buffer; the caller then records the copy.
+        bool Fill(SDL_GPUDevice* device, const void* data, u32 bytes);
+        void Release(SDL_GPUDevice* device);
+    };
+
     [[nodiscard]] bool CanDraw() const;
-    bool EnsureCapacity(u32 bytes);
+    // Makes the current batch's last command one of `type` (and `texture`), starting a new one
+    // if needed, so draws are recorded in call order.
+    void UseCommand(CommandType type, const Texture* texture = nullptr);
+    void CloseCommand();
 
     std::vector<Vertex> m_Vertices;
+    std::vector<SpriteVertex> m_SpriteVertices;
+    std::vector<DrawCommand> m_Commands;
     std::vector<Batch> m_Batches;
     bool m_InBatch = false;
-    bool m_Uploaded = false;
+    bool m_LinesUploaded = false;
+    bool m_SpritesUploaded = false;
     u32 m_LastFrameLines = 0;
+    u32 m_LastFrameSprites = 0;
+    u32 m_LastFrameDrawCalls = 0;
 
     SDL_GPUDevice* m_Device = nullptr;
-    SDL_GPUGraphicsPipeline* m_Pipeline = nullptr;
-    // GPU vertex buffer + the CPU-writable transfer buffer used to fill it. Both grow (never
-    // shrink) to fit the largest frame so far.
-    SDL_GPUBuffer* m_VertexBuffer = nullptr;
-    SDL_GPUTransferBuffer* m_TransferBuffer = nullptr;
-    u32 m_Capacity = 0; // bytes
+    SDL_GPUGraphicsPipeline* m_Pipeline = nullptr; // lines
+    SDL_GPUGraphicsPipeline* m_SpritePipeline = nullptr;
+    GpuStream m_LineStream{.Name = "line"};
+    GpuStream m_SpriteStream{.Name = "sprite"};
 };
 
 } // namespace Emerald

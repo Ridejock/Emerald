@@ -22,6 +22,8 @@ struct GraphicsPipelineDesc {
     SDL_GPUTextureFormat ColorFormat = SDL_GPU_TEXTUREFORMAT_INVALID;
     SDL_GPUPrimitiveType Primitive = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
     bool AlphaBlend = false;
+    // With AlphaBlend: add the color instead of blending over it (src * srcAlpha + dst), for glows.
+    bool AdditiveBlend = false;
 };
 
 // Returns nullptr on failure (logged). Release with SDL_ReleaseGPUGraphicsPipeline.

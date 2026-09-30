@@ -47,11 +47,18 @@ struct Transform2D {
 // Layering: everything is drawn in call order (later calls on top), lines and sprites mixed.
 // Consecutive draws of the same kind - lines, or sprites from the same texture - share one draw
 // call, so group sprites by texture (e.g. use one atlas) to keep the number of draw calls low.
-// Sprites use straight alpha blending; there is no depth buffer.
+// Draws use straight alpha blending, or additive blending after SetBlendMode(Additive); there is
+// no depth buffer.
 //
 // Why the split: SDL GPU uploads need a copy pass, and copy passes cannot run inside a render
 // pass. So every frame the Application calls OnRender2D (CPU only), then Upload() before the
 // render pass, and Render() inside it (after OnRender, below the ImGui overlay).
+// How a draw combines with what is already on screen.
+enum class BlendMode : u8 {
+    Alpha,    // the usual "over": out = src * a + dst * (1 - a)
+    Additive, // light adds up: out = src * a + dst; overlaps glow brighter (sparks, fire)
+};
+
 class Renderer2D {
 public:
     // Layout of one vertex in the GPU buffer; must match `Input` in Renderer2D.vert.hlsl.
@@ -70,6 +77,7 @@ public:
     // A run of consecutive draws of one kind: one draw call.
     struct DrawCommand {
         CommandType Type = CommandType::Lines;
+        BlendMode Blend = BlendMode::Alpha;
         u32 FirstVertex = 0; // into GetVertices() (lines) or GetSpriteVertices() (sprites)
         u32 VertexCount = 0;
         // Sprites only: the texture they all use.
@@ -107,6 +115,10 @@ public:
     // (0, 0) at the top-left, e.g. to keep a letterboxed playfield out of the black bars.
     void Begin(const Mat4& viewProjection, const SDL_Rect& clip = {});
     void End();
+    // Blending for the following draws of this batch (Begin resets it to Alpha). Each change
+    // starts a new draw call, so group additive draws together.
+    void SetBlendMode(BlendMode mode) { m_BlendMode = mode; }
+    [[nodiscard]] BlendMode GetBlendMode() const { return m_BlendMode; }
 
     void DrawLine(const Vec2& a, const Vec2& b, const Vec4& color);
     // Connects consecutive points (and the last one back to the first if `closed`).
@@ -181,6 +193,7 @@ private:
     std::vector<DrawCommand> m_Commands;
     std::vector<Batch> m_Batches;
     bool m_InBatch = false;
+    BlendMode m_BlendMode = BlendMode::Alpha;
     bool m_LinesUploaded = false;
     bool m_SpritesUploaded = false;
     u32 m_LastFrameLines = 0;
@@ -190,6 +203,8 @@ private:
     SDL_GPUDevice* m_Device = nullptr;
     SDL_GPUGraphicsPipeline* m_Pipeline = nullptr; // lines
     SDL_GPUGraphicsPipeline* m_SpritePipeline = nullptr;
+    SDL_GPUGraphicsPipeline* m_AdditivePipeline = nullptr; // lines, BlendMode::Additive
+    SDL_GPUGraphicsPipeline* m_AdditiveSpritePipeline = nullptr;
     GpuStream m_LineStream{.Name = "line"};
     GpuStream m_SpriteStream{.Name = "sprite"};
 };

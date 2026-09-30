@@ -22,6 +22,12 @@ SDL_GPUGraphicsPipeline* CreateGraphicsPipeline(SDL_GPUDevice* device,
         blend.src_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ONE;
         blend.dst_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ONE_MINUS_SRC_ALPHA;
         blend.alpha_blend_op = SDL_GPU_BLENDOP_ADD;
+        if (desc.AdditiveBlend) {
+            // Light adds up: out = src * srcAlpha + dst. The target's alpha is kept.
+            blend.dst_color_blendfactor = SDL_GPU_BLENDFACTOR_ONE;
+            blend.src_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ZERO;
+            blend.dst_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ONE;
+        }
     }
 
     SDL_GPUGraphicsPipelineCreateInfo info{};

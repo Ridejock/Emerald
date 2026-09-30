@@ -55,20 +55,23 @@ bool Renderer2D::Init(SDL_GPUDevice* device, SDL_GPUTextureFormat colorFormat)
     };
 
     if (vertex && fragment) {
-        m_Pipeline = CreateGraphicsPipeline(device, {.VertexShader = vertex,
-                                                     .FragmentShader = fragment,
-                                                     .VertexBuffers = buffers,
-                                                     .VertexAttributes = attributes,
-                                                     .ColorFormat = colorFormat,
-                                                     .Primitive = SDL_GPU_PRIMITIVETYPE_LINELIST,
-                                                     .AlphaBlend = true});
+        GraphicsPipelineDesc desc{.VertexShader = vertex,
+                                  .FragmentShader = fragment,
+                                  .VertexBuffers = buffers,
+                                  .VertexAttributes = attributes,
+                                  .ColorFormat = colorFormat,
+                                  .Primitive = SDL_GPU_PRIMITIVETYPE_LINELIST,
+                                  .AlphaBlend = true};
+        m_Pipeline = CreateGraphicsPipeline(device, desc);
+        desc.AdditiveBlend = true; // same shaders, different blend state
+        m_AdditivePipeline = CreateGraphicsPipeline(device, desc);
     }
     if (vertex)
         SDL_ReleaseGPUShader(device, vertex);
     if (fragment)
         SDL_ReleaseGPUShader(device, fragment);
 
-    if (!m_Pipeline) {
+    if (!m_Pipeline || !m_AdditivePipeline) {
         EM_CORE_ERROR("Renderer2D: could not create its pipeline; 2D shapes will not be drawn. "
                       "Did the app's CMake call emerald_add_shaders(<target>)?");
         return false;
@@ -99,20 +102,22 @@ bool Renderer2D::Init(SDL_GPUDevice* device, SDL_GPUTextureFormat colorFormat)
          .offset = offsetof(SpriteVertex, Color)},
     };
     if (spriteVertex && spriteFragment) {
-        m_SpritePipeline =
-            CreateGraphicsPipeline(device, {.VertexShader = spriteVertex,
-                                            .FragmentShader = spriteFragment,
-                                            .VertexBuffers = spriteBuffers,
-                                            .VertexAttributes = spriteAttributes,
-                                            .ColorFormat = colorFormat,
-                                            .Primitive = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST,
-                                            .AlphaBlend = true});
+        GraphicsPipelineDesc desc{.VertexShader = spriteVertex,
+                                  .FragmentShader = spriteFragment,
+                                  .VertexBuffers = spriteBuffers,
+                                  .VertexAttributes = spriteAttributes,
+                                  .ColorFormat = colorFormat,
+                                  .Primitive = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST,
+                                  .AlphaBlend = true};
+        m_SpritePipeline = CreateGraphicsPipeline(device, desc);
+        desc.AdditiveBlend = true;
+        m_AdditiveSpritePipeline = CreateGraphicsPipeline(device, desc);
     }
     if (spriteVertex)
         SDL_ReleaseGPUShader(device, spriteVertex);
     if (spriteFragment)
         SDL_ReleaseGPUShader(device, spriteFragment);
-    if (!m_SpritePipeline) {
+    if (!m_SpritePipeline || !m_AdditiveSpritePipeline) {
         EM_CORE_ERROR("Renderer2D: could not create the sprite pipeline; sprites will not be "
                       "drawn (lines still work)");
         return false;
@@ -125,14 +130,16 @@ void Renderer2D::Shutdown()
     if (!m_Device)
         return;
     // The caller (Application) waits for the GPU to be idle before shutting renderers down.
-    if (m_Pipeline)
-        SDL_ReleaseGPUGraphicsPipeline(m_Device, m_Pipeline);
-    if (m_SpritePipeline)
-        SDL_ReleaseGPUGraphicsPipeline(m_Device, m_SpritePipeline);
+    for (SDL_GPUGraphicsPipeline* pipeline :
+         {m_Pipeline, m_SpritePipeline, m_AdditivePipeline, m_AdditiveSpritePipeline})
+        if (pipeline)
+            SDL_ReleaseGPUGraphicsPipeline(m_Device, pipeline);
     m_LineStream.Release(m_Device);
     m_SpriteStream.Release(m_Device);
     m_Pipeline = nullptr;
     m_SpritePipeline = nullptr;
+    m_AdditivePipeline = nullptr;
+    m_AdditiveSpritePipeline = nullptr;
     m_Device = nullptr;
 }
 
@@ -146,6 +153,7 @@ void Renderer2D::Begin(const Mat4& viewProjection, const SDL_Rect& clip)
     batch.FirstCommand = static_cast<u32>(m_Commands.size());
     m_Batches.push_back(batch);
     m_InBatch = true;
+    m_BlendMode = BlendMode::Alpha;
 }
 
 void Renderer2D::End()
@@ -164,12 +172,13 @@ void Renderer2D::UseCommand(CommandType type, const Texture* texture)
     if (batch.CommandCount > 0) {
         const DrawCommand& last = m_Commands.back();
         const bool sameTexture = type == CommandType::Lines || last.TextureId == texture->GetId();
-        if (last.Type == type && sameTexture)
+        if (last.Type == type && sameTexture && last.Blend == m_BlendMode)
             return; // keep adding to the current run
         CloseCommand();
     }
     DrawCommand command;
     command.Type = type;
+    command.Blend = m_BlendMode;
     if (type == CommandType::Lines) {
         command.FirstVertex = static_cast<u32>(m_Vertices.size());
     } else {
@@ -439,8 +448,11 @@ void Renderer2D::Render(SDL_GPUCommandBuffer* commandBuffer, SDL_GPURenderPass* 
                 (!isLines && (!m_SpritesUploaded || !command.GpuTexture)))
                 continue; // nothing to draw, or no GPU texture (e.g. CreateWithoutGpu)
 
-            // Switch pipelines (and their vertex buffer) only when the kind changes.
-            SDL_GPUGraphicsPipeline* pipeline = isLines ? m_Pipeline : m_SpritePipeline;
+            // Switch pipelines (and their vertex buffer) only when the kind or blend changes.
+            const bool additive = command.Blend == BlendMode::Additive;
+            SDL_GPUGraphicsPipeline* pipeline =
+                isLines ? (additive ? m_AdditivePipeline : m_Pipeline)
+                        : (additive ? m_AdditiveSpritePipeline : m_SpritePipeline);
             if (pipeline != bound) {
                 SDL_BindGPUGraphicsPipeline(renderPass, pipeline);
                 const SDL_GPUBufferBinding binding{

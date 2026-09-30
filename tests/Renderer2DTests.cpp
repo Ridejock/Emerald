@@ -216,3 +216,26 @@ TEST(TextureAtlasParse)
 
     Emerald::Log::Shutdown();
 }
+
+TEST(Renderer2DBlendModes)
+{
+    // A blend change starts a new command; Begin goes back to Alpha.
+    Renderer2D r;
+    const Vec4 white{1.0f, 1.0f, 1.0f, 1.0f};
+    r.Begin(Mat4::Identity());
+    r.DrawLine({0.0f, 0.0f}, {1.0f, 0.0f}, white);
+    r.SetBlendMode(BlendMode::Additive);
+    r.DrawLine({0.0f, 1.0f}, {1.0f, 1.0f}, white);
+    r.DrawLine({0.0f, 2.0f}, {1.0f, 2.0f}, white); // same blend: joins the previous line
+    r.End();
+    r.Begin(Mat4::Identity());
+    CHECK(r.GetBlendMode() == BlendMode::Alpha);
+    r.DrawLine({0.0f, 0.0f}, {1.0f, 0.0f}, white);
+    r.End();
+
+    const auto c = r.GetCommands();
+    CHECK(c.size() == 3);
+    CHECK(c[0].Blend == BlendMode::Alpha && c[0].VertexCount == 2);
+    CHECK(c[1].Blend == BlendMode::Additive && c[1].VertexCount == 4);
+    CHECK(c[2].Blend == BlendMode::Alpha);
+}

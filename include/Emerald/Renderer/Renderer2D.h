@@ -143,8 +143,8 @@ public:
     // run. `position` is the top-left of the first line for TextAlign::Left, its top center or
     // top right for Center / Right (every line is aligned on its own). `scale` resizes the baked
     // glyphs; pixel fonts are snapped to whole units.
-    void DrawText(const Font& font, std::string_view text, const Vec2& position, const Vec4& color,
-                  f32 scale = 1.0f, TextAlign align = TextAlign::Left);
+    void DrawString(const Font& font, std::string_view text, const Vec2& position,
+                    const Vec4& color, f32 scale = 1.0f, TextAlign align = TextAlign::Left);
 
     // --- GPU side (the Application calls these) ---
     // Copies this frame's vertices to the GPU. Must be called outside of any render pass.
@@ -201,7 +201,7 @@ private:
     std::vector<SpriteVertex> m_SpriteVertices;
     std::vector<DrawCommand> m_Commands;
     std::vector<Batch> m_Batches;
-    std::vector<PlacedGlyph> m_TextGlyphs; // DrawText's scratch list, reused every call
+    std::vector<PlacedGlyph> m_TextGlyphs; // DrawString's scratch list, reused every call
     bool m_InBatch = false;
     BlendMode m_BlendMode = BlendMode::Alpha;
     bool m_LinesUploaded = false;

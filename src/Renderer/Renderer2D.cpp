@@ -318,8 +318,8 @@ void Renderer2D::DrawSprite(const Sprite& sprite, const Vec2& position,
                             {topLeft, topRight, bottomRight, topLeft, bottomRight, bottomLeft});
 }
 
-void Renderer2D::DrawText(const Font& font, std::string_view text, const Vec2& position,
-                          const Vec4& color, f32 scale, TextAlign align)
+void Renderer2D::DrawString(const Font& font, std::string_view text, const Vec2& position,
+                            const Vec4& color, f32 scale, TextAlign align)
 {
     if (!CanDraw() || text.empty())
         return;

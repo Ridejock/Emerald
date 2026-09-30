@@ -1,4 +1,4 @@
-// Font loading, metrics, measuring, layout and Renderer2D::DrawText, with the sandbox's Press
+// Font loading, metrics, measuring, layout and Renderer2D::DrawString, with the sandbox's Press
 // Start 2P (a monospace pixel font: every glyph advances exactly one em, no kerning). No GPU is
 // needed: fonts are loaded without a device, so their atlas is a CreateWithoutGpu texture.
 
@@ -74,13 +74,13 @@ TEST(FontMeasuresKnownStrings)
 
 TEST(FontSizesAreIndependent)
 {
-    const std::optional<Font> small = LoadPixelFont(8.0f);
-    const std::optional<Font> big = LoadPixelFont(32.0f);
-    if (!small || !big)
+    const std::optional<Font> smallFont = LoadPixelFont(8.0f);
+    const std::optional<Font> bigFont = LoadPixelFont(32.0f);
+    if (!smallFont || !bigFont)
         return;
-    CHECK_NEAR(small->MeasureText("ROCK"), Vec2(32.0f, 8.0f));
-    CHECK_NEAR(big->MeasureText("ROCK"), Vec2(128.0f, 32.0f));
-    CHECK(small->GetTexture().GetId() != big->GetTexture().GetId());
+    CHECK_NEAR(smallFont->MeasureText("ROCK"), Vec2(32.0f, 8.0f));
+    CHECK_NEAR(bigFont->MeasureText("ROCK"), Vec2(128.0f, 32.0f));
+    CHECK(smallFont->GetTexture().GetId() != bigFont->GetTexture().GetId());
 }
 
 TEST(FontOversamplingBakesLargerGlyphs)
@@ -155,14 +155,14 @@ TEST(FontRejectsBadInput)
     CHECK(!Font::Load(nullptr, EMERALD_TEST_FONT, {.Size = 0.0f}).has_value());
 }
 
-TEST(Renderer2DDrawsText)
+TEST(Renderer2DDrawsString)
 {
     const std::optional<Font> font = LoadPixelFont();
     if (!font)
         return;
     Renderer2D r;
     r.Begin(Mat4::OrthoPixelSpace(640.0f, 360.0f));
-    r.DrawText(*font, "HI there", {10.3f, 20.0f}, {1.0f, 0.5f, 0.0f, 1.0f}, 2.0f);
+    r.DrawString(*font, "HI there", {10.3f, 20.0f}, {1.0f, 0.5f, 0.0f, 1.0f}, 2.0f);
     r.End();
 
     CHECK(r.GetSpriteCount() == 7);     // the space has no quad

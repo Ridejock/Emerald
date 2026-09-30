@@ -57,7 +57,7 @@ target_link_libraries(EmeraldAudioTests PRIVATE Emerald::Emerald)
 emerald_set_warnings(EmeraldAudioTests)
 add_test(NAME AudioTests COMMAND EmeraldAudioTests)
 
-# Fonts (stb_truetype): metrics, measuring, layout and DrawText, using the sandbox's demo font.
+# Fonts (stb_truetype): metrics, measuring, layout and DrawString, using the sandbox's demo font.
 add_executable(EmeraldFontTests TestMain.cpp FontTests.cpp)
 target_link_libraries(EmeraldFontTests PRIVATE Emerald::Emerald)
 target_compile_definitions(EmeraldFontTests PRIVATE

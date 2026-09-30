@@ -66,7 +66,7 @@ struct PlacedGlyph {
 //
 //   std::optional<Font> font = Font::Load(device, Paths::GetBasePath() / "assets/Inter.ttf",
 //                                         {.Size = 24.0f});
-//   r.DrawText(*font, "Hello\nworld", {20, 20}, {1, 1, 1, 1});
+//   r.DrawString(*font, "Hello\nworld", {20, 20}, {1, 1, 1, 1});
 //
 // Load one Font per size you need; each has its own atlas texture (one draw call per font and
 // run of text). Text is UTF-8; '\n' starts a new line. Positions are the top-left of the first
@@ -107,7 +107,7 @@ public:
 
     // The baked glyph for a codepoint, or nullptr.
     [[nodiscard]] const Glyph* FindGlyph(u32 codepoint) const;
-    // Places every visible glyph of `text` (appended to `out`), aligned like DrawText. Renderer2D
+    // Places every visible glyph of `text` (appended to `out`), aligned like DrawString. Renderer2D
     // uses this; it is public for custom text effects and tests.
     void LayoutText(std::string_view text, TextAlign align, std::vector<PlacedGlyph>& out) const;
 

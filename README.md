@@ -456,13 +456,13 @@ auto pixel = Emerald::Font::Load(device, path, {.Size = 16.0f,
                                                 .Oversample = 1,
                                                 .Filter = Emerald::TextureFilter::Nearest});
 
-r.DrawText(*ui, "Score: 1200\nLives: 3", {20, 20}, {1, 1, 1, 1});             // top-left at (20, 20)
-r.DrawText(*pixel, "GAME OVER", {640, 300}, {1, 0.3f, 0.3f, 1}, 3.0f,        // 3x, centered on x
+r.DrawString(*ui, "Score: 1200\nLives: 3", {20, 20}, {1, 1, 1, 1});             // top-left at (20, 20)
+r.DrawString(*pixel, "GAME OVER", {640, 300}, {1, 0.3f, 0.3f, 1}, 3.0f,        // 3x, centered on x
            Emerald::TextAlign::Center);
 const Vec2 size = ui->MeasureText("Score: 1200");                           // width, height in px
 ```
 
-- `DrawText(font, text, position, color, scale = 1, align = Left)`: UTF-8 text, `'\n'` starts a
+- `DrawString(font, text, position, color, scale = 1, align = Left)`: UTF-8 text, `'\n'` starts a
   new line, pairs are kerned (the font's GPOS or `kern` table). `position` is the top-left of the
   first line (its ascent line), or its top center / top right for `TextAlign::Center` / `Right`;
   every line is aligned on its own.

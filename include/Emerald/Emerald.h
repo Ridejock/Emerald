@@ -20,6 +20,7 @@
 #include "Emerald/Math/Math.h"
 #include "Emerald/Memory/Memory.h"
 #include "Emerald/Particles/ParticleSystem.h"
+#include "Emerald/Renderer/CrtEffect.h"
 #include "Emerald/Renderer/Font.h"
 #include "Emerald/Renderer/Pipeline.h"
 #include "Emerald/Renderer/Renderer.h"

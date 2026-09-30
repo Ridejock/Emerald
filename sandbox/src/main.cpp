@@ -179,6 +179,7 @@ protected:
         input.BindAction("Pulse", {Key::Space});
         input.BindAction("Pulse", {GamepadButton::South});
         input.BindAction("Quit", {Key::Escape});
+        input.BindAction("Crt", {Key::C}); // CRT post-process on/off
 
         // A short generated "blip" for the pulse, rising in pitch (files would use
         // Emerald::LoadSound("x.mp3")).
@@ -236,6 +237,8 @@ protected:
         m_Time += dt;
         if (GetInput().WasActionPressed("Quit"))
             Quit();
+        if (GetInput().WasActionPressed("Crt"))
+            SetCrtEnabled(!IsCrtEnabled());
 
         // Capture the last frame of a --frames run (or frame 60 otherwise).
         const u64 shotFrame = m_Options.Frames != 0 ? m_Options.Frames : 60;

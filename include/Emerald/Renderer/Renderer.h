@@ -38,6 +38,10 @@ public:
     bool BeginFrame();
     // Starts a render pass that clears the swapchain texture to `clearColor`.
     SDL_GPURenderPass* BeginRenderPass(const SDL_FColor& clearColor);
+    // Starts a render pass into any texture (e.g. an offscreen one for post-processing), cleared
+    // to `clearColor` or, with `clear` = false, keeping what is already there.
+    SDL_GPURenderPass* BeginRenderPass(SDL_GPUTexture* target, const SDL_FColor& clearColor,
+                                       bool clear = true);
     void EndRenderPass();
     // Submits the command buffer; the swapchain texture is presented when the GPU is done.
     void EndFrame();
@@ -58,6 +62,8 @@ public:
     [[nodiscard]] SDL_GPUDevice* GetDevice() const { return m_Device; }
     [[nodiscard]] SDL_GPUCommandBuffer* GetCommandBuffer() const { return m_CommandBuffer; }
     [[nodiscard]] SDL_GPURenderPass* GetRenderPass() const { return m_RenderPass; }
+    // This frame's output texture: the swapchain's, or the screenshot capture texture.
+    [[nodiscard]] SDL_GPUTexture* GetRenderTarget() const { return m_RenderTarget; }
     [[nodiscard]] SDL_GPUTextureFormat GetSwapchainFormat() const;
     [[nodiscard]] u32 GetFrameWidth() const { return m_FrameWidth; }
     [[nodiscard]] u32 GetFrameHeight() const { return m_FrameHeight; }

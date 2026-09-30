@@ -264,7 +264,7 @@ structure-of-arrays layout instead (all x together, all y together).
 | `MemoryTests` | frame arena reset/alignment/overflow, many resets stay in the buffer, pmr containers use their resource, tracking counts, pools (incl. the synchronized pool from many threads) |
 | `InputTests` | key down/pressed/released edges, taps within one frame, fixed-step edges, `ReleaseAll`; actions with several keys, action taps across fixed steps, axes, rebinding; gamepads (synthetic pads, no hardware): deadzone math (per-axis, radial), trigger/stick virtual buttons with hysteresis, button edges across fixed steps, several pads, labels, gamepad bindings and largest-magnitude axes; `FixedTimestep` accumulation, average rate at 144 fps / 120 Hz, slow-frame clamp |
 | `AudioTests` | MP3 decoding from an embedded 809-byte file (length, level, channels, pitch after resampling), garbage rejected, WAV loading, `LoadSound` by extension incl. unknown/missing files, `MakeSound` conversion; mixer handles (stale handles, reuse, releasing samples), fade-in/out and volume ramps without clicks, looping, pitch, pan, master volume/mute, voice stealing, soft limiter; synth waveforms (length, no NaN, peak), envelopes, lowpass |
-| `Renderer2DTests` | `Renderer2D` batching and shape generation on the CPU (no GPU), `Transform2D`, color packing; sprite quads (UVs, rotation, origin, flips, pixel snap), draw order across lines/sprites/texture switches and blend modes, atlas JSON parsing |
+| `Renderer2DTests` | `Renderer2D` batching and shape generation on the CPU (no GPU), `Transform2D`, color packing; sprite quads (UVs, rotation, origin, flips, pixel snap), draw order across lines/sprites/texture switches and blend modes, atlas JSON parsing; `CrtEffect` afterglow decay, uniforms and bloom spread |
 | `ParticleTests` | particle spawning (shapes, ranges, base velocity), capacity limit, drag/gravity step, swap-remove, continuous rate, color/size fade when drawing, scalar and SSE updates agreeing over 240 steps |
 
 ```sh
@@ -335,6 +335,8 @@ BeginFrame               (acquire command buffer + swapchain; vsync waits here)
                          OnRender2D(renderer2D)  record 2D shapes and sprites (CPU only)
 copy passes              Renderer2D upload (lines + sprites), ImGui upload
 render pass              OnRender(pass), then the 2D shapes/sprites, then ImGui on top
+                         (with the CRT effect: into its scene texture, then the CRT passes,
+                         then ImGui in a pass that keeps the image)
 EndFrame                 submit + present
 ```
 
@@ -481,6 +483,48 @@ const Vec2 size = ui->MeasureText("Score: 1200");                           // w
 
 The sandbox's text demo uses Press Start 2P (SIL Open Font License, in `sandbox/assets/fonts/`,
 see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)); the engine itself ships no fonts.
+
+## CRT post-process (`CrtEffect`)
+
+An optional fullscreen post-process that makes the frame look like a CRT monitor. It is off by
+default; switch it on with `Application::SetCrtEnabled(true)` (returns false, logged, if its
+pipelines could not be created) and tune it through `GetCrtParams()`:
+
+```cpp
+SetCrtEnabled(true);
+Emerald::CrtParams& crt = GetCrtParams();
+crt.Scanlines = 0.25f; // a raster look; the defaults are for a vector monitor
+```
+
+While it is on, the scene (`OnRender` and the 2D shapes) is rendered into an offscreen texture and
+`CrtEffect` (`include/Emerald/Renderer/CrtEffect.h`, `shaders/Fullscreen.vert.hlsl` +
+`Crt*.frag.hlsl`) draws it into the frame in a few fullscreen passes; ImGui is drawn on top,
+unaffected, and screenshots include the effect:
+
+1. **phosphor** (`CrtPhosphor.frag`): the new frame over the previous one faded by
+   `0.5^(dt / Afterglow)`, into a 16-bit float history texture (ping-pong), so moving lines leave
+   short trails that fade the same at any frame rate;
+2. **bloom** (`CrtBlur.frag`): separable 9-tap Gaussian blurs at 1/2 size (near glow) and 1/4 size
+   (wide glow, 3x the spread);
+3. **composite** (`Crt.frag`): barrel curvature (rounded corners, black outside the glass), the
+   image plus both glows, red/blue chromatic offset growing towards the edges, vignette, and the
+   optional scanlines and RGB aperture mask.
+
+| `CrtParams` | Default | |
+|---|---|---|
+| `Curvature` | 0.07 | barrel distortion (0 = flat) |
+| `Bloom` | 2.0 | glow strength added to the image |
+| `BloomRadius` | 1.0 | glow spread; 1 = near glow sigma of 0.8% of the screen height |
+| `Vignette` | 0.35 | corner darkening |
+| `ChromaticOffset` | 1.0 | red/blue fringe at the edges, in pixels at 1080p |
+| `Afterglow` | 0.035 | phosphor half-life in seconds (0 = off) |
+| `Scanlines` | 0 | scanline darkness 0..1 (off: vector monitors have none) |
+| `ScanlineCount` | 360 | scanlines over the screen height |
+| `Mask` | 0 | RGB aperture grille 0..1 (off) |
+| `Brightness` | 1.0 | final gain |
+
+The textures follow the window size (recreated on resize). The sandbox toggles the effect with
+**C**.
 
 ## Particles
 
@@ -734,7 +778,7 @@ It is always built in Release and lives in `build/_shadercross`, which every pre
 ```
 include/Emerald/   Public engine headers (Core/, Input/, Audio/, Renderer/, Particles/, Assets/, Math/, Memory/)
 src/               Engine implementation
-shaders/           The engine's HLSL shaders (Renderer2D lines, Sprite; compiled at build time for every app)
+shaders/           The engine's HLSL shaders (Renderer2D lines, Sprite, the CRT post-process; compiled at build time for every app)
 sandbox/           Example application (src/, its own shaders/, assets/ for the demo font)
 tests/             Unit tests (ctest)
 bench/             Math and particle micro-benchmarks (EMERALD_BUILD_BENCH)

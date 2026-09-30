@@ -81,6 +81,7 @@ add_library(Emerald STATIC
     src/Renderer/Texture.cpp
     src/Renderer/TextureAtlas.cpp
     src/Renderer/Font.cpp
+    src/Renderer/CrtEffect.cpp
     src/Particles/ParticleSystem.cpp
     src/Assets/Image.cpp
     src/Audio/Audio.cpp

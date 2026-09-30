@@ -157,10 +157,17 @@ bool Renderer::BeginFrame()
 
 SDL_GPURenderPass* Renderer::BeginRenderPass(const SDL_FColor& clearColor)
 {
+    return BeginRenderPass(m_RenderTarget, clearColor);
+}
+
+SDL_GPURenderPass* Renderer::BeginRenderPass(SDL_GPUTexture* texture, const SDL_FColor& clearColor,
+                                             bool clear)
+{
     SDL_GPUColorTargetInfo target{};
-    target.texture = m_RenderTarget;
+    target.texture = texture;
     target.clear_color = clearColor;
-    target.load_op = SDL_GPU_LOADOP_CLEAR;   // start from the clear color...
+    // Start from the clear color (or the texture's contents)...
+    target.load_op = clear ? SDL_GPU_LOADOP_CLEAR : SDL_GPU_LOADOP_LOAD;
     target.store_op = SDL_GPU_STOREOP_STORE; // ...and keep what we draw
     m_RenderPass = SDL_BeginGPURenderPass(m_CommandBuffer, &target, 1, nullptr);
     return m_RenderPass;

@@ -15,6 +15,7 @@
 #include "Emerald/Input/Input.h"
 #include "Emerald/Memory/FrameArena.h"
 #include "Emerald/Memory/TrackingResource.h"
+#include "Emerald/Renderer/CrtEffect.h"
 #include "Emerald/Renderer/Renderer.h"
 #include "Emerald/Renderer/Renderer2D.h"
 
@@ -76,6 +77,13 @@ public:
     // Sound playback (see Audio.h; load sounds with LoadSound).
     [[nodiscard]] Audio& GetAudio() { return m_Audio; }
     [[nodiscard]] u64 GetFrameCount() const { return m_FrameCount; }
+
+    // Optional CRT monitor post-process over the whole frame (below the ImGui overlay), off by
+    // default. Enabling it the first time creates its pipelines; returns false if that failed
+    // (logged), and the frame is then drawn without it. Tune it with GetCrtParams (CrtEffect.h).
+    bool SetCrtEnabled(bool enabled);
+    [[nodiscard]] bool IsCrtEnabled() const { return m_CrtEnabled; }
+    [[nodiscard]] CrtParams& GetCrtParams() { return m_Crt->GetParams(); }
 
     // Client-area size in window coordinates / in pixels (see Window.h).
     [[nodiscard]] Vec2i GetWindowSize() const { return m_Window->GetSize(); }
@@ -145,8 +153,12 @@ private:
     std::unique_ptr<Window> m_Window;
     std::unique_ptr<Renderer> m_Renderer;
     std::unique_ptr<Renderer2D> m_Renderer2D;
-    Keyboard m_Keyboard; // raw key state, fed from SDL events
-    Gamepads m_Gamepads; // raw gamepad state, fed from SDL events
+    std::unique_ptr<CrtEffect> m_Crt = std::make_unique<CrtEffect>();
+    bool m_CrtEnabled = false;
+    bool m_CrtInitialized = false;
+    f32 m_FrameSeconds = 0.0f; // last frame's time, for the CRT afterglow
+    Keyboard m_Keyboard;       // raw key state, fed from SDL events
+    Gamepads m_Gamepads;       // raw gamepad state, fed from SDL events
     Audio m_Audio;
     Input m_Input{m_Keyboard, m_Gamepads}; // actions on top of both
     FixedTimestep m_FixedTimestep;

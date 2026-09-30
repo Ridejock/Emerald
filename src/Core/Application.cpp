@@ -81,6 +81,7 @@ Application::~Application()
 {
     m_ThreadPool.reset(); // stops and joins the workers while everything they might use exists
     ShutdownImGui();
+    m_Crt.reset();
     m_Renderer2D.reset();
     m_Renderer.reset(); // GPU device must go before the window it renders into
     m_Window.reset();
@@ -126,7 +127,8 @@ int Application::Run()
             m_Keyboard.EndFixedStep();
             m_Gamepads.EndFixedStep();
         }
-        OnUpdate(static_cast<f32>(elapsedNs) / 1e9f);
+        m_FrameSeconds = static_cast<f32>(elapsedNs) / 1e9f;
+        OnUpdate(m_FrameSeconds);
         m_Audio.Update();
         RenderFrame();
 
@@ -222,14 +224,45 @@ void Application::RenderFrame()
 #endif
 
     // Draw order: the app's own draw calls, then the 2D shapes, then the ImGui overlay on top.
-    SDL_GPURenderPass* pass = m_Renderer->BeginRenderPass(m_Spec.ClearColor);
+    // With the CRT effect the scene goes to its offscreen texture first; the effect then draws
+    // it into the frame's target, and ImGui is drawn over that (unaffected).
+    const u32 width = m_Renderer->GetFrameWidth();
+    const u32 height = m_Renderer->GetFrameHeight();
+    SDL_GPUTexture* output = m_Renderer->GetRenderTarget();
+    SDL_GPUTexture* scene = m_CrtEnabled ? m_Crt->GetSceneTarget(width, height) : nullptr;
+    SDL_GPURenderPass* pass =
+        m_Renderer->BeginRenderPass(scene ? scene : output, m_Spec.ClearColor);
     OnRender(pass);
-    m_Renderer2D->Render(cmd, pass, m_Renderer->GetFrameWidth(), m_Renderer->GetFrameHeight());
+    m_Renderer2D->Render(cmd, pass, width, height);
+    if (scene) {
+        m_Renderer->EndRenderPass();
+        m_Crt->Apply(cmd, output, m_FrameSeconds);
+        pass = nullptr;
+    }
 #if EMERALD_WITH_IMGUI
+    if (!pass)
+        pass = m_Renderer->BeginRenderPass(output, m_Spec.ClearColor, false); // keep the image
     ImGui_ImplSDLGPU3_RenderDrawData(drawData, cmd, pass);
 #endif
-    m_Renderer->EndRenderPass();
+    if (pass)
+        m_Renderer->EndRenderPass();
     m_Renderer->EndFrame();
+}
+
+bool Application::SetCrtEnabled(bool enabled)
+{
+    if (enabled && !m_CrtInitialized) {
+        if (!m_RendererInitialized ||
+            !m_Crt->Init(m_Renderer->GetDevice(), m_Renderer->GetSwapchainFormat())) {
+            m_CrtEnabled = false;
+            return false;
+        }
+        m_CrtInitialized = true;
+    }
+    if (enabled && !m_CrtEnabled)
+        m_Crt->ResetAfterglow(); // no stale trails from before it was switched off
+    m_CrtEnabled = enabled;
+    return true;
 }
 
 void Application::InitImGui()

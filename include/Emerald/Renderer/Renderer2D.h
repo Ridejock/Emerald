@@ -10,6 +10,7 @@
 #include "Emerald/Math/Mat4.h"
 #include "Emerald/Math/Vec2.h"
 #include "Emerald/Math/Vec4.h"
+#include "Emerald/Renderer/Camera2D.h"
 #include "Emerald/Renderer/Font.h"
 #include "Emerald/Renderer/Sprite.h"
 
@@ -44,6 +45,7 @@ struct Transform2D {
 //       r.End();
 //       r.Begin(hudProjection, clipRect); ... r.End(); // more batches, other projections or clip
 //                                                       // rectangles are fine
+//       r.Begin(camera); ... r.End(); // a Camera2D's view, clipped to its viewport
 //   }
 //
 // Layering: everything is drawn in call order (later calls on top), lines and sprites mixed.
@@ -116,6 +118,8 @@ public:
     // `clip` (optional) limits the batch to a rectangle of the render target, in pixels with
     // (0, 0) at the top-left, e.g. to keep a letterboxed playfield out of the black bars.
     void Begin(const Mat4& viewProjection, const SDL_Rect& clip = {});
+    // The camera's view-projection, clipped to its (letterboxed) viewport.
+    void Begin(const Camera2D& camera) { Begin(camera.GetViewProjection(), camera.GetClip()); }
     void End();
     // Blending for the following draws of this batch (Begin resets it to Alpha). Each change
     // starts a new draw call, so group additive draws together.

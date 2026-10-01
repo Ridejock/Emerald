@@ -4,13 +4,14 @@ Emerald is a small, modern C++20 game engine built on [SDL3](https://github.com/
 It is split into:
 
 - **`Emerald::Emerald`** – the engine library (logging, window, SDL GPU renderer, batched 2D renderer for lines and
-  textured sprites, textures and texture atlases, keyboard input, application loop with a fixed-timestep update, image loading, thread pool, `std::pmr`
+  textured sprites, a 2D camera, textures and texture atlases, keyboard input, application loop with a fixed-timestep update, image loading, thread pool, `std::pmr`
   memory helpers).
 - **`Emerald::Math`** – a header-only math library (vectors, `Mat4`, optional SSE), included by the engine.
 - **`sandbox/`** – a minimal example app that links the engine and draws a rotating vertex-colored triangle
   in pixel space with its own HLSL shaders through SDL GPU, plus 2D line shapes, sprites from a
   procedurally generated atlas (scaled, rotated, flipped, tinted, and layered with lines), and an arrow driven by
-  keyboard or gamepad (with ImGui on, the panel lists connected pads and their live stick values).
+  keyboard or gamepad that a `Camera2D` follows around a larger world (pan, zoom, rotate, shake;
+  with ImGui on, the panel shows the camera and lists connected pads and their live stick values).
 - **`tests/`** – small unit-test executables run with `ctest`.
 
 All dependencies are fetched automatically with CMake `FetchContent` and pinned to specific versions.
@@ -278,7 +279,7 @@ structure-of-arrays layout instead (all x together, all y together).
 | `MemoryTests` | frame arena reset/alignment/overflow, many resets stay in the buffer, pmr containers use their resource, tracking counts, pools (incl. the synchronized pool from many threads) |
 | `InputTests` | key down/pressed/released edges, taps within one frame, fixed-step edges, `ReleaseAll`; actions with several keys, action taps across fixed steps, axes, rebinding; gamepads (synthetic pads, no hardware): deadzone math (per-axis, radial), trigger/stick virtual buttons with hysteresis, button edges across fixed steps, several pads, labels, gamepad bindings and largest-magnitude axes; `FixedTimestep` accumulation, average rate at 144 fps / 120 Hz, slow-frame clamp |
 | `AudioTests` | MP3 decoding from an embedded 809-byte file (length, level, channels, pitch after resampling), garbage rejected, WAV loading, `LoadSound` by extension incl. unknown/missing files, `MakeSound` conversion; mixer handles (stale handles, reuse, releasing samples), fade-in/out and volume ramps without clicks, looping, pitch, pan, master volume/mute, voice stealing, soft limiter; synth waveforms (length, no NaN, peak), envelopes, lowpass |
-| `Renderer2DTests` | `Renderer2D` batching and shape generation on the CPU (no GPU), `Transform2D`, color packing; sprite quads (UVs, rotation, origin, flips, pixel snap), draw order across lines/sprites/texture switches and blend modes, atlas JSON parsing; `CrtEffect` afterglow decay, uniforms and bloom spread; `--gpu` parsing and driver names |
+| `Renderer2DTests` | `Renderer2D` batching and shape generation on the CPU (no GPU), `Transform2D`, color packing; sprite quads (UVs, rotation, origin, flips, pixel snap), draw order across lines/sprites/texture switches and blend modes, atlas JSON parsing; `Camera2D` (pixel-space default, letterboxing, zoom/rotation, `ScreenToWorld` round trips against the GPU matrix, bounds clamp, follow dead zone and step-size independent damping, shake decay); `CrtEffect` afterglow decay, uniforms and bloom spread; `--gpu` parsing and driver names |
 | `ParticleTests` | particle spawning (shapes, ranges, base velocity), capacity limit, drag/gravity step, swap-remove, continuous rate, color/size fade when drawing, scalar and SSE updates agreeing over 240 steps |
 
 ```sh
@@ -399,6 +400,60 @@ sprites go through the same batches; see [Textures and sprites](#textures-and-sp
 `r.SetBlendMode(BlendMode::Additive)` switches the following draws of the batch to additive
 blending (`out = src * alpha + dst`): overlapping lines or sprites add up and glow, which suits
 light such as sparks and fire. `Begin` resets it to `Alpha`; each change starts a new draw call.
+
+## 2D camera (`Camera2D`)
+
+`Emerald::Camera2D` (`include/Emerald/Renderer/Camera2D.h`) decides which part of the world shows
+where. It looks at a position (the center of the view) and shows `ViewSize` world units at zoom 1,
+rotated by `Rotation`; the view is fitted into the render target with a uniform scale and centered,
+with bars when the aspect ratios differ (letterboxing), and `Renderer2D::Begin(camera)` clips the
+batch to that viewport. A default camera over its own view size is exactly
+`Mat4::OrthoPixelSpace`, so nothing changes until you move it. Draw the HUD and menus in a second,
+screen-space batch so they are not affected:
+
+```cpp
+Emerald::Camera2D m_Camera{{1280.0f, 720.0f}}; // world units visible at zoom 1
+
+void OnStart() override
+{
+    m_Camera.SetBounds({.Min = {0.0f, 0.0f}, .Max = {4000.0f, 2000.0f}}); // never shows outside
+    m_Camera.GetFollowParams() = {.DeadZone = {120.0f, 80.0f}, .Damping = 6.0f};
+}
+void OnFixedUpdate(f32 dt) override
+{
+    m_Camera.Follow(m_Player.Position, dt); // dead zone, then exponential damping
+    if (hit)
+        m_Camera.AddTrauma(0.5f); // shake: trauma 0..1, decays linearly
+    m_Camera.Update(dt);
+}
+void OnRender2D(Emerald::Renderer2D& r) override
+{
+    const Emerald::Renderer& gpu = GetRenderer();
+    m_Camera.SetTargetSize({f32(gpu.GetFrameWidth()), f32(gpu.GetFrameHeight())});
+    r.Begin(m_Camera); // world
+    ...
+    r.End();
+    r.Begin(Mat4::OrthoPixelSpace(width, height)); // HUD, text
+    ...
+    r.End();
+}
+```
+
+- `SetPosition`, `SetZoom` (> 1 magnifies), `SetRotation` (radians), `SetViewSize`,
+  `SetTargetSize` (render target pixels), `SetBounds` / `ClearBounds`.
+- `ScreenToWorld` / `WorldToScreen` convert between render target pixels (top-left origin) and
+  world units, including zoom, rotation, letterboxing and the current shake (mouse picking hits
+  what is on screen). Mouse coordinates are in window units: multiply by the pixel density first.
+- `GetViewProjection()`, `GetView()`, `GetViewport()`, `GetClip()`, `GetPixelsPerUnit()` and
+  `GetVisibleBounds()` (for culling) expose the rest.
+- Follow: the target moves freely inside the dead zone; outside it the camera closes the gap by
+  `1 - exp(-Damping * dt)` per step, so it moves the same at any step size (0 snaps).
+- Shake (`GetShakeParams()`): the offset is `MaxOffset * trauma^2` (in view units, so the same on
+  screen at any zoom) plus up to `MaxAngle` of rotation, driven by smooth noise over time, so it is
+  frame-rate independent. `Enabled = false` keeps it still (e.g. a "screen shake" option). The
+  shaken view is clamped to the bounds too.
+
+The camera has no interpolation between fixed steps: update it where the things it follows move.
 
 ## Textures and sprites
 

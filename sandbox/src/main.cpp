@@ -94,6 +94,12 @@ std::array<Vec2, 10> MakeStar()
 }
 const std::array<Vec2, 10> kStar = MakeStar();
 
+// Camera demo: the shapes and sprites live in a world larger than the window, the camera follows
+// the arrow inside its bounds. The original demo layout is a 1280 x 720 "room" in the middle.
+constexpr Vec2 kWorldSize{2560.0f, 1600.0f};
+constexpr Vec2 kRoomSize{1280.0f, 720.0f};
+constexpr Vec2 kRoomOrigin = (kWorldSize - kRoomSize) * 0.5f; // the room's top-left
+
 // A tiny procedural sprite sheet (no image files needed): a 16 x 16 pixel-art gem at (0, 0) and
 // a ring at (16, 0). Real games load one with TextureAtlas::Load(device, "atlas.png", ...).
 Emerald::Image MakeSpriteSheet()
@@ -180,6 +186,22 @@ protected:
         input.BindAction("Pulse", {GamepadButton::South});
         input.BindAction("Quit", {Key::Escape});
         input.BindAction("Crt", {Key::C}); // CRT post-process on/off
+        // Camera: Tab / North toggles following the arrow or free panning (with the move keys),
+        // zoom with the wheel, Q / E or the triggers, rotate with F / G or the shoulders.
+        input.BindAction("CameraMode", {Key::Tab});
+        input.BindAction("CameraMode", {GamepadButton::North});
+        input.BindAction("Shake", {Key::X});
+        input.BindAction("Shake", {GamepadButton::West});
+        input.BindAction("CameraReset", {Key::R});
+        input.BindAction("CameraReset", {GamepadButton::Back});
+        input.BindAxis("Zoom", Key::Q, Key::E);
+        input.BindAxis("Zoom", GamepadButton::LeftTrigger, GamepadButton::RightTrigger);
+        input.BindAxis("Rotate", Key::F, Key::G);
+        input.BindAxis("Rotate", GamepadButton::LeftShoulder, GamepadButton::RightShoulder);
+        m_Camera.SetBounds({.Min = {0.0f, 0.0f}, .Max = kWorldSize});
+        m_Camera.GetFollowParams() = {.DeadZone = {160.0f, 100.0f}, .Damping = 5.0f};
+        m_Camera.SetViewSize(GetViewSize());
+        m_Camera.SetPosition(kRoomOrigin + kRoomSize * 0.5f); // the room fills the window
 
         // A short generated "blip" for the pulse, rising in pitch (files would use
         // Emerald::LoadSound("x.mp3")).
@@ -205,31 +227,64 @@ protected:
 
     // Input + fixed-step demo: move the arrow with WASD / arrow keys / left stick / d-pad (at
     // 120 Hz, independent of the frame rate), Space or South (A / Cross) starts a ring pulse and
-    // a short rumble.
+    // a short rumble. The camera follows the arrow (or pans freely) and shakes on X / West.
     void OnFixedUpdate(f32 dt) override
     {
         Emerald::Input& input = GetInput();
         Vec2 direction(input.GetAxis("MoveX"), input.GetAxis("MoveY"));
         const f32 length = Emerald::Length(direction);
-        if (length > 0.0f) {
-            // Keys give length 1 or 1.41 (diagonal), a stick anything up to 1: cap it at 1 so
-            // diagonals are not faster and a half-tilted stick moves at half speed.
-            if (length > 1.0f)
-                direction = direction / length;
-            m_ArrowPosition += direction * (300.0f * dt);
-            m_ArrowAngle = std::atan2(direction.y, direction.x);
+        // Keys give length 1 or 1.41 (diagonal), a stick anything up to 1: cap it at 1 so
+        // diagonals are not faster and a half-tilted stick moves at half speed.
+        if (length > 1.0f)
+            direction = direction / length;
+        if (input.WasActionPressed("CameraMode"))
+            m_FreeCamera = !m_FreeCamera;
+        m_Camera.SetViewSize(GetViewSize());
+        if (m_FreeCamera) {
+            // Pan at the same on-screen speed at any zoom.
+            m_Camera.SetPosition(m_Camera.GetPosition() +
+                                 direction * (600.0f * dt / m_Camera.GetZoom()));
+        } else {
+            if (length > 0.0f) {
+                m_ArrowPosition += direction * (300.0f * dt);
+                m_ArrowAngle = std::atan2(direction.y, direction.x);
+            }
+            // Keep it in the world.
+            m_ArrowPosition = Emerald::Min(Emerald::Max(m_ArrowPosition, Vec2(0.0f)), kWorldSize);
+            m_Camera.Follow(m_ArrowPosition, dt);
         }
-        // Keep it on screen.
-        m_ArrowPosition = Emerald::Min(Emerald::Max(m_ArrowPosition, Vec2(0.0f)), GetViewSize());
+        m_Camera.SetZoom(m_Camera.GetZoom() * std::exp(1.5f * input.GetAxis("Zoom") * dt));
+        m_Camera.SetRotation(m_Camera.GetRotation() + 1.2f * input.GetAxis("Rotate") * dt);
+        if (input.WasActionPressed("CameraReset")) {
+            m_Camera.SetZoom(1.0f);
+            m_Camera.SetRotation(0.0f);
+        }
+        if (input.WasActionPressed("Shake"))
+            m_Camera.AddTrauma(0.6f);
 
         if (input.WasActionPressed("Pulse")) {
             m_PulseAge = 0.0f;
             input.Rumble(0.3f, 0.6f, 120);
-            // Panned towards the side of the window the arrow is on.
-            const f32 pan = m_ArrowPosition.x / GetViewSize().x * 2.0f - 1.0f;
+            m_Camera.AddTrauma(0.25f);
+            // Panned towards the side of the screen the arrow is on.
+            const f32 x = m_Camera.WorldToScreen(m_ArrowPosition).x / m_Camera.GetTargetSize().x;
+            const f32 pan = Emerald::Clamp(x * 2.0f - 1.0f, -1.0f, 1.0f);
             GetAudio().Play(m_Blip, {.Volume = 0.7f, .Pan = pan * 0.8f});
         }
         m_PulseAge += dt;
+        m_Camera.Update(dt);
+    }
+
+    // Mouse wheel zoom (unless the mouse is over an ImGui window).
+    void OnEvent(const SDL_Event& event) override
+    {
+        if (event.type != SDL_EVENT_MOUSE_WHEEL)
+            return;
+#if EMERALD_WITH_IMGUI
+        if (ImGui::GetIO().WantCaptureMouse)
+            return;
+#endif
+        m_Camera.SetZoom(m_Camera.GetZoom() * std::pow(1.15f, event.wheel.y));
     }
 
     void OnUpdate(f32 dt) override
@@ -258,45 +313,89 @@ protected:
 #endif
     }
 
-    // 2D shapes: recorded here, drawn by the engine on top of OnRender's triangle.
+    // 2D shapes: recorded here, drawn by the engine on top of OnRender's triangle. The world goes
+    // through the camera; text and stats are a second, screen-space batch on top.
     void OnRender2D(Emerald::Renderer2D& r) override
     {
         const Vec2 size = GetViewSize();
+        const Emerald::Renderer& renderer = GetRenderer();
+        m_Camera.SetViewSize(size); // 1 world unit = 1 window unit at zoom 1
+        m_Camera.SetTargetSize({static_cast<f32>(renderer.GetFrameWidth()),
+                                static_cast<f32>(renderer.GetFrameHeight())});
+
+        r.Begin(m_Camera);
+        DrawWorld(r);
+        r.End();
+
+        r.Begin(Mat4::OrthoPixelSpace(size.x, size.y));
+        DrawTextDemo(r, size);
+        r.End();
+    }
+
+    void DrawWorld(Emerald::Renderer2D& r)
+    {
         const Vec4 green{0.18f, 0.8f, 0.44f, 1.0f};
         const Vec4 white{1.0f, 1.0f, 1.0f, 1.0f};
         const Vec4 dim{1.0f, 1.0f, 1.0f, 0.25f}; // the pipeline alpha-blends
+        const Vec2 room = kRoomOrigin;
+        const Vec2 size = kRoomSize;
 
-        r.Begin(Mat4::OrthoPixelSpace(size.x, size.y));
+        // Frame around the world (its bounds), a faint grid and the room's outline.
+        r.DrawRect({2.0f, 2.0f}, kWorldSize - Vec2(4.0f), green);
+        for (f32 x = 80.0f; x < kWorldSize.x; x += 80.0f)
+            r.DrawLine({x, 0.0f}, {x, kWorldSize.y}, Vec4(1.0f, 1.0f, 1.0f, 0.06f));
+        for (f32 y = 80.0f; y < kWorldSize.y; y += 80.0f)
+            r.DrawLine({0.0f, y}, {kWorldSize.x, y}, Vec4(1.0f, 1.0f, 1.0f, 0.06f));
+        r.DrawRect(room, size, Vec4(0.18f, 0.8f, 0.44f, 0.35f));
 
-        // Frame around the window and a faint grid.
-        r.DrawRect({10.0f, 10.0f}, size - Vec2(20.0f), green);
-        for (f32 x = 80.0f; x < size.x - 10.0f; x += 80.0f)
-            r.DrawLine({x, 10.0f}, {x, size.y - 10.0f}, Vec4(1.0f, 1.0f, 1.0f, 0.06f));
-
-        // Spinning stars in the bottom corners, one of them pulsing in size.
+        // Spinning stars in the room's bottom corners, one of them pulsing in size, and smaller
+        // ones in a ring around the world.
         const f32 pulse = 1.0f + 0.2f * std::sin(3.0f * m_Time);
-        r.DrawPolygon(
-            kStar, {1.0f, 0.85f, 0.2f, 1.0f},
-            {.Position = {90.0f, size.y - 90.0f}, .Rotation = m_Time, .Scale = Vec2(60.0f)});
+        r.DrawPolygon(kStar, {1.0f, 0.85f, 0.2f, 1.0f},
+                      {.Position = room + Vec2(90.0f, size.y - 90.0f),
+                       .Rotation = m_Time,
+                       .Scale = Vec2(60.0f)});
         r.DrawPolygon(kStar, {0.3f, 0.7f, 1.0f, 1.0f},
-                      {.Position = size - Vec2(90.0f),
+                      {.Position = room + size - Vec2(90.0f),
                        .Rotation = -0.7f * m_Time,
                        .Scale = Vec2(60.0f * pulse)});
+        for (u32 i = 0; i < 24; ++i) {
+            const f32 a = Emerald::TwoPi * static_cast<f32>(i) / 24.0f;
+            const Vec2 at = kWorldSize * 0.5f + Vec2(std::cos(a) * 1100.0f, std::sin(a) * 680.0f);
+            r.DrawPolygon(kStar, Vec4(0.9f, 0.5f + 0.02f * static_cast<f32>(i), 0.3f, 0.8f),
+                          {.Position = at, .Rotation = a + 0.3f * m_Time, .Scale = Vec2(24.0f)});
+        }
 
         // Concentric circles around the center with increasing segment counts.
         for (u32 i = 0; i < 4; ++i)
-            r.DrawCircle(size * 0.5f, 60.0f + 40.0f * static_cast<f32>(i), dim, 8u << i);
+            r.DrawCircle(room + size * 0.5f, 60.0f + 40.0f * static_cast<f32>(i), dim, 8u << i);
+
+        DrawSprites(r, room, size);
 
         // The input demo arrow and its Space pulse (a ring growing for half a second).
-        DrawSprites(r, size);
-
         r.DrawPolygon(kArrow, white, {.Position = m_ArrowPosition, .Rotation = m_ArrowAngle});
         if (m_PulseAge < 0.5f)
             r.DrawCircle(m_ArrowPosition, 20.0f + 200.0f * m_PulseAge,
                          {1.0f, 1.0f, 1.0f, 1.0f - 2.0f * m_PulseAge});
 
-        DrawTextDemo(r, size);
-        r.End();
+        // A cross under the mouse, placed via ScreenToWorld (it should sit right on the cursor).
+        if (const std::optional<Vec2> mouse = GetMouseWorld()) {
+            const f32 arm = 8.0f / m_Camera.GetZoom();
+            r.DrawLine(*mouse - Vec2(arm, 0.0f), *mouse + Vec2(arm, 0.0f), green);
+            r.DrawLine(*mouse - Vec2(0.0f, arm), *mouse + Vec2(0.0f, arm), green);
+        }
+    }
+
+    // The mouse in world units, if it is over the window.
+    [[nodiscard]] std::optional<Vec2> GetMouseWorld() const
+    {
+        if (!SDL_GetMouseFocus())
+            return std::nullopt;
+        Vec2 mouse;
+        SDL_GetMouseState(&mouse.x, &mouse.y);
+        // Window units -> render target pixels (they differ on high-DPI displays).
+        const Vec2 pixels = mouse * (m_Camera.GetTargetSize().x / GetViewSize().x);
+        return m_Camera.ScreenToWorld(pixels);
     }
 
     // Text demo: one pixel font baked at three sizes (Nearest: crisp), and smooth (Linear,
@@ -350,8 +449,12 @@ protected:
                      {size.x * 0.5f, size.y - 100.0f}, gold, 1.0f, TextAlign::Center);
         r.DrawString(*m_PixelFont, "x3", {size.x * 0.5f - 20.0f, size.y - 76.0f}, white, 3.0f);
 
-        // Live stats, bottom-left (last frame's numbers).
+        // Live stats, bottom-left (last frame's numbers), and the camera controls.
         const Emerald::Renderer2D& stats = GetRenderer2D();
+        r.DrawString(*m_SmallFont,
+                     std::string("camera: ") + (m_FreeCamera ? "free pan" : "follow") +
+                         "  Tab mode, wheel/Q/E zoom, F/G rotate, X shake, R reset",
+                     {30.0f, size.y - 44.0f}, grey);
         r.DrawString(*m_SmallFont,
                      "frame " + std::to_string(GetFrameCount()) + "  sprites " +
                          std::to_string(stats.GetLastFrameSpriteCount()) + "  draw calls " +
@@ -361,7 +464,7 @@ protected:
 
     // Sprite demo: scaling, rotation, flipping, tint and alpha, pixel snapping, and layering in
     // call order with lines.
-    void DrawSprites(Emerald::Renderer2D& r, const Vec2& size)
+    void DrawSprites(Emerald::Renderer2D& r, const Vec2& room, const Vec2& size)
     {
         if (!m_Atlas)
             return;
@@ -369,20 +472,21 @@ protected:
         const Emerald::Sprite ring = m_Atlas->Get("ring");
 
         // A row along the top: plain, flipped, tinted, half transparent (4x, snapped to pixels).
-        const f32 y = 70.0f;
+        const f32 y = room.y + 70.0f;
         const Emerald::SpriteOptions big{.Scale = Vec2(4.0f), .PixelSnap = true};
-        r.DrawSprite(gem, {size.x * 0.5f - 200.0f, y}, big);
-        r.DrawSprite(gem, {size.x * 0.5f - 120.0f, y}, {.Scale = Vec2(4.0f), .FlipX = true});
-        r.DrawSprite(gem, {size.x * 0.5f - 40.0f, y},
+        r.DrawSprite(gem, {room.x + size.x * 0.5f - 200.0f, y}, big);
+        r.DrawSprite(gem, {room.x + size.x * 0.5f - 120.0f, y},
+                     {.Scale = Vec2(4.0f), .FlipX = true});
+        r.DrawSprite(gem, {room.x + size.x * 0.5f - 40.0f, y},
                      {.Scale = Vec2(4.0f), .Tint = {1.0f, 0.4f, 0.4f, 1.0f}});
-        r.DrawSprite(gem, {size.x * 0.5f + 40.0f, y},
+        r.DrawSprite(gem, {room.x + size.x * 0.5f + 40.0f, y},
                      {.Scale = Vec2(4.0f), .Tint = {0.5f, 0.7f, 1.0f, 1.0f}});
-        r.DrawSprite(gem, {size.x * 0.5f + 120.0f, y},
+        r.DrawSprite(gem, {room.x + size.x * 0.5f + 120.0f, y},
                      {.Scale = Vec2(4.0f), .Tint = {1.0f, 1.0f, 1.0f, 0.4f}});
-        r.DrawSprite(ring, {size.x * 0.5f + 200.0f, y}, big);
+        r.DrawSprite(ring, {room.x + size.x * 0.5f + 200.0f, y}, big);
 
         // Layering: a spinning gem, a line on top of it, then a ring on top of the line.
-        const Vec2 center = size * 0.5f;
+        const Vec2 center = room + size * 0.5f;
         r.DrawSprite(gem, center, {.Scale = Vec2(8.0f), .Rotation = 0.6f * m_Time});
         r.DrawLine(center - Vec2(90.0f, 0.0f), center + Vec2(90.0f, 0.0f),
                    {1.0f, 1.0f, 1.0f, 1.0f});
@@ -449,6 +553,7 @@ protected:
                     GetRenderer2D().GetLastFrameDrawCalls());
         ImGui::Text("Move the arrow: WASD / arrows / left stick, pulse: Space / %s",
                     GetInput().GetGamepads().GetButtonLabel(GamepadButton::South));
+        ShowCamera();
         ShowGamepads();
         ImGui::Text("Audio: %s", GetAudio().IsAvailable() ? "on" : "no device");
         ImGui::Separator();
@@ -467,6 +572,36 @@ protected:
     }
 
 #if EMERALD_WITH_IMGUI
+    // Camera stats and a few live controls.
+    void ShowCamera()
+    {
+        ImGui::Separator();
+        const Vec2 pos = m_Camera.GetPosition();
+        const Vec2 eye = m_Camera.GetEyePosition();
+        ImGui::Text("Camera (%s): %.1f, %.1f  eye %.1f, %.1f", m_FreeCamera ? "free" : "follow",
+                    static_cast<f64>(pos.x), static_cast<f64>(pos.y), static_cast<f64>(eye.x),
+                    static_cast<f64>(eye.y));
+        ImGui::Text("Zoom %.2f  rotation %.1f deg  trauma %.2f",
+                    static_cast<f64>(m_Camera.GetZoom()),
+                    static_cast<f64>(Emerald::ToDegrees(m_Camera.GetEyeRotation())),
+                    static_cast<f64>(m_Camera.GetTrauma()));
+        const Emerald::Rect2D visible = m_Camera.GetVisibleBounds();
+        ImGui::Text("Visible %.0f, %.0f - %.0f, %.0f  (%.2f px/unit)",
+                    static_cast<f64>(visible.Min.x), static_cast<f64>(visible.Min.y),
+                    static_cast<f64>(visible.Max.x), static_cast<f64>(visible.Max.y),
+                    static_cast<f64>(m_Camera.GetPixelsPerUnit()));
+        if (const std::optional<Vec2> mouse = GetMouseWorld())
+            ImGui::Text("Mouse in world: %.1f, %.1f", static_cast<f64>(mouse->x),
+                        static_cast<f64>(mouse->y));
+        else
+            ImGui::TextDisabled("Mouse in world: -");
+        if (ImGui::Button("Shake"))
+            m_Camera.AddTrauma(0.6f);
+        ImGui::SameLine();
+        ImGui::SliderFloat("Max offset", &m_Camera.GetShakeParams().MaxOffset, 0.0f, 40.0f);
+        ImGui::Separator();
+    }
+
     // Connected gamepads with their live values: raw from SDL, and after the deadzone.
     void ShowGamepads()
     {
@@ -620,7 +755,9 @@ private:
 
     SandboxOptions m_Options;
     f32 m_Time = 0.0f;
-    Vec2 m_ArrowPosition{200.0f, 400.0f};
+    Vec2 m_ArrowPosition = kRoomOrigin + Vec2(640.0f, 450.0f); // world units
+    Emerald::Camera2D m_Camera;
+    bool m_FreeCamera = false; // false: follow the arrow
     Emerald::Sound m_Blip;
     f32 m_ArrowAngle = 0.0f;
     f32 m_PulseAge = 1.0f;                        // seconds since Space was pressed

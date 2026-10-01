@@ -60,6 +60,16 @@ Done when:
 - Timers: after / every / cancel, frame-rate independent
 - Used by a sandbox menu animation
 
+### Pixel art asset pipeline ([#22](https://github.com/Ridejock/Emerald/issues/22))
+
+Deferred: not needed yet; picked up when a test game needs art beyond what we have. A `tools/` script that makes art from any source (generated, hand-built, downloaded packs) look like one set by enforcing a per-game style guide: a fixed 16-32 color palette, a tile size/grid, outline and transparency rules. It snaps and quantizes the art to the guide, then packs it into the `TextureAtlas` PNG + JSON format.
+
+Done when:
+- One command turns a folder of raw images plus a style guide into an atlas the engine loads
+- Every output pixel is a palette color or transparent (checked by a test)
+- Works on a downloaded tileset and on generated sprites, and the results visibly match
+- Documented in the README with an example style guide
+
 ### Phase 1 test game ([#6](https://github.com/Ridejock/Emerald/issues/6))
 
 A small game built on the phase 1 features (for example a top-down arena shooter with a following camera, animated sprites and tweened UI), proving they work together.

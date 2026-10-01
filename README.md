@@ -15,6 +15,9 @@ It is split into:
 
 All dependencies are fetched automatically with CMake `FetchContent` and pinned to specific versions.
 
+What is planned next (camera, animation, collision, tilemaps, scenes, UI, shipping...) is in
+[ROADMAP.md](ROADMAP.md), with one GitHub issue per feature.
+
 ## Dependencies
 
 | Library | Version | Notes |

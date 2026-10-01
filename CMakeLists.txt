@@ -80,6 +80,8 @@ add_library(Emerald STATIC
     src/Renderer/Renderer2D.cpp
     src/Renderer/Camera2D.cpp
     src/Renderer/Animation.cpp
+    src/Physics/Collision.cpp
+    src/Physics/SpatialHash.cpp
     src/Renderer/Texture.cpp
     src/Renderer/TextureAtlas.cpp
     src/Renderer/Font.cpp

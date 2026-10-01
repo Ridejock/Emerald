@@ -20,6 +20,8 @@
 #include "Emerald/Math/Math.h"
 #include "Emerald/Memory/Memory.h"
 #include "Emerald/Particles/ParticleSystem.h"
+#include "Emerald/Physics/Collision.h"
+#include "Emerald/Physics/SpatialHash.h"
 #include "Emerald/Renderer/Animation.h"
 #include "Emerald/Renderer/Camera2D.h"
 #include "Emerald/Renderer/CrtEffect.h"

@@ -282,6 +282,7 @@ structure-of-arrays layout instead (all x together, all y together).
 | `AudioTests` | MP3 decoding from an embedded 809-byte file (length, level, channels, pitch after resampling), garbage rejected, WAV loading, `LoadSound` by extension incl. unknown/missing files, `MakeSound` conversion; mixer handles (stale handles, reuse, releasing samples), fade-in/out and volume ramps without clicks, looping, pitch, pan, master volume/mute, voice stealing, soft limiter; synth waveforms (length, no NaN, peak), envelopes, lowpass |
 | `Renderer2DTests` | `Renderer2D` batching and shape generation on the CPU (no GPU), `Transform2D`, color packing; sprite quads (UVs, rotation, origin, flips, pixel snap), draw order across lines/sprites/texture switches and blend modes, atlas JSON parsing; `Camera2D` (pixel-space default, letterboxing, zoom/rotation, `ScreenToWorld` round trips against the GPU matrix, bounds clamp, follow dead zone and step-size independent damping, shake decay); atlas `"animations"` parsing (patterns, lists, durations, modes, missing frames reported), `Animator` loop / once / ping-pong timing at several dt, speed, stop/resume, finish and loop events, drawing a frame with flip and tint; `CrtEffect` afterglow decay, uniforms and bloom spread; `--gpu` parsing and driver names |
 | `ParticleTests` | particle spawning (shapes, ranges, base velocity), capacity limit, drag/gravity step, swap-remove, continuous rate, color/size fade when drawing, scalar and SSE updates agreeing over 240 steps |
+| `CollisionTests` | circle/circle, circle/AABB, AABB/AABB and SAT polygon contacts (normals, depths, touching = none, concentric circles, center inside a box, containment, winding, degenerate input); raycasts against circles, boxes and polygons (hits, misses, parallel, max distance, starting inside); `SpatialHash` insert/update/remove/query/pairs, wrap-around, brute-force equivalence on random data |
 
 ```sh
 cmake --build --preset debug
@@ -306,6 +307,7 @@ cmake --preset release -DEMERALD_BUILD_BENCH=ON
 cmake --build --preset release
 ./build/release/bin/EmeraldMathBench
 ./build/release/bin/EmeraldParticleBench
+./build/release/bin/EmeraldCollisionBench
 ```
 
 ## Renderer (SDL GPU)
@@ -710,6 +712,77 @@ What to take from it:
   might alias), not even with `__restrict` pointers; other compilers or flags may, which would
   close the gap. Your numbers will differ from these.
 
+## Collision (`Physics/`)
+
+`Emerald/Physics/Collision.h` has the shape tests a 2D game needs, and `SpatialHash.h` a
+broadphase so you don't test every pair:
+
+- **Shapes:** `Circle{Center, Radius}`, `Aabb{Min, Max}` (also `Aabb::FromCenter(c, half)`), and
+  convex polygons as a `std::span<const Vec2>` of points, either winding.
+- **`Overlaps(a, b)`:** yes or no, for circle/circle, AABB/AABB and circle/AABB.
+- **`Collide(a, b)`:** an `std::optional<Contact>`. Its `Normal` is a unit vector from `a` towards
+  `b` and `Depth` is how far they overlap, so moving `b` by `Normal * Depth` separates them. It
+  covers circle/circle, circle/AABB (both orders), AABB/AABB and polygon/polygon (SAT).
+- **Edge cases:**
+  - Touching is not overlapping.
+  - Concentric circles push apart along +X.
+  - A circle whose center is inside a box exits through the nearest side.
+- **`Raycast(Ray{origin, direction, maxDistance}, shape)`:** the first hit (`Distance`, `Point`,
+  surface `Normal`) on a circle, AABB or polygon. The direction doesn't need to be normalized. A
+  ray that starts inside hits at distance 0.
+
+```cpp
+#include <Emerald/Physics/Collision.h>
+#include <Emerald/Physics/SpatialHash.h>
+
+Emerald::SpatialHash hash(64.0f); // cell size: about the size of a typical object
+// Every step: tell it where things are now (it re-buckets only what changed cells)...
+for (u32 i = 0; i < balls.size(); ++i)
+    hash.Update(i, Emerald::Aabb::FromCenter(balls[i].Center, Vec2(balls[i].Radius)));
+// ...then run the exact test on the candidate pairs (each pair once, i < j, sorted).
+hash.ForEachPair([&](u32 i, u32 j) {
+    if (std::optional<Emerald::Contact> c = Emerald::Collide(balls[i], balls[j]))
+        balls[j].Center += c->Normal * c->Depth; // or split it by mass, add an impulse...
+});
+hash.Query(area, ids); // ids whose boxes overlap `area`
+```
+
+**Wrap mode.** `SpatialHash(cell, Vec2{width, height})` makes space repeat like a torus, as in
+Asteroids. A box hanging off the right edge finds objects at the left, and queries wrap the same
+way. Results are sorted by id, so they don't depend on hash map order.
+
+`CollisionTests` checks every shape pair's normal and depth, the edge cases above, raycasts (hits,
+misses, parallel rays, max distance, starting inside), and the hash against brute force on random
+data, with and without wrapping.
+
+`EmeraldCollisionBench` (Release, `-DEMERALD_BUILD_BENCH=ON`) uses 10,000 moving circles (radius
+2-8) in a 2000 x 2000 world. Each frame moves them, updates the hash, collects the pairs and runs
+the exact test. Numbers are best of several runs on an 8-core Intel Xeon VM with GCC 14:
+
+| 10k objects, cell 32 | Time |
+|---|---:|
+| Insert all | 1.2 ms |
+| Move + `Update` all | 0.34 ms |
+| 1000 `Query` calls (64 x 64 area, ~14 hits each) | 1.4 ms |
+| `GetPairs` + exact circle test (5,358 box pairs, 4,231 contacts) | 1.36 ms |
+| Brute force, all 50M pairs (same 4,231 contacts) | 66 ms (about 35x slower) |
+
+With 100k objects the update takes 4.5 ms and finding pairs 20 ms. The best cell size is about 1-4x
+the object size: smaller cells put each object in more cells, and larger cells make for more
+candidate pairs.
+
+In the sandbox, walk the hero right out of the room into the **collision yard**:
+
+- Balls bounce off each other, using the hash and circle contacts with mass ~ area, and off the
+  boxes.
+- The hero's circle shoves the balls and is blocked by the boxes.
+- A spinning hexagon and an orbiting triangle turn red while SAT finds an overlap, with the
+  contact normal drawn.
+- A ray goes from the hero to the mouse and shows the nearest hit with its normal.
+
+The ImGui panel shows the counts (cells, candidate pairs, contacts), the SAT result and the ray
+distance, and has a toggle for the hash cells.
+
 ## Input (actions)
 
 Games use **actions**: name what the player can do, bind keys and gamepad inputs to it, and query
@@ -900,12 +973,12 @@ It is always built in Release and lives in `build/_shadercross`, which every pre
 ## Project layout
 
 ```
-include/Emerald/   Public engine headers (Core/, Input/, Audio/, Renderer/, Particles/, Assets/, Math/, Memory/)
+include/Emerald/   Public engine headers (Core/, Input/, Audio/, Renderer/, Particles/, Physics/, Assets/, Math/, Memory/)
 src/               Engine implementation
 shaders/           The engine's HLSL shaders (Renderer2D lines, Sprite, the CRT post-process; compiled at build time for every app)
 sandbox/           Example application (src/, its own shaders/, assets/ for the demo font and hero sheet)
 tests/             Unit tests (ctest)
-bench/             Math and particle micro-benchmarks (EMERALD_BUILD_BENCH)
+bench/             Math, particle and collision micro-benchmarks (EMERALD_BUILD_BENCH)
 cmake/             Dependency setup (FetchContent) and shader compilation (Shaders.cmake)
 tools/shadercross/ Host-tool project that builds SDL_shadercross
 tools/sprites/     Script that generates the sandbox's pixel-art hero sheet

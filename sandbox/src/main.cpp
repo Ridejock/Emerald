@@ -15,6 +15,8 @@
 
 #include <Emerald/Emerald.h>
 
+#include "CollisionDemo.h"
+
 #if EMERALD_WITH_IMGUI
 #include <imgui.h>
 #endif
@@ -278,6 +280,7 @@ protected:
             GetAudio().Play(m_Blip, {.Volume = 0.7f, .Pan = pan * 0.8f});
         }
         m_PulseAge += dt;
+        m_Collision.Update(dt, m_HeroPosition);
         m_Camera.Update(dt);
         m_CoinAnimator.Update(dt);
         m_Flash = Emerald::Max(m_Flash - dt, 0.0f);
@@ -390,6 +393,7 @@ protected:
             r.DrawCircle(room + size * 0.5f, 60.0f + 40.0f * static_cast<f32>(i), dim, 8u << i);
 
         DrawSprites(r, room, size);
+        m_Collision.Draw(r, m_HeroPosition, GetMouseWorld(), m_FacingLeft, m_ShowHashGrid);
 
         DrawHero(r);
         // The Space pulse (a ring growing for half a second).
@@ -601,6 +605,7 @@ protected:
                     GetInput().GetGamepads().GetButtonLabel(GamepadButton::South));
         ShowAnimation();
         ShowCamera();
+        ShowCollision();
         ShowGamepads();
         ImGui::Text("Audio: %s", GetAudio().IsAvailable() ? "on" : "no device");
         ImGui::Separator();
@@ -662,6 +667,27 @@ protected:
             m_Camera.AddTrauma(0.6f);
         ImGui::SameLine();
         ImGui::SliderFloat("Max offset", &m_Camera.GetShakeParams().MaxOffset, 0.0f, 40.0f);
+        ImGui::Separator();
+    }
+
+    // The collision yard (right of the room): broadphase and narrowphase counts, SAT and ray.
+    void ShowCollision()
+    {
+        const CollisionDemo& c = m_Collision;
+        ImGui::Text("Collision: %zu balls in %zu hash cells, %zu candidate pairs, %u contacts",
+                    c.GetBallCount(), c.GetCellCount(), c.GetPairCount(), c.GetContactCount());
+        if (c.GetSat())
+            ImGui::Text("SAT: overlap, normal %+.2f %+.2f, depth %.1f",
+                        static_cast<f64>(c.GetSat()->Normal.x),
+                        static_cast<f64>(c.GetSat()->Normal.y),
+                        static_cast<f64>(c.GetSat()->Depth));
+        else
+            ImGui::TextDisabled("SAT: separated");
+        if (c.GetHit())
+            ImGui::Text("Ray (hero -> mouse): hit at %.0f", static_cast<f64>(c.GetHit()->Distance));
+        else
+            ImGui::TextDisabled("Ray (hero -> mouse): no hit");
+        ImGui::Checkbox("Show hash cells", &m_ShowHashGrid);
         ImGui::Separator();
     }
 
@@ -847,6 +873,8 @@ private:
     bool m_Jumping = false;
     f32 m_Flash = 0.0f; // seconds of gold tint left
     u32 m_JumpsLanded = 0;
+    CollisionDemo m_Collision; // the yard right of the room
+    bool m_ShowHashGrid = true;
     f32 m_PulseAge = 1.0f;                        // seconds since Space was pressed
     std::optional<Emerald::TextureAtlas> m_Atlas; // the sprite demo's sheet
     std::optional<Emerald::Font> m_PixelFont;     // text demo: 16 px, Nearest

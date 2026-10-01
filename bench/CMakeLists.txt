@@ -8,3 +8,8 @@ emerald_set_warnings(EmeraldMathBench)
 add_executable(EmeraldParticleBench ParticleBench.cpp)
 target_link_libraries(EmeraldParticleBench PRIVATE Emerald::Emerald)
 emerald_set_warnings(EmeraldParticleBench)
+
+# Spatial hash: 10k moving circles (insert, update, queries, pairs) vs brute-force O(n^2).
+add_executable(EmeraldCollisionBench CollisionBench.cpp)
+target_link_libraries(EmeraldCollisionBench PRIVATE Emerald::Emerald)
+emerald_set_warnings(EmeraldCollisionBench)

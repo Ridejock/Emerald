@@ -65,3 +65,9 @@ target_compile_definitions(EmeraldFontTests PRIVATE
     EMERALD_TEST_FONT="${PROJECT_SOURCE_DIR}/sandbox/assets/fonts/PressStart2P-Regular.ttf")
 emerald_set_warnings(EmeraldFontTests)
 add_test(NAME FontTests COMMAND EmeraldFontTests)
+
+# Collision: shape tests with normal and depth, raycasts, and the spatial hash vs brute force.
+add_executable(EmeraldCollisionTests TestMain.cpp CollisionTests.cpp)
+target_link_libraries(EmeraldCollisionTests PRIVATE Emerald::Emerald)
+emerald_set_warnings(EmeraldCollisionTests)
+add_test(NAME CollisionTests COMMAND EmeraldCollisionTests)

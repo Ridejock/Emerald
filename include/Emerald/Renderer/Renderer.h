@@ -2,6 +2,8 @@
 
 #include <filesystem>
 #include <optional>
+#include <span>
+#include <string_view>
 
 #include <SDL3/SDL_gpu.h>
 
@@ -10,6 +12,13 @@
 struct SDL_Window;
 
 namespace Emerald {
+
+// The SDL GPU driver name for a --gpu value: "vulkan", "metal", "direct3d12" (also "d3d12"), or
+// "" for "auto" (SDL picks). Case-insensitive. nullopt if the value is not one of these.
+[[nodiscard]] std::optional<std::string_view> NormalizeGpuDriver(std::string_view value);
+// The value of `--gpu <value>` or `--gpu=<value>` in `args` (argv; args[0] is skipped), or
+// nullopt if there is none. The last one wins.
+[[nodiscard]] std::optional<std::string_view> FindGpuArg(std::span<char* const> args);
 
 // Thin wrapper around an SDL_GPUDevice that renders into one window's swapchain.
 //
@@ -28,9 +37,12 @@ public:
     Renderer& operator=(const Renderer&) = delete;
 
     // Creates the GPU device (Vulkan, D3D12 or Metal - whatever SDL picks among the backends that
-    // accept one of `shaderFormats`) and claims the window.
-    // Returns false on failure; SDL_GetError() has the reason.
-    bool Init(SDL_Window* window, bool vsync, SDL_GPUShaderFormat shaderFormats);
+    // accept one of `shaderFormats`) and claims the window. `driver`: a driver name from
+    // NormalizeGpuDriver ("" = auto, even if SDL_GPU_DRIVER is set), or nullopt for SDL's default
+    // (the SDL_GPU_DRIVER environment variable, else auto). If a requested driver fails, it
+    // retries with auto (logged). Returns false on failure; SDL_GetError() has the reason.
+    bool Init(SDL_Window* window, bool vsync, SDL_GPUShaderFormat shaderFormats,
+              std::optional<std::string_view> driver = std::nullopt);
     void Shutdown();
 
     // Returns false if there is nothing to draw into this frame (e.g. the window is minimized).
@@ -60,6 +72,8 @@ public:
     [[nodiscard]] bool IsVSync() const { return m_VSync; }
 
     [[nodiscard]] SDL_GPUDevice* GetDevice() const { return m_Device; }
+    // The active backend, e.g. "vulkan", "direct3d12" or "metal" (empty before Init).
+    [[nodiscard]] std::string_view GetDriverName() const;
     [[nodiscard]] SDL_GPUCommandBuffer* GetCommandBuffer() const { return m_CommandBuffer; }
     [[nodiscard]] SDL_GPURenderPass* GetRenderPass() const { return m_RenderPass; }
     // This frame's output texture: the swapchain's, or the screenshot capture texture.

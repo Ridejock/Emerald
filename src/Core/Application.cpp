@@ -54,8 +54,19 @@ Application::Application(const ApplicationSpec& spec)
     if (!m_Window->IsValid())
         return;
 
+    // --gpu picks the backend; without it SDL uses SDL_GPU_DRIVER or picks one itself.
+    std::optional<std::string_view> driver;
+    if (const std::optional<std::string_view> arg = FindGpuArg(spec.Args)) {
+        driver = NormalizeGpuDriver(*arg);
+        if (!driver) {
+            EM_CORE_WARN("Unknown --gpu '{}' (expected vulkan, d3d12, metal or auto); using auto",
+                         *arg);
+            driver = std::string_view();
+        }
+    }
     m_Renderer = std::make_unique<Renderer>();
-    if (!m_Renderer->Init(m_Window->GetNativeWindow(), spec.Window.VSync, spec.ShaderFormats)) {
+    if (!m_Renderer->Init(m_Window->GetNativeWindow(), spec.Window.VSync, spec.ShaderFormats,
+                          driver)) {
         EM_CORE_ERROR("Failed to create SDL GPU device: {}", SDL_GetError());
         // Hide the (empty) main window so only the explanation is visible.
         SDL_HideWindow(m_Window->GetNativeWindow());

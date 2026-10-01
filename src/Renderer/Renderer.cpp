@@ -1,6 +1,8 @@
 #include "Emerald/Renderer/Renderer.h"
 
+#include <cctype>
 #include <cstring>
+#include <string>
 #include <utility>
 
 #include <SDL3/SDL.h>
@@ -38,14 +40,63 @@ const char* PresentModeName(SDL_GPUPresentMode mode)
     return "unknown";
 }
 
+bool EqualsIgnoreCase(std::string_view a, std::string_view b)
+{
+    if (a.size() != b.size())
+        return false;
+    for (usize i = 0; i < a.size(); ++i) {
+        if (std::tolower(static_cast<unsigned char>(a[i])) !=
+            std::tolower(static_cast<unsigned char>(b[i])))
+            return false;
+    }
+    return true;
+}
+
+// Forces SDL's driver choice: a name, or nullptr for auto. Override priority, so it also wins
+// over the SDL_GPU_DRIVER environment variable.
+void ForceGpuDriverHint(const char* name)
+{
+    SDL_SetHintWithPriority(SDL_HINT_GPU_DRIVER, name, SDL_HINT_OVERRIDE);
+}
+
 } // namespace
+
+std::optional<std::string_view> NormalizeGpuDriver(std::string_view value)
+{
+    if (EqualsIgnoreCase(value, "auto"))
+        return std::string_view();
+    if (EqualsIgnoreCase(value, "vulkan"))
+        return "vulkan";
+    if (EqualsIgnoreCase(value, "d3d12") || EqualsIgnoreCase(value, "direct3d12"))
+        return "direct3d12";
+    if (EqualsIgnoreCase(value, "metal"))
+        return "metal";
+    return std::nullopt;
+}
+
+std::optional<std::string_view> FindGpuArg(std::span<char* const> args)
+{
+    constexpr std::string_view kFlag = "--gpu";
+    std::optional<std::string_view> value;
+    for (usize i = 1; i < args.size(); ++i) {
+        if (!args[i])
+            continue;
+        const std::string_view arg(args[i]);
+        if (arg == kFlag && i + 1 < args.size() && args[i + 1])
+            value = args[++i];
+        else if (arg.starts_with(kFlag) && arg.size() > kFlag.size() && arg[kFlag.size()] == '=')
+            value = arg.substr(kFlag.size() + 1);
+    }
+    return value;
+}
 
 Renderer::~Renderer()
 {
     Shutdown();
 }
 
-bool Renderer::Init(SDL_Window* window, bool vsync, SDL_GPUShaderFormat shaderFormats)
+bool Renderer::Init(SDL_Window* window, bool vsync, SDL_GPUShaderFormat shaderFormats,
+                    std::optional<std::string_view> driver)
 {
     // SDL only picks a backend that can consume one of the shader formats we ship:
     // SPIR-V -> Vulkan, DXIL -> Direct3D 12, MSL -> Metal.
@@ -55,9 +106,22 @@ bool Renderer::Init(SDL_Window* window, bool vsync, SDL_GPUShaderFormat shaderFo
     constexpr bool debugMode = true; // enables validation layers / extra checks where available
 #endif
 
+    // SDL reads the driver from the SDL_GPU_DRIVER hint (or environment variable).
+    if (driver)
+        ForceGpuDriverHint(driver->empty() ? nullptr : std::string(*driver).c_str());
     m_Device = SDL_CreateGPUDevice(shaderFormats, debugMode, nullptr);
-    if (!m_Device)
-        return false;
+    if (!m_Device) {
+        const char* requested = SDL_GetHint(SDL_HINT_GPU_DRIVER);
+        if (!requested || !*requested)
+            return false; // auto already failed
+        // A specific driver was asked for (--gpu or SDL_GPU_DRIVER): try the others so the app
+        // still starts.
+        EM_CORE_ERROR("GPU driver '{}' failed ({}); retrying with auto", requested, SDL_GetError());
+        ForceGpuDriverHint(nullptr);
+        m_Device = SDL_CreateGPUDevice(shaderFormats, debugMode, nullptr);
+        if (!m_Device)
+            return false;
+    }
 
     // Claiming the window creates its swapchain (SDR, vsync by default).
     if (!SDL_ClaimWindowForGPUDevice(m_Device, window)) {
@@ -113,6 +177,12 @@ bool Renderer::SetVSync(bool vsync)
     m_VSync = vsync;
     EM_CORE_INFO("Present mode {}", PresentModeName(mode));
     return true;
+}
+
+std::string_view Renderer::GetDriverName() const
+{
+    const char* name = m_Device ? SDL_GetGPUDeviceDriver(m_Device) : nullptr;
+    return name ? std::string_view(name) : std::string_view();
 }
 
 SDL_GPUTextureFormat Renderer::GetSwapchainFormat() const

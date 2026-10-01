@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <memory>
 #include <memory_resource>
+#include <span>
 
 #include <SDL3/SDL_pixels.h>
 
@@ -37,6 +38,10 @@ struct ApplicationSpec {
     // for its target with exactly the formats it generated.
     SDL_GPUShaderFormat ShaderFormats =
         SDL_GPU_SHADERFORMAT_SPIRV | SDL_GPU_SHADERFORMAT_DXIL | SDL_GPU_SHADERFORMAT_MSL;
+    // The command line (main's argv), for engine options; other arguments are ignored:
+    //   --gpu vulkan|d3d12|direct3d12|metal|auto   GPU backend (wins over SDL_GPU_DRIVER)
+    // Set it with `spec.Args = {argv, static_cast<usize>(argc)};`. It must outlive the constructor.
+    std::span<char* const> Args;
     // Stop after this many frames (0 = run until the window is closed). Useful for CI/headless
     // runs.
     u64 MaxFrames = 0;

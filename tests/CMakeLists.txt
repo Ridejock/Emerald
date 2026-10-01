@@ -40,7 +40,8 @@ target_link_libraries(EmeraldInputTests PRIVATE Emerald::Emerald)
 emerald_set_warnings(EmeraldInputTests)
 add_test(NAME InputTests COMMAND EmeraldInputTests)
 
-add_executable(EmeraldRenderer2DTests TestMain.cpp Renderer2DTests.cpp CrtEffectTests.cpp)
+add_executable(EmeraldRenderer2DTests TestMain.cpp Renderer2DTests.cpp CrtEffectTests.cpp
+    GpuDriverTests.cpp)
 target_link_libraries(EmeraldRenderer2DTests PRIVATE Emerald::Emerald)
 emerald_set_warnings(EmeraldRenderer2DTests)
 add_test(NAME Renderer2DTests COMMAND EmeraldRenderer2DTests)

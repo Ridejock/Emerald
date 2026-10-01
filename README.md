@@ -113,8 +113,19 @@ Options can also be passed directly, e.g. `cmake --preset release -DEMERALD_USE_
 ./build/debug/bin/Sandbox                                  # run until the window is closed or Esc is pressed
 ./build/debug/bin/Sandbox --frames 120                     # quit automatically after 120 frames
 ./build/debug/bin/Sandbox --frames 60 --screenshot out.png # save the last frame as a PNG (GPU readback)
-SDL_GPU_DRIVER=vulkan ./build/debug/bin/Sandbox            # force a backend (vulkan, direct3d12, metal)
+./build/debug/bin/Sandbox --gpu vulkan                     # pick the GPU backend (see below)
+SDL_GPU_DRIVER=vulkan ./build/debug/bin/Sandbox            # the same through SDL's environment variable
 ```
+
+**Choosing the GPU backend** without recompiling: `--gpu vulkan|d3d12|direct3d12|metal|auto`
+(also `--gpu=vulkan`; `d3d12` means `direct3d12`, case doesn't matter). Apps pass their command line
+with `spec.Args = {argv, static_cast<usize>(argc)};` (`ApplicationSpec::Args`). Without the flag,
+SDL's `SDL_GPU_DRIVER` environment variable still works; the flag wins over it (`--gpu auto` ignores
+it too). An unknown value logs a warning and uses auto; if the requested backend cannot create a
+device (e.g. `--gpu metal` on Windows), the error is logged and the engine retries with auto, so
+the app still starts. The backend in use is logged at startup and available as
+`GetRenderer().GetDriverName()` (`"vulkan"`, `"direct3d12"` or `"metal"`); the sandbox's ImGui
+panel shows it as `GPU: vulkan`.
 
 The renderer needs a real GPU backend, so a display is required (the `dummy` video driver has no
 GPU swapchain). On a machine/VM/CI runner without a GPU, install Mesa's software Vulkan driver
@@ -267,7 +278,7 @@ structure-of-arrays layout instead (all x together, all y together).
 | `MemoryTests` | frame arena reset/alignment/overflow, many resets stay in the buffer, pmr containers use their resource, tracking counts, pools (incl. the synchronized pool from many threads) |
 | `InputTests` | key down/pressed/released edges, taps within one frame, fixed-step edges, `ReleaseAll`; actions with several keys, action taps across fixed steps, axes, rebinding; gamepads (synthetic pads, no hardware): deadzone math (per-axis, radial), trigger/stick virtual buttons with hysteresis, button edges across fixed steps, several pads, labels, gamepad bindings and largest-magnitude axes; `FixedTimestep` accumulation, average rate at 144 fps / 120 Hz, slow-frame clamp |
 | `AudioTests` | MP3 decoding from an embedded 809-byte file (length, level, channels, pitch after resampling), garbage rejected, WAV loading, `LoadSound` by extension incl. unknown/missing files, `MakeSound` conversion; mixer handles (stale handles, reuse, releasing samples), fade-in/out and volume ramps without clicks, looping, pitch, pan, master volume/mute, voice stealing, soft limiter; synth waveforms (length, no NaN, peak), envelopes, lowpass |
-| `Renderer2DTests` | `Renderer2D` batching and shape generation on the CPU (no GPU), `Transform2D`, color packing; sprite quads (UVs, rotation, origin, flips, pixel snap), draw order across lines/sprites/texture switches and blend modes, atlas JSON parsing; `CrtEffect` afterglow decay, uniforms and bloom spread |
+| `Renderer2DTests` | `Renderer2D` batching and shape generation on the CPU (no GPU), `Transform2D`, color packing; sprite quads (UVs, rotation, origin, flips, pixel snap), draw order across lines/sprites/texture switches and blend modes, atlas JSON parsing; `CrtEffect` afterglow decay, uniforms and bloom spread; `--gpu` parsing and driver names |
 | `ParticleTests` | particle spawning (shapes, ranges, base velocity), capacity limit, drag/gravity step, swap-remove, continuous rate, color/size fade when drawing, scalar and SSE updates agreeing over 240 steps |
 
 ```sh
@@ -347,8 +358,9 @@ EndFrame                 submit + present
 
 If no backend is available (no Vulkan / D3D12 / Metal capable driver), the engine logs the
 `SDL_GetError()` reason, shows a message box explaining that a Vulkan, Direct3D 12 or Metal capable
-GPU driver is required, and `Run()` returns exit code `1`. You can try this path with
-`SDL_GPU_DRIVER=invalid ./build/debug/bin/Sandbox`.
+GPU driver is required, and `Run()` returns exit code `1`. (A bad `--gpu` or `SDL_GPU_DRIVER` alone
+does not get here: the engine falls back to auto.) On Linux you can try this path by hiding the
+Vulkan drivers: `VK_DRIVER_FILES=/nonexistent ./build/debug/bin/Sandbox`.
 
 ## 2D shapes (`Renderer2D`)
 

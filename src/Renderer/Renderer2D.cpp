@@ -273,6 +273,12 @@ void Renderer2D::DrawSprite(const Texture& texture, const Vec2& position,
     DrawSprite(Sprite::FromTexture(texture), position, options);
 }
 
+void Renderer2D::DrawSprite(const Animator& animator, const Vec2& position,
+                            const SpriteOptions& options)
+{
+    DrawSprite(animator.GetSprite(), position, options); // an empty sprite draws nothing
+}
+
 void Renderer2D::DrawSprite(const Sprite& sprite, const Vec2& position,
                             const SpriteOptions& options)
 {

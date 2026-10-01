@@ -4,12 +4,13 @@ Emerald is a small, modern C++20 game engine built on [SDL3](https://github.com/
 It is split into:
 
 - **`Emerald::Emerald`** – the engine library (logging, window, SDL GPU renderer, batched 2D renderer for lines and
-  textured sprites, a 2D camera, textures and texture atlases, keyboard input, application loop with a fixed-timestep update, image loading, thread pool, `std::pmr`
+  textured sprites, sprite animation, a 2D camera, textures and texture atlases, keyboard input, application loop with a fixed-timestep update, image loading, thread pool, `std::pmr`
   memory helpers).
 - **`Emerald::Math`** – a header-only math library (vectors, `Mat4`, optional SSE), included by the engine.
 - **`sandbox/`** – a minimal example app that links the engine and draws a rotating vertex-colored triangle
   in pixel space with its own HLSL shaders through SDL GPU, plus 2D line shapes, sprites from a
   procedurally generated atlas (scaled, rotated, flipped, tinted, and layered with lines), and an arrow driven by
+  an animated pixel-art hero (walk / idle / jump, from `tools/sprites/make_hero.py`) driven by
   keyboard or gamepad that a `Camera2D` follows around a larger world (pan, zoom, rotate, shake;
   with ImGui on, the panel shows the camera and lists connected pads and their live stick values).
 - **`tests/`** – small unit-test executables run with `ctest`.
@@ -279,7 +280,7 @@ structure-of-arrays layout instead (all x together, all y together).
 | `MemoryTests` | frame arena reset/alignment/overflow, many resets stay in the buffer, pmr containers use their resource, tracking counts, pools (incl. the synchronized pool from many threads) |
 | `InputTests` | key down/pressed/released edges, taps within one frame, fixed-step edges, `ReleaseAll`; actions with several keys, action taps across fixed steps, axes, rebinding; gamepads (synthetic pads, no hardware): deadzone math (per-axis, radial), trigger/stick virtual buttons with hysteresis, button edges across fixed steps, several pads, labels, gamepad bindings and largest-magnitude axes; `FixedTimestep` accumulation, average rate at 144 fps / 120 Hz, slow-frame clamp |
 | `AudioTests` | MP3 decoding from an embedded 809-byte file (length, level, channels, pitch after resampling), garbage rejected, WAV loading, `LoadSound` by extension incl. unknown/missing files, `MakeSound` conversion; mixer handles (stale handles, reuse, releasing samples), fade-in/out and volume ramps without clicks, looping, pitch, pan, master volume/mute, voice stealing, soft limiter; synth waveforms (length, no NaN, peak), envelopes, lowpass |
-| `Renderer2DTests` | `Renderer2D` batching and shape generation on the CPU (no GPU), `Transform2D`, color packing; sprite quads (UVs, rotation, origin, flips, pixel snap), draw order across lines/sprites/texture switches and blend modes, atlas JSON parsing; `Camera2D` (pixel-space default, letterboxing, zoom/rotation, `ScreenToWorld` round trips against the GPU matrix, bounds clamp, follow dead zone and step-size independent damping, shake decay); `CrtEffect` afterglow decay, uniforms and bloom spread; `--gpu` parsing and driver names |
+| `Renderer2DTests` | `Renderer2D` batching and shape generation on the CPU (no GPU), `Transform2D`, color packing; sprite quads (UVs, rotation, origin, flips, pixel snap), draw order across lines/sprites/texture switches and blend modes, atlas JSON parsing; `Camera2D` (pixel-space default, letterboxing, zoom/rotation, `ScreenToWorld` round trips against the GPU matrix, bounds clamp, follow dead zone and step-size independent damping, shake decay); atlas `"animations"` parsing (patterns, lists, durations, modes, missing frames reported), `Animator` loop / once / ping-pong timing at several dt, speed, stop/resume, finish and loop events, drawing a frame with flip and tint; `CrtEffect` afterglow decay, uniforms and bloom spread; `--gpu` parsing and driver names |
 | `ParticleTests` | particle spawning (shapes, ranges, base velocity), capacity limit, drag/gravity step, swap-remove, continuous rate, color/size fade when drawing, scalar and SSE updates agreeing over 240 steps |
 
 ```sh
@@ -511,6 +512,59 @@ How it is drawn:
 - Blending uses **straight (non-premultiplied) alpha**, like PNG files: `src × a + dst × (1 − a)`.
   With `Linear` filtering, fully transparent pixels still get blended with their neighbours, so give
   them the edge color (most tools do) or you get dark fringes; `Nearest` has no such problem.
+
+## Sprite animation (`Animator`)
+
+Animations are named frame sequences in the atlas JSON, next to the sprites, under
+`"animations"`: a list of sprite names, or a name pattern where `{}` counts 0, 1, 2 ... while those
+sprites exist (or from `"from"` to `"to"`). `"duration"` (seconds, default 0.1) applies to every
+frame unless `"durations"` gives one per frame; `"mode"` is `"loop"` (default), `"once"` or
+`"pingpong"`. A plain array of names is a looping animation.
+
+```json
+{
+  "hero_idle_0": { "x": 0,  "y": 0, "w": 16, "h": 16 },
+  "hero_idle_1": { "x": 17, "y": 0, "w": 16, "h": 16 },
+  "hero_walk_0": { "x": 34, "y": 0, "w": 16, "h": 16 },
+  "...": "...",
+  "animations": {
+    "idle": { "frames": ["hero_idle_0", "hero_idle_1"], "durations": [1.6, 0.12] },
+    "walk": { "pattern": "hero_walk_{}", "duration": 0.12 },
+    "jump": { "pattern": "hero_jump_{}", "durations": [0.08, 0.3, 0.12], "mode": "once" },
+    "coin": { "pattern": "coin_{}", "duration": 0.09, "mode": "pingpong" }
+  }
+}
+```
+
+Frames that name no sprite are logged, listed by `atlas.GetMissingFrames()` (`"walk: hero_walk_9"`)
+and left out; an animation with no frames left is dropped. `atlas.GetAnimation("name")` returns an
+empty animation (draws nothing) for unknown names, `FindAnimation` a pointer or null.
+
+An `Emerald::Animator` plays one and gives the frame to draw:
+
+```cpp
+// OnStart: react to a "once" animation ending.
+m_Animator.OnFinished = [this](const Emerald::Animation&) { m_Jumping = false; };
+// OnFixedUpdate:
+if (jumpPressed)
+    m_Animator.Play(atlas.GetAnimation("jump"), true); // restart
+else if (!m_Jumping)
+    m_Animator.Play(atlas.GetAnimation(moving ? "walk" : "idle")); // no restart if already on it
+m_Animator.SetSpeed(running ? 1.8f : 1.0f);
+m_Animator.Update(dt);
+// OnRender2D: flip and tint like any sprite.
+r.DrawSprite(m_Animator, position, {.Scale = Vec2(4.0f), .Tint = flash, .FlipX = facingLeft});
+```
+
+`Stop` / `Resume` hold and continue, `IsFinished` is true once a `"once"` animation has shown its
+last frame for its duration (it stays on that frame), `OnLoop` fires at the end of every loop /
+ping-pong cycle, and `GetFrameIndex`, `GetFrameTime`, `GetLoopCount` are there for debugging. Time
+carries over between frames, so the result depends only on the total time, not on the dt steps.
+
+The sandbox's hero sheet is hand-made pixel art written as text in `tools/sprites/make_hero.py`
+(standard-library Python, fixed 8-color palette, deterministic output); run
+`python3 tools/sprites/make_hero.py` to regenerate `sandbox/assets/sprites/hero.png` and
+`hero.json`.
 
 ## Text (`Font`)
 
@@ -849,11 +903,12 @@ It is always built in Release and lives in `build/_shadercross`, which every pre
 include/Emerald/   Public engine headers (Core/, Input/, Audio/, Renderer/, Particles/, Assets/, Math/, Memory/)
 src/               Engine implementation
 shaders/           The engine's HLSL shaders (Renderer2D lines, Sprite, the CRT post-process; compiled at build time for every app)
-sandbox/           Example application (src/, its own shaders/, assets/ for the demo font)
+sandbox/           Example application (src/, its own shaders/, assets/ for the demo font and hero sheet)
 tests/             Unit tests (ctest)
 bench/             Math and particle micro-benchmarks (EMERALD_BUILD_BENCH)
 cmake/             Dependency setup (FetchContent) and shader compilation (Shaders.cmake)
 tools/shadercross/ Host-tool project that builds SDL_shadercross
+tools/sprites/     Script that generates the sandbox's pixel-art hero sheet
 ```
 
 ## Using Emerald in your own project

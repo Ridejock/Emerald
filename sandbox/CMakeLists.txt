@@ -18,4 +18,10 @@ add_custom_command(TARGET Sandbox POST_BUILD
             ${CMAKE_CURRENT_SOURCE_DIR}/assets/fonts/PressStart2P-Regular.ttf
             ${CMAKE_CURRENT_SOURCE_DIR}/assets/fonts/PressStart2P-OFL.txt
             $<TARGET_FILE_DIR:Sandbox>/assets/fonts/
+    # The animated hero sheet (made by tools/sprites/make_hero.py).
+    COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:Sandbox>/assets/sprites
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${CMAKE_CURRENT_SOURCE_DIR}/assets/sprites/hero.png
+            ${CMAKE_CURRENT_SOURCE_DIR}/assets/sprites/hero.json
+            $<TARGET_FILE_DIR:Sandbox>/assets/sprites/
     VERBATIM)

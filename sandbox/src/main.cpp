@@ -77,10 +77,6 @@ struct DrawItem {
     u32 VertexCount = 0;
 };
 
-// A small arrow-shaped marker for the input demo, pointing along +X (model space, pixels).
-constexpr std::array<Vec2, 4> kArrow{
-    {{14.0f, 0.0f}, {-10.0f, -9.0f}, {-5.0f, 0.0f}, {-10.0f, 9.0f}}};
-
 // A five-pointed star (alternating outer/inner radius), built once at startup.
 std::array<Vec2, 10> MakeStar()
 {
@@ -95,7 +91,7 @@ std::array<Vec2, 10> MakeStar()
 const std::array<Vec2, 10> kStar = MakeStar();
 
 // Camera demo: the shapes and sprites live in a world larger than the window, the camera follows
-// the arrow inside its bounds. The original demo layout is a 1280 x 720 "room" in the middle.
+// the hero inside its bounds. The original demo layout is a 1280 x 720 "room" in the middle.
 constexpr Vec2 kWorldSize{2560.0f, 1600.0f};
 constexpr Vec2 kRoomSize{1280.0f, 720.0f};
 constexpr Vec2 kRoomOrigin = (kWorldSize - kRoomSize) * 0.5f; // the room's top-left
@@ -184,9 +180,11 @@ protected:
         input.BindAxis("MoveY", GamepadAxis::LeftY); // +Y is down on screen and on the stick
         input.BindAction("Pulse", {Key::Space});
         input.BindAction("Pulse", {GamepadButton::South});
+        input.BindAction("Run", {Key::LeftShift});
+        input.BindAction("Run", {GamepadButton::East});
         input.BindAction("Quit", {Key::Escape});
         input.BindAction("Crt", {Key::C}); // CRT post-process on/off
-        // Camera: Tab / North toggles following the arrow or free panning (with the move keys),
+        // Camera: Tab / North toggles following the hero or free panning (with the move keys),
         // zoom with the wheel, Q / E or the triggers, rotate with F / G or the shoulders.
         input.BindAction("CameraMode", {Key::Tab});
         input.BindAction("CameraMode", {GamepadButton::North});
@@ -223,11 +221,13 @@ protected:
                                                      {"ring", {{16.0f, 0.0f}, {16.0f, 16.0f}}}});
         }
         LoadFonts();
+        LoadHero();
     }
 
-    // Input + fixed-step demo: move the arrow with WASD / arrow keys / left stick / d-pad (at
-    // 120 Hz, independent of the frame rate), Space or South (A / Cross) starts a ring pulse and
-    // a short rumble. The camera follows the arrow (or pans freely) and shakes on X / West.
+    // Input + fixed-step demo: move the hero with WASD / arrow keys / left stick / d-pad (at
+    // 120 Hz, independent of the frame rate; Shift / East runs), Space or South (A / Cross) jumps
+    // with a ring pulse and a short rumble. The camera follows the hero (or pans freely) and
+    // shakes on X / West.
     void OnFixedUpdate(f32 dt) override
     {
         Emerald::Input& input = GetInput();
@@ -244,14 +244,16 @@ protected:
             // Pan at the same on-screen speed at any zoom.
             m_Camera.SetPosition(m_Camera.GetPosition() +
                                  direction * (600.0f * dt / m_Camera.GetZoom()));
+            UpdateHero(false, 1.0f, dt);
         } else {
-            if (length > 0.0f) {
-                m_ArrowPosition += direction * (300.0f * dt);
-                m_ArrowAngle = std::atan2(direction.y, direction.x);
-            }
+            const f32 speed = input.IsActionDown("Run") ? 1.8f : 1.0f;
+            m_HeroPosition += direction * (220.0f * speed * dt);
+            if (std::abs(direction.x) > 0.1f)
+                m_FacingLeft = direction.x < 0.0f;
+            UpdateHero(length > 0.1f, speed, dt);
             // Keep it in the world.
-            m_ArrowPosition = Emerald::Min(Emerald::Max(m_ArrowPosition, Vec2(0.0f)), kWorldSize);
-            m_Camera.Follow(m_ArrowPosition, dt);
+            m_HeroPosition = Emerald::Min(Emerald::Max(m_HeroPosition, Vec2(0.0f)), kWorldSize);
+            m_Camera.Follow(m_HeroPosition, dt);
         }
         m_Camera.SetZoom(m_Camera.GetZoom() * std::exp(1.5f * input.GetAxis("Zoom") * dt));
         m_Camera.SetRotation(m_Camera.GetRotation() + 1.2f * input.GetAxis("Rotate") * dt);
@@ -264,15 +266,32 @@ protected:
 
         if (input.WasActionPressed("Pulse")) {
             m_PulseAge = 0.0f;
+            if (m_Hero) {
+                m_Jumping = true;
+                m_HeroAnimator.Play(m_Hero->GetAnimation("jump"), true);
+            }
             input.Rumble(0.3f, 0.6f, 120);
             m_Camera.AddTrauma(0.25f);
-            // Panned towards the side of the screen the arrow is on.
-            const f32 x = m_Camera.WorldToScreen(m_ArrowPosition).x / m_Camera.GetTargetSize().x;
+            // Panned towards the side of the screen the hero is on.
+            const f32 x = m_Camera.WorldToScreen(m_HeroPosition).x / m_Camera.GetTargetSize().x;
             const f32 pan = Emerald::Clamp(x * 2.0f - 1.0f, -1.0f, 1.0f);
             GetAudio().Play(m_Blip, {.Volume = 0.7f, .Pan = pan * 0.8f});
         }
         m_PulseAge += dt;
         m_Camera.Update(dt);
+        m_CoinAnimator.Update(dt);
+        m_Flash = Emerald::Max(m_Flash - dt, 0.0f);
+    }
+
+    // Idle or walk (unless a jump is playing; its finish event ends it), at the run speed.
+    void UpdateHero(bool moving, f32 speed, f32 dt)
+    {
+        if (!m_Hero)
+            return;
+        if (!m_Jumping)
+            m_HeroAnimator.Play(m_Hero->GetAnimation(moving ? "walk" : "idle"));
+        m_HeroAnimator.SetSpeed(moving ? speed : 1.0f);
+        m_HeroAnimator.Update(dt);
     }
 
     // Mouse wheel zoom (unless the mouse is over an ImGui window).
@@ -372,10 +391,10 @@ protected:
 
         DrawSprites(r, room, size);
 
-        // The input demo arrow and its Space pulse (a ring growing for half a second).
-        r.DrawPolygon(kArrow, white, {.Position = m_ArrowPosition, .Rotation = m_ArrowAngle});
+        DrawHero(r);
+        // The Space pulse (a ring growing for half a second).
         if (m_PulseAge < 0.5f)
-            r.DrawCircle(m_ArrowPosition, 20.0f + 200.0f * m_PulseAge,
+            r.DrawCircle(m_HeroPosition, 20.0f + 200.0f * m_PulseAge,
                          {1.0f, 1.0f, 1.0f, 1.0f - 2.0f * m_PulseAge});
 
         // A cross under the mouse, placed via ScreenToWorld (it should sit right on the cursor).
@@ -384,6 +403,33 @@ protected:
             r.DrawLine(*mouse - Vec2(arm, 0.0f), *mouse + Vec2(arm, 0.0f), green);
             r.DrawLine(*mouse - Vec2(0.0f, arm), *mouse + Vec2(0.0f, arm), green);
         }
+    }
+
+    // The animated hero (flipped to face where it walks, gold flash when a jump lands) and a row
+    // of ping-pong coins with tints and a vertical flip.
+    void DrawHero(Emerald::Renderer2D& r)
+    {
+        if (!m_Hero)
+            return;
+        const Vec4 gold{1.0f, 0.85f, 0.3f, 1.0f};
+        const Vec4 white{1.0f, 1.0f, 1.0f, 1.0f};
+        const Vec2 coins = kRoomOrigin + Vec2(440.0f, 520.0f);
+        const Vec4 tints[] = {white,
+                              {0.6f, 0.8f, 1.0f, 1.0f},
+                              {1.0f, 0.5f, 0.5f, 1.0f},
+                              white,
+                              {1.0f, 1.0f, 1.0f, 0.4f}};
+        for (usize i = 0; i < 5; ++i)
+            r.DrawSprite(m_CoinAnimator, coins + Vec2(100.0f * static_cast<f32>(i), 0.0f),
+                         {.Scale = Vec2(3.0f), .Tint = tints[i], .FlipY = i == 3});
+        // Lift the hero while the jump is in the air (its middle frame).
+        const bool inAir = m_Jumping && m_HeroAnimator.GetFrameIndex() == 1;
+        const Vec2 at = m_HeroPosition - Vec2(0.0f, inAir ? 28.0f : 0.0f);
+        r.DrawSprite(m_HeroAnimator, at,
+                     {.Scale = Vec2(4.0f),
+                      .Tint = m_Flash > 0.0f ? gold : white,
+                      .FlipX = m_FacingLeft,
+                      .PixelSnap = true});
     }
 
     // The mouse in world units, if it is over the window.
@@ -551,8 +597,9 @@ protected:
                     GetRenderer2D().GetLastFrameLineCount(),
                     GetRenderer2D().GetLastFrameSpriteCount(),
                     GetRenderer2D().GetLastFrameDrawCalls());
-        ImGui::Text("Move the arrow: WASD / arrows / left stick, pulse: Space / %s",
+        ImGui::Text("Move the hero: WASD / arrows / left stick (Shift runs), jump: Space / %s",
                     GetInput().GetGamepads().GetButtonLabel(GamepadButton::South));
+        ShowAnimation();
         ShowCamera();
         ShowGamepads();
         ImGui::Text("Audio: %s", GetAudio().IsAvailable() ? "on" : "no device");
@@ -572,6 +619,22 @@ protected:
     }
 
 #if EMERALD_WITH_IMGUI
+    void ShowAnimation()
+    {
+        ImGui::Separator();
+        const Emerald::Animation* animation = m_HeroAnimator.GetAnimation();
+        ImGui::Text("Hero: %s, frame %u (%.2f s), speed %.1f, %u loops",
+                    animation ? animation->Name.c_str() : "-", m_HeroAnimator.GetFrameIndex(),
+                    static_cast<f64>(m_HeroAnimator.GetFrameTime()),
+                    static_cast<f64>(m_HeroAnimator.GetSpeed()), m_HeroAnimator.GetLoopCount());
+        ImGui::Text("Jumps landed (finish events): %u  coin frame %u", m_JumpsLanded,
+                    m_CoinAnimator.GetFrameIndex());
+        if (m_Hero)
+            ImGui::Text("Atlas: %zu sprites, %zu animations, %zu missing frames",
+                        m_Hero->GetRegions().size(), m_Hero->GetAnimations().size(),
+                        m_Hero->GetMissingFrames().size());
+    }
+
     // Camera stats and a few live controls.
     void ShowCamera()
     {
@@ -698,6 +761,24 @@ private:
         m_SmoothFont = Emerald::Font::Load(device, path, {.Size = 40.0f, .Oversample = 2});
     }
 
+    // The hero sheet (tools/sprites/make_hero.py): sprites and animations from its JSON.
+    void LoadHero()
+    {
+        const std::filesystem::path dir = Emerald::Paths::GetBasePath() / "assets/sprites";
+        m_Hero = Emerald::TextureAtlas::Load(GetRenderer().GetDevice(), dir / "hero.png",
+                                             dir / "hero.json");
+        if (!m_Hero)
+            return;
+        m_HeroAnimator.Play(m_Hero->GetAnimation("idle"));
+        m_CoinAnimator.Play(m_Hero->GetAnimation("coin"));
+        // The jump is a "once" animation: when it ends, flash and go back to idle / walk.
+        m_HeroAnimator.OnFinished = [this](const Emerald::Animation&) {
+            m_Jumping = false;
+            m_Flash = 0.25f;
+            ++m_JumpsLanded;
+        };
+    }
+
     // Window size in window coordinates as floats: the pixel-space projections use it.
     [[nodiscard]] Vec2 GetViewSize() const { return Vec2(GetWindowSize()); }
 
@@ -755,11 +836,17 @@ private:
 
     SandboxOptions m_Options;
     f32 m_Time = 0.0f;
-    Vec2 m_ArrowPosition = kRoomOrigin + Vec2(640.0f, 450.0f); // world units
+    Vec2 m_HeroPosition = kRoomOrigin + Vec2(640.0f, 450.0f); // world units
     Emerald::Camera2D m_Camera;
-    bool m_FreeCamera = false; // false: follow the arrow
+    bool m_FreeCamera = false; // false: follow the hero
     Emerald::Sound m_Blip;
-    f32 m_ArrowAngle = 0.0f;
+    std::optional<Emerald::TextureAtlas> m_Hero; // animated character + coins
+    Emerald::Animator m_HeroAnimator;
+    Emerald::Animator m_CoinAnimator;
+    bool m_FacingLeft = false;
+    bool m_Jumping = false;
+    f32 m_Flash = 0.0f; // seconds of gold tint left
+    u32 m_JumpsLanded = 0;
     f32 m_PulseAge = 1.0f;                        // seconds since Space was pressed
     std::optional<Emerald::TextureAtlas> m_Atlas; // the sprite demo's sheet
     std::optional<Emerald::Font> m_PixelFont;     // text demo: 16 px, Nearest

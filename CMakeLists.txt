@@ -79,6 +79,7 @@ add_library(Emerald STATIC
     src/Renderer/Pipeline.cpp
     src/Renderer/Renderer2D.cpp
     src/Renderer/Camera2D.cpp
+    src/Renderer/Animation.cpp
     src/Renderer/Texture.cpp
     src/Renderer/TextureAtlas.cpp
     src/Renderer/Font.cpp

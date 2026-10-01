@@ -24,6 +24,8 @@ std::optional<TextureAtlas::RegionMap> TextureAtlas::ParseRegions(std::string_vi
 
     RegionMap regions;
     for (const auto& [name, entry] : entries.items()) {
+        if (&entries == &root && (name == "animations" || name == "meta"))
+            continue; // not a sprite
         const nlohmann::json& rect =
             entry.is_object() && entry.contains("frame") ? entry["frame"] : entry;
         const auto number = [&](const char* key) {
@@ -43,7 +45,123 @@ std::optional<TextureAtlas::RegionMap> TextureAtlas::ParseRegions(std::string_vi
     return regions;
 }
 
-TextureAtlas TextureAtlas::Create(Texture texture, RegionMap regions)
+TextureAtlas::AnimationDefMap TextureAtlas::ParseAnimations(std::string_view json)
+{
+    AnimationDefMap defs;
+    const nlohmann::json root = nlohmann::json::parse(json.begin(), json.end(), nullptr, false);
+    if (root.is_discarded() || !root.is_object() || !root.contains("animations"))
+        return defs;
+    const nlohmann::json& list = root["animations"];
+    if (!list.is_object()) {
+        EM_CORE_WARN("TextureAtlas: \"animations\" must be an object; ignored");
+        return defs;
+    }
+    const auto names = [](const nlohmann::json& array, std::vector<std::string>& out) {
+        for (const nlohmann::json& n : array)
+            if (n.is_string())
+                out.push_back(n.get<std::string>());
+        return !out.empty();
+    };
+    for (const auto& [name, entry] : list.items()) {
+        AnimationDef def;
+        bool ok = false;
+        if (entry.is_array()) {
+            ok = names(entry, def.Frames); // a plain list of names: looping, default duration
+        } else if (entry.is_object()) {
+            if (entry.contains("frames") && entry["frames"].is_array())
+                ok = names(entry["frames"], def.Frames);
+            else if (entry.contains("pattern") && entry["pattern"].is_string()) {
+                def.Pattern = entry["pattern"].get<std::string>();
+                ok = def.Pattern.find("{}") != std::string::npos;
+            }
+            def.From = entry.value("from", 0);
+            def.To = entry.value("to", -1);
+            def.Duration = entry.value("duration", def.Duration);
+            if (entry.contains("durations") && entry["durations"].is_array())
+                for (const nlohmann::json& d : entry["durations"])
+                    def.Durations.push_back(d.is_number() ? d.get<f32>() : def.Duration);
+            const std::string mode = entry.value("mode", std::string("loop"));
+            if (mode == "once")
+                def.Mode = AnimationMode::Once;
+            else if (mode == "pingpong" || mode == "ping-pong")
+                def.Mode = AnimationMode::PingPong;
+            else if (mode != "loop")
+                EM_CORE_WARN("TextureAtlas: animation '{}' has unknown mode '{}'; looping", name,
+                             mode);
+        }
+        if (!ok) {
+            EM_CORE_WARN("TextureAtlas: animation '{}' needs \"frames\" or a \"pattern\" with "
+                         "{{}}; skipped",
+                         name);
+            continue;
+        }
+        defs[name] = std::move(def);
+    }
+    return defs;
+}
+
+void TextureAtlas::ResolveAnimations(const AnimationDefMap& defs)
+{
+    for (const auto& [name, def] : defs) {
+        std::vector<std::string> frames = def.Frames;
+        if (!def.Pattern.empty()) {
+            const auto numbered = [&](i32 i) {
+                std::string n = def.Pattern;
+                n.replace(n.find("{}"), 2, std::to_string(i));
+                return n;
+            };
+            if (def.To >= 0) {
+                for (i32 i = def.From; i <= def.To; ++i)
+                    frames.push_back(numbered(i));
+            } else {
+                for (i32 i = def.From; m_Regions.contains(numbered(i)); ++i)
+                    frames.push_back(numbered(i));
+                if (frames.empty())
+                    frames.push_back(numbered(def.From)); // reported as missing below
+            }
+        }
+        if (!def.Durations.empty() && def.Durations.size() != frames.size())
+            EM_CORE_WARN("TextureAtlas: animation '{}' has {} durations for {} frames; using {}s",
+                         name, def.Durations.size(), frames.size(), def.Duration);
+        const bool perFrame = def.Durations.size() == frames.size();
+
+        Animation animation{.Name = name, .Frames = {}, .Mode = def.Mode};
+        for (usize i = 0; i < frames.size(); ++i) {
+            const auto region = m_Regions.find(frames[i]);
+            if (region == m_Regions.end()) {
+                m_MissingFrames.push_back(name + ": " + frames[i]);
+                EM_CORE_WARN("TextureAtlas: animation '{}' uses missing sprite '{}'; left out",
+                             name, frames[i]);
+                continue;
+            }
+            animation.Frames.push_back({.Image = {m_Texture.get(), region->second},
+                                        .Duration = perFrame ? def.Durations[i] : def.Duration});
+        }
+        if (animation.Frames.empty()) {
+            EM_CORE_WARN("TextureAtlas: animation '{}' has no frames; skipped", name);
+            continue;
+        }
+        m_Animations[name] = std::move(animation);
+    }
+}
+
+const Animation* TextureAtlas::FindAnimation(std::string_view name) const
+{
+    const auto it = m_Animations.find(name);
+    return it == m_Animations.end() ? nullptr : &it->second;
+}
+
+const Animation& TextureAtlas::GetAnimation(std::string_view name) const
+{
+    if (const Animation* animation = FindAnimation(name))
+        return *animation;
+    EM_CORE_ERROR("TextureAtlas: no animation named '{}'", name);
+    static const Animation empty;
+    return empty;
+}
+
+TextureAtlas TextureAtlas::Create(Texture texture, RegionMap regions,
+                                  const AnimationDefMap& animations)
 {
     TextureAtlas atlas;
     atlas.m_Texture = std::make_unique<Texture>(std::move(texture));
@@ -63,6 +181,7 @@ TextureAtlas TextureAtlas::Create(Texture texture, RegionMap regions)
         }
     }
     atlas.m_Regions = std::move(regions);
+    atlas.ResolveAnimations(animations);
     return atlas;
 }
 
@@ -86,8 +205,10 @@ std::optional<TextureAtlas> TextureAtlas::Load(SDL_GPUDevice* device,
     std::optional<Texture> texture = Texture::Load(device, image, options);
     if (!texture)
         return std::nullopt;
-    TextureAtlas atlas = Create(std::move(*texture), std::move(*regions));
-    EM_CORE_INFO("Loaded atlas {} with {} sprites", json.string(), atlas.m_Regions.size());
+    TextureAtlas atlas =
+        Create(std::move(*texture), std::move(*regions), ParseAnimations(text.str()));
+    EM_CORE_INFO("Loaded atlas {} with {} sprites and {} animations", json.string(),
+                 atlas.m_Regions.size(), atlas.m_Animations.size());
     return atlas;
 }
 

@@ -10,6 +10,7 @@
 #include "Emerald/Math/Mat4.h"
 #include "Emerald/Math/Vec2.h"
 #include "Emerald/Math/Vec4.h"
+#include "Emerald/Renderer/Animation.h"
 #include "Emerald/Renderer/Camera2D.h"
 #include "Emerald/Renderer/Font.h"
 #include "Emerald/Renderer/Sprite.h"
@@ -141,6 +142,9 @@ public:
     void DrawSprite(const Sprite& sprite, const Vec2& position, const SpriteOptions& options = {});
     // The whole texture as a sprite.
     void DrawSprite(const Texture& texture, const Vec2& position,
+                    const SpriteOptions& options = {});
+    // The animator's current frame (nothing before its first Play).
+    void DrawSprite(const Animator& animator, const Vec2& position,
                     const SpriteOptions& options = {});
 
     // Text in `font` (UTF-8, '\n' = new line) as sprites from the font's atlas, one draw call per

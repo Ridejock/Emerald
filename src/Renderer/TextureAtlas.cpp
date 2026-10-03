@@ -155,6 +155,8 @@ const Animation& TextureAtlas::GetAnimation(std::string_view name) const
 {
     if (const Animation* animation = FindAnimation(name))
         return *animation;
+    if (m_Placeholder)
+        return m_PlaceholderAnimation;
     EM_CORE_ERROR("TextureAtlas: no animation named '{}'", name);
     static const Animation empty;
     return empty;
@@ -183,6 +185,35 @@ TextureAtlas TextureAtlas::Create(Texture texture, RegionMap regions,
     atlas.m_Regions = std::move(regions);
     atlas.ResolveAnimations(animations);
     return atlas;
+}
+
+TextureAtlas TextureAtlas::CreatePlaceholder(Texture texture)
+{
+    TextureAtlas atlas = Create(std::move(texture), {});
+    atlas.m_Placeholder = true;
+    atlas.m_PlaceholderAnimation = {.Name = "placeholder",
+                                    .Frames = {{Sprite::FromTexture(*atlas.m_Texture), 1.0f}},
+                                    .Mode = AnimationMode::Loop};
+    return atlas;
+}
+
+void TextureAtlas::ReplaceWith(TextureAtlas&& other)
+{
+    // The new pixels go into our Texture object (sprites point at it)...
+    if (!m_Texture)
+        m_Texture = std::make_unique<Texture>();
+    *m_Texture = std::move(*other.m_Texture);
+    m_Regions = std::move(other.m_Regions);
+    m_MissingFrames = std::move(other.m_MissingFrames);
+    // ...and the new animations into our map entries (Animators point at them). Their frames
+    // still point at `other`'s texture object, so repoint them at ours.
+    for (auto& [name, animation] : other.m_Animations) {
+        for (AnimationFrame& frame : animation.Frames)
+            frame.Image.Source = m_Texture.get();
+        m_Animations[name] = std::move(animation);
+    }
+    m_Placeholder = other.m_Placeholder;
+    m_PlaceholderAnimation.Frames = {{Sprite::FromTexture(*m_Texture), 1.0f}};
 }
 
 std::optional<TextureAtlas> TextureAtlas::Load(SDL_GPUDevice* device,
@@ -224,7 +255,8 @@ Sprite TextureAtlas::Get(std::string_view name) const
 {
     if (std::optional<Sprite> sprite = Find(name))
         return *sprite;
-    EM_CORE_ERROR("TextureAtlas: no sprite named '{}'", name);
+    if (!m_Placeholder)
+        EM_CORE_ERROR("TextureAtlas: no sprite named '{}'", name);
     return m_Texture ? Sprite::FromTexture(*m_Texture) : Sprite{};
 }
 

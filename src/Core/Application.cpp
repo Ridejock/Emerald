@@ -6,6 +6,7 @@
 
 #include "Emerald/Core/Defines.h"
 #include "Emerald/Core/Log.h"
+#include "Emerald/Core/Paths.h"
 
 #if EMERALD_WITH_IMGUI
 #include <imgui.h>
@@ -85,12 +86,15 @@ Application::Application(const ApplicationSpec& spec)
     // Not fatal if it fails (logged): the app still runs, only 2D shapes are not drawn.
     m_Renderer2D = std::make_unique<Renderer2D>();
     m_Renderer2D->Init(m_Renderer->GetDevice(), m_Renderer->GetSwapchainFormat());
+    m_Assets = std::make_unique<Assets>(std::make_unique<GpuAssetLoader>(m_Renderer->GetDevice()),
+                                        Paths::GetBasePath(), m_ThreadPool.get());
     InitImGui();
 }
 
 Application::~Application()
 {
     m_ThreadPool.reset(); // stops and joins the workers while everything they might use exists
+    m_Assets.reset();     // textures before the GPU device
     ShutdownImGui();
     m_Crt.reset();
     m_Renderer2D.reset();
@@ -128,6 +132,8 @@ int Application::Run()
         const u64 now = SDL_GetTicksNS();
         const u64 elapsedNs = now - last;
         last = now;
+        // Hot reload changed files and unload unused assets, before the game looks at them.
+        m_Assets->Update(static_cast<f32>(elapsedNs) / 1e9f);
 
         // Fixed-rate simulation first (0..MaxFixedStepsPerFrame steps), then the per-frame update.
         const u32 steps = m_FixedTimestep.Advance(elapsedNs);

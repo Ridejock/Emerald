@@ -7,6 +7,7 @@
 
 #include <SDL3/SDL_pixels.h>
 
+#include "Emerald/Assets/Assets.h"
 #include "Emerald/Audio/Audio.h"
 #include "Emerald/Core/Defines.h"
 #include "Emerald/Core/FixedTimestep.h"
@@ -81,6 +82,8 @@ public:
     [[nodiscard]] Input& GetInput() { return m_Input; }
     // Sound playback (see Audio.h; load sounds with LoadSound).
     [[nodiscard]] Audio& GetAudio() { return m_Audio; }
+    // Textures, atlases, fonts and sounds by path, loaded once and hot reloaded in debug builds.
+    [[nodiscard]] Assets& GetAssets() { return *m_Assets; }
     [[nodiscard]] u64 GetFrameCount() const { return m_FrameCount; }
 
     // Optional CRT monitor post-process over the whole frame (below the ImGui overlay), off by
@@ -159,6 +162,7 @@ private:
     std::unique_ptr<Renderer> m_Renderer;
     std::unique_ptr<Renderer2D> m_Renderer2D;
     std::unique_ptr<CrtEffect> m_Crt = std::make_unique<CrtEffect>();
+    std::unique_ptr<Assets> m_Assets; // after the renderer: its textures need the GPU device
     bool m_CrtEnabled = false;
     bool m_CrtInitialized = false;
     f32 m_FrameSeconds = 0.0f; // last frame's time, for the CRT afterglow

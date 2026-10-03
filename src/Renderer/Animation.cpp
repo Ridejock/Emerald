@@ -46,6 +46,9 @@ void Animator::Update(f32 dt)
 {
     if (!m_Playing || !m_Animation || m_Animation->Frames.empty())
         return;
+    // The animation may have been reloaded with fewer frames (asset hot reload).
+    if (m_Frame >= m_Animation->Frames.size())
+        m_Frame = 0;
     m_FrameTime += dt * m_Speed;
     // Several frames (even cycles) may pass in one long step.
     while (m_Playing && m_FrameTime >= DurationOf(m_Animation->Frames[m_Frame])) {
@@ -100,7 +103,8 @@ Sprite Animator::GetSprite() const
 {
     if (!m_Animation || m_Animation->Frames.empty())
         return {};
-    return m_Animation->Frames[m_Frame].Image;
+    const usize last = m_Animation->Frames.size() - 1;
+    return m_Animation->Frames[std::min<usize>(m_Frame, last)].Image; // see Update
 }
 
 } // namespace Emerald

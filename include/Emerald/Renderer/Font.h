@@ -91,6 +91,11 @@ public:
                                                             std::span<const u8> data,
                                                             const FontOptions& options = {});
 
+    // A stand-in for a font that could not be loaded (the asset manager uses it): every
+    // character in options.Ranges is a hollow box ("tofu"), so text still shows up, clearly
+    // wrong, and measures about like real text at options.Size. `device` may be null.
+    [[nodiscard]] static Font CreatePlaceholder(SDL_GPUDevice* device, const FontOptions& options);
+
     // --- Metrics, in pixels at the baked size (times `scale` where given) ---
     [[nodiscard]] f32 GetSize() const { return m_Size; }
     // Baseline to the top of the tallest letters (positive).

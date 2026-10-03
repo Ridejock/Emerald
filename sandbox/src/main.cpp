@@ -203,6 +203,14 @@ protected:
         m_Camera.SetViewSize(GetViewSize());
         m_Camera.SetPosition(kRoomOrigin + kRoomSize * 0.5f); // the room fills the window
 
+        // Files come from the asset manager: loaded once, placeholders for missing files, and
+        // (debug builds) hot reload from the source folder.
+        Emerald::Assets& assets = GetAssets();
+        if constexpr (Emerald::Assets::kHotReload)
+            assets.SetRoot(SANDBOX_SOURCE_ASSETS);
+        else
+            assets.SetRoot(Emerald::Paths::GetBasePath() / "assets");
+
         // A short generated "blip" for the pulse, rising in pitch (files would use
         // Emerald::LoadSound("x.mp3")).
         using namespace Emerald::Synth;
@@ -534,6 +542,12 @@ protected:
         r.DrawSprite(gem, {room.x + size.x * 0.5f + 120.0f, y},
                      {.Scale = Vec2(4.0f), .Tint = {1.0f, 1.0f, 1.0f, 0.4f}});
         r.DrawSprite(ring, {room.x + size.x * 0.5f + 200.0f, y}, big);
+        // A texture whose file does not exist: the asset manager's checkerboard placeholder.
+        const Vec2 missingAt = room + Vec2(size.x - 110.0f, size.y * 0.42f);
+        r.DrawSprite(*m_Missing, missingAt);
+        if (m_SmallFont)
+            r.DrawString(*m_SmallFont, "missing.png", missingAt + Vec2(0.0f, 44.0f),
+                         {1.0f, 0.4f, 1.0f, 1.0f}, 1.0f, Emerald::TextAlign::Center);
 
         // Layering: a spinning gem, a line on top of it, then a ring on top of the line.
         const Vec2 center = room + size * 0.5f;
@@ -606,6 +620,7 @@ protected:
         ShowAnimation();
         ShowCamera();
         ShowCollision();
+        ShowAssets();
         ShowGamepads();
         ImGui::Text("Audio: %s", GetAudio().IsAvailable() ? "on" : "no device");
         ImGui::Separator();
@@ -667,6 +682,48 @@ protected:
             m_Camera.AddTrauma(0.6f);
         ImGui::SameLine();
         ImGui::SliderFloat("Max offset", &m_Camera.GetShakeParams().MaxOffset, 0.0f, 40.0f);
+        ImGui::Separator();
+    }
+
+    // Everything the asset manager has loaded, with reference counts and hot reloads.
+    void ShowAssets()
+    {
+        const Emerald::Assets& assets = GetAssets();
+        if (Emerald::Assets::kHotReload)
+            ImGui::Text("Assets: %zu, hot reload on (edit a file under sandbox/assets)",
+                        assets.GetCount());
+        else
+            ImGui::Text("Assets: %zu, hot reload off (release build)", assets.GetCount());
+        constexpr ImGuiTableFlags flags =
+            ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingFixedFit;
+        if (ImGui::BeginTable("assets", 5, flags)) {
+            ImGui::TableSetupColumn("Type");
+            ImGui::TableSetupColumn("File");
+            ImGui::TableSetupColumn("Refs");
+            ImGui::TableSetupColumn("Reloads");
+            ImGui::TableSetupColumn("State");
+            ImGui::TableHeadersRow();
+            for (const Emerald::AssetInfo& info : assets.List()) {
+                // The path relative to the asset folder is enough to tell them apart.
+                const std::string file =
+                    std::filesystem::path(info.Path).lexically_relative(assets.GetRoot()).string();
+                ImGui::TableNextRow();
+                ImGui::TableNextColumn();
+                ImGui::TextUnformatted(Emerald::GetAssetTypeName(info.Type));
+                ImGui::TableNextColumn();
+                ImGui::TextUnformatted(file.c_str());
+                ImGui::TableNextColumn();
+                ImGui::Text("%u", info.RefCount);
+                ImGui::TableNextColumn();
+                ImGui::Text("%u", info.Reloads);
+                ImGui::TableNextColumn();
+                if (info.Placeholder)
+                    ImGui::TextColored(ImVec4(1.0f, 0.4f, 1.0f, 1.0f), "placeholder");
+                else
+                    ImGui::TextUnformatted("loaded");
+            }
+            ImGui::EndTable();
+        }
         ImGui::Separator();
     }
 
@@ -769,32 +826,31 @@ private:
                 kCount, pool.GetThreadCount(), total, ms);
     }
 
-    // The same TTF at three sizes and two filters; each Font is its own atlas texture.
+    // The same TTF at three sizes and two filters: three assets (the options are part of what
+    // makes an asset), each its own atlas texture.
     void LoadFonts()
     {
-        SDL_GPUDevice* device = GetRenderer().GetDevice();
-        const std::filesystem::path path =
-            Emerald::Paths::GetBasePath() / "assets/fonts/PressStart2P-Regular.ttf";
+        Emerald::Assets& assets = GetAssets();
+        const char* path = "fonts/PressStart2P-Regular.ttf";
         const auto pixel = [&](f32 px) {
-            return Emerald::Font::Load(device, path,
-                                       {.Size = px,
-                                        .Ranges = {Emerald::kAsciiGlyphs, Emerald::kLatin1Glyphs},
-                                        .Oversample = 1,
-                                        .Filter = Emerald::TextureFilter::Nearest});
+            return assets.Load<Emerald::Font>(
+                path, {.Size = px,
+                       .Ranges = {Emerald::kAsciiGlyphs, Emerald::kLatin1Glyphs},
+                       .Oversample = 1,
+                       .Filter = Emerald::TextureFilter::Nearest});
         };
         m_PixelFont = pixel(16.0f);
         m_SmallFont = pixel(8.0f);
-        m_SmoothFont = Emerald::Font::Load(device, path, {.Size = 40.0f, .Oversample = 2});
+        m_SmoothFont = assets.Load<Emerald::Font>(path, {.Size = 40.0f, .Oversample = 2});
     }
 
-    // The hero sheet (tools/sprites/make_hero.py): sprites and animations from its JSON.
+    // The hero sheet (tools/sprites/make_hero.py): sprites and animations from hero.json, the
+    // image from hero.png next to it. Edit either while the sandbox runs (debug build) and the
+    // hero updates. Also a file that does not exist, to show the placeholder.
     void LoadHero()
     {
-        const std::filesystem::path dir = Emerald::Paths::GetBasePath() / "assets/sprites";
-        m_Hero = Emerald::TextureAtlas::Load(GetRenderer().GetDevice(), dir / "hero.png",
-                                             dir / "hero.json");
-        if (!m_Hero)
-            return;
+        m_Hero = GetAssets().Load<Emerald::TextureAtlas>("sprites/hero.json");
+        m_Missing = GetAssets().Load<Emerald::Texture>("sprites/missing.png");
         m_HeroAnimator.Play(m_Hero->GetAnimation("idle"));
         m_CoinAnimator.Play(m_Hero->GetAnimation("coin"));
         // The jump is a "once" animation: when it ends, flash and go back to idle / walk.
@@ -866,7 +922,8 @@ private:
     Emerald::Camera2D m_Camera;
     bool m_FreeCamera = false; // false: follow the hero
     Emerald::Sound m_Blip;
-    std::optional<Emerald::TextureAtlas> m_Hero; // animated character + coins
+    Emerald::AssetHandle<Emerald::TextureAtlas> m_Hero; // animated character + coins
+    Emerald::AssetHandle<Emerald::Texture> m_Missing;   // no such file: the placeholder
     Emerald::Animator m_HeroAnimator;
     Emerald::Animator m_CoinAnimator;
     bool m_FacingLeft = false;
@@ -875,11 +932,11 @@ private:
     u32 m_JumpsLanded = 0;
     CollisionDemo m_Collision; // the yard right of the room
     bool m_ShowHashGrid = true;
-    f32 m_PulseAge = 1.0f;                        // seconds since Space was pressed
-    std::optional<Emerald::TextureAtlas> m_Atlas; // the sprite demo's sheet
-    std::optional<Emerald::Font> m_PixelFont;     // text demo: 16 px, Nearest
-    std::optional<Emerald::Font> m_SmallFont;     // 8 px, Nearest
-    std::optional<Emerald::Font> m_SmoothFont;    // 40 px, Linear + oversampling
+    f32 m_PulseAge = 1.0f;                            // seconds since Space was pressed
+    std::optional<Emerald::TextureAtlas> m_Atlas;     // the sprite demo's sheet
+    Emerald::AssetHandle<Emerald::Font> m_PixelFont;  // text demo: 16 px, Nearest
+    Emerald::AssetHandle<Emerald::Font> m_SmallFont;  // 8 px, Nearest
+    Emerald::AssetHandle<Emerald::Font> m_SmoothFont; // 40 px, Linear + oversampling
     SDL_GPUGraphicsPipeline* m_Pipeline = nullptr;
     SDL_GPUBuffer* m_TriangleBuffer = nullptr;
     SDL_GPUBuffer* m_QuadBuffer = nullptr;

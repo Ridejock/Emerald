@@ -283,6 +283,7 @@ structure-of-arrays layout instead (all x together, all y together).
 | `Renderer2DTests` | `Renderer2D` batching and shape generation on the CPU (no GPU), `Transform2D`, color packing; sprite quads (UVs, rotation, origin, flips, pixel snap), draw order across lines/sprites/texture switches and blend modes, atlas JSON parsing; `Camera2D` (pixel-space default, letterboxing, zoom/rotation, `ScreenToWorld` round trips against the GPU matrix, bounds clamp, follow dead zone and step-size independent damping, shake decay); atlas `"animations"` parsing (patterns, lists, durations, modes, missing frames reported), `Animator` loop / once / ping-pong timing at several dt, speed, stop/resume, finish and loop events, drawing a frame with flip and tint; `CrtEffect` afterglow decay, uniforms and bloom spread; `--gpu` parsing and driver names |
 | `ParticleTests` | particle spawning (shapes, ranges, base velocity), capacity limit, drag/gravity step, swap-remove, continuous rate, color/size fade when drawing, scalar and SSE updates agreeing over 240 steps |
 | `CollisionTests` | circle/circle, circle/AABB, AABB/AABB and SAT polygon contacts (normals, depths, touching = none, concentric circles, center inside a box, containment, winding, degenerate input); raycasts against circles, boxes and polygons (hits, misses, parallel, max distance, starting inside); `SpatialHash` insert/update/remove/query/pairs, wrap-around, brute-force equivalence on random data |
+| `AssetTests` | asset manager bookkeeping with a GPU-less loader: dedupe (same path, `..` paths, absolute paths; other options or types are other assets), handle copy/move/reset reference counts, unloading on `Update` and reviving before it, placeholders for missing and broken files (texture, atlas, font, sound), hot reload in place (textures, atlas image + JSON with sprites and animators keeping their pointers, fonts, real WAVs), broken reloads keeping the old version, placeholders replaced when the file appears, reloads through `Update` on the thread pool within a second |
 
 ```sh
 cmake --build --preset debug
@@ -457,6 +458,70 @@ void OnRender2D(Emerald::Renderer2D& r) override
   shaken view is clamped to the bounds too.
 
 The camera has no interpolation between fixed steps: update it where the things it follows move.
+
+## Assets (`Assets`)
+
+The asset manager loads textures, atlases, fonts and sounds by path and hands out
+`AssetHandle<T>`s. Application owns one (`GetAssets()`):
+
+```cpp
+// In OnStart (relative paths start at Paths::GetBasePath(), or at SetRoot's folder):
+m_Ship = GetAssets().Load<Emerald::Texture>("assets/ship.png");
+m_Hero = GetAssets().Load<Emerald::TextureAtlas>("assets/hero.json"); // + hero.png next to it
+m_Font = GetAssets().Load<Emerald::Font>("assets/ui.ttf", {.Size = 16.0f});
+m_Boom = GetAssets().Load<Emerald::Sound>("assets/boom.wav");
+
+// Later: use the handle like a pointer.
+r.DrawSprite(*m_Ship, position);
+r.DrawString(*m_Font, "SCORE", {20, 20}, white);
+GetAudio().Play(*m_Boom);
+```
+
+- **Loaded once.** Loading the same file again returns the same handle, and the file is not read
+  again. The file counts as the same however its path is written (`"a/../ship.png"` =
+  `"ship.png"`, and on Windows any letter case). The type and the options count too: the same
+  TTF at two sizes is two fonts.
+- **Reference counted.** Handles copy like `std::shared_ptr`. When the last handle to an asset
+  is gone, the asset is unloaded at the start of the next frame, so a texture dropped mid-frame is
+  still there when that frame is drawn. Handles must be released before the manager is destroyed;
+  members of your Application are.
+- **Missing or broken files never crash.** The error is logged and you get a placeholder that is
+  easy to spot on screen:
+  - textures: a magenta/black checkerboard;
+  - atlases: every sprite and animation shows that checkerboard;
+  - fonts: every character is a hollow box;
+  - sounds: a tenth of a second of silence.
+- **Hot reload (debug builds).** Edit a PNG, an atlas JSON, a WAV/MP3 or a font while the game
+  runs, and it updates within about half a second. Release builds compile this out.
+
+How hot reload works:
+
+1. Every 0.25 s, a thread pool task reads the modification time of every loaded file. Only the
+   time is read, not the file.
+2. Back on the main thread, `Assets::Update` (called by Application before each frame) compares
+   the times. A file counts as changed once its time differs from when it was loaded and has stayed
+   the same for one more check. That way a file the editor is still writing is not read half
+   done.
+3. The asset is loaded again on the main thread, since GPU uploads happen there. The new version
+   then replaces the old one *in place*, inside the same object, so nothing pointing at it
+   breaks:
+   - handles keep working;
+   - a `Sprite` keeps pointing at the atlas texture;
+   - an `Animator` keeps pointing at its animation (if the reloaded animation has fewer frames,
+     the animator wraps around).
+4. If the new version does not load (say, a half-saved PNG), the old one stays and the next
+   change tries again. A placeholder whose file shows up later is loaded the same way.
+
+The manager only does the bookkeeping. An `AssetLoader` does the actual loading:
+`GpuAssetLoader` for the real thing, or a GPU-less fake in tests (see `tests/AssetTests.cpp`).
+
+In the debug sandbox, the assets come straight from `sandbox/assets/`:
+
+- Recolor `sprites/hero.png` while it runs and the hero changes.
+- `sprites/missing.png` doesn't exist, so the sandbox shows the checkerboard placeholder until
+  you put a PNG there.
+- The ImGui panel lists every asset with its reference count, reloads and whether it is a
+  placeholder.
 
 ## Textures and sprites
 

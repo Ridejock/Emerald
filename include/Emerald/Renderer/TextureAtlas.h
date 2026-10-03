@@ -67,6 +67,16 @@ public:
     // An atlas from an existing texture and regions (e.g. a Texture::CreateWithoutGpu in tests).
     [[nodiscard]] static TextureAtlas Create(Texture texture, RegionMap regions,
                                              const AnimationDefMap& animations = {});
+    // A stand-in for an atlas that could not be loaded (the asset manager uses it): every sprite
+    // and every animation is the whole texture, so whatever the game draws shows up on screen.
+    // Unknown names are not logged (the missing file already was).
+    [[nodiscard]] static TextureAtlas CreatePlaceholder(Texture texture);
+    // Takes over `other`'s texture, sprites and animations while keeping this atlas's Texture
+    // object and animations at their addresses, so Sprites and Animators that point into this
+    // atlas stay valid (hot reload). Animations that `other` lacks are kept as they were.
+    void ReplaceWith(TextureAtlas&& other);
+    [[nodiscard]] bool IsPlaceholder() const { return m_Placeholder; }
+
     // Just the JSON part. Returns nullopt if the text is not valid JSON or has no usable region
     // (entries without numeric x, y, w, h are skipped with a warning).
     [[nodiscard]] static std::optional<RegionMap> ParseRegions(std::string_view json);
@@ -99,6 +109,8 @@ private:
     RegionMap m_Regions;
     AnimationMap m_Animations;
     std::vector<std::string> m_MissingFrames;
+    bool m_Placeholder = false;
+    Animation m_PlaceholderAnimation; // what a placeholder returns for every animation
 };
 
 } // namespace Emerald

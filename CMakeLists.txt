@@ -87,6 +87,8 @@ add_library(Emerald STATIC
     src/Renderer/Font.cpp
     src/Renderer/CrtEffect.cpp
     src/Particles/ParticleSystem.cpp
+    src/Assets/AssetLoader.cpp
+    src/Assets/Assets.cpp
     src/Assets/Image.cpp
     src/Audio/Audio.cpp
     src/Audio/Mixer.cpp
@@ -112,6 +114,8 @@ target_link_libraries(Emerald
 target_compile_definitions(Emerald PUBLIC
     EMERALD_WITH_IMGUI=$<BOOL:${EMERALD_USE_IMGUI}>
     EMERALD_WITH_ENTT=$<BOOL:${EMERALD_USE_ENTT}>
+    # Asset hot reload (Assets.h) in debug builds only.
+    EMERALD_HOT_RELOAD=$<IF:$<CONFIG:Debug>,1,0>
 )
 
 if(EMERALD_USE_IMGUI)

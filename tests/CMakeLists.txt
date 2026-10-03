@@ -71,3 +71,11 @@ add_executable(EmeraldCollisionTests TestMain.cpp CollisionTests.cpp)
 target_link_libraries(EmeraldCollisionTests PRIVATE Emerald::Emerald)
 emerald_set_warnings(EmeraldCollisionTests)
 add_test(NAME CollisionTests COMMAND EmeraldCollisionTests)
+
+# Asset manager bookkeeping: dedupe, reference counting, placeholders and hot reload (no GPU).
+add_executable(EmeraldAssetTests TestMain.cpp AssetTests.cpp)
+target_link_libraries(EmeraldAssetTests PRIVATE Emerald::Emerald)
+target_compile_definitions(EmeraldAssetTests PRIVATE
+    EMERALD_TEST_FONT="${PROJECT_SOURCE_DIR}/sandbox/assets/fonts/PressStart2P-Regular.ttf")
+emerald_set_warnings(EmeraldAssetTests)
+add_test(NAME AssetTests COMMAND EmeraldAssetTests)

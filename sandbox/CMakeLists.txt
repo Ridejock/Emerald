@@ -10,6 +10,11 @@ emerald_add_shaders(Sandbox
 
 emerald_set_warnings(Sandbox)
 
+# With hot reload (debug builds) the sandbox reads its assets straight from this source folder,
+# so editing e.g. assets/sprites/hero.png shows up in the running sandbox. Release builds use
+# the copy next to the executable.
+target_compile_definitions(Sandbox PRIVATE SANDBOX_SOURCE_ASSETS="${CMAKE_CURRENT_SOURCE_DIR}/assets")
+
 # The text demo's font (Press Start 2P, SIL Open Font License; see assets/fonts/) goes next to the
 # executable, where the sandbox looks for it with Paths::GetBasePath().
 add_custom_command(TARGET Sandbox POST_BUILD

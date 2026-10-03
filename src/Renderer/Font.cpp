@@ -203,6 +203,44 @@ std::optional<Font> Font::LoadFromMemory(SDL_GPUDevice* device, std::span<const 
     return font;
 }
 
+Font Font::CreatePlaceholder(SDL_GPUDevice* device, const FontOptions& options)
+{
+    // An 8 x 8 white outline; every glyph uses all of it, stretched to the box size.
+    constexpr i32 kSide = 8;
+    Image image;
+    image.Width = kSide;
+    image.Height = kSide;
+    image.Pixels.assign(static_cast<usize>(kSide * kSide) * 4, 255);
+    for (i32 y = 1; y < kSide - 1; ++y)
+        for (i32 x = 1; x < kSide - 1; ++x)
+            image.Pixels[static_cast<usize>(y * kSide + x) * 4 + 3] = 0; // transparent inside
+
+    Font font;
+    const f32 size = options.Size > 0.0f ? options.Size : 16.0f;
+    font.m_Size = size;
+    font.m_Filter = TextureFilter::Nearest;
+    font.m_Ascent = 0.8f * size;
+    font.m_Descent = -0.2f * size;
+    font.m_LineHeight = 1.2f * size;
+    const Glyph box{.Region = {{0.0f, 0.0f}, {static_cast<f32>(kSide), static_cast<f32>(kSide)}},
+                    .Offset = {0.05f * size, -0.7f * size},
+                    .Size = {0.5f * size, 0.7f * size},
+                    .Advance = 0.6f * size,
+                    .Index = 0};
+    for (const GlyphRange& range : options.Ranges)
+        for (u32 i = 0; i < range.Count; ++i)
+            font.m_Glyphs[range.First + i] = box;
+    font.m_Glyphs[' '] = {
+        .Region = {}, .Offset = {}, .Size = {}, .Advance = box.Advance, .Index = 0};
+
+    std::optional<Texture> texture;
+    if (device)
+        texture = Texture::Create(device, image, {.Filter = TextureFilter::Nearest});
+    font.m_Texture = std::make_unique<Texture>(texture ? std::move(*texture)
+                                                       : Texture::CreateWithoutGpu(kSide, kSide));
+    return font;
+}
+
 const Glyph* Font::FindGlyph(u32 codepoint) const
 {
     const auto it = m_Glyphs.find(codepoint);

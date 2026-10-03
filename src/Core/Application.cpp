@@ -94,6 +94,7 @@ Application::Application(const ApplicationSpec& spec)
 Application::~Application()
 {
     m_ThreadPool.reset(); // stops and joins the workers while everything they might use exists
+    m_Scenes.ExitAll();   // scenes hold asset handles and GPU resources
     m_Assets.reset();     // textures before the GPU device
     ShutdownImGui();
     m_Crt.reset();
@@ -143,12 +144,14 @@ int Application::Run()
             m_Gamepads.BeginFixedStep();
             m_Mouse.BeginFixedStep();
             OnFixedUpdate(m_FixedTimestep.GetStepSeconds());
+            m_Scenes.FixedUpdate(m_FixedTimestep.GetStepSeconds());
             m_Keyboard.EndFixedStep();
             m_Gamepads.EndFixedStep();
             m_Mouse.EndFixedStep();
         }
         m_FrameSeconds = static_cast<f32>(elapsedNs) / 1e9f;
         OnUpdate(m_FrameSeconds);
+        m_Scenes.Update(m_FrameSeconds); // then the stack changes the scenes asked for
         m_Audio.Update();
         RenderFrame();
 
@@ -161,6 +164,7 @@ int Application::Run()
 
     // Let background tasks finish before the app releases the resources they may use.
     m_ThreadPool->WaitIdle();
+    m_Scenes.ExitAll(); // the scenes go first: they may use what OnShutdown releases
     OnShutdown();
     const FrameArena::Stats arena = m_FrameArena->GetStats();
     EM_CORE_INFO("Main loop ended after {} frames (frame arena peak {} of {} bytes, {} frames "
@@ -233,6 +237,7 @@ void Application::ProcessEvent(const SDL_Event& event)
         break;
     }
     OnEvent(event);
+    m_Scenes.OnEvent(event);
 }
 
 void Application::RenderFrame()
@@ -242,6 +247,7 @@ void Application::RenderFrame()
     ImGui_ImplSDL3_NewFrame();
     ImGui::NewFrame();
     OnImGui();
+    m_Scenes.ImGui();
     ImGui::Render();
     ImDrawData* drawData = ImGui::GetDrawData();
 #endif
@@ -252,6 +258,8 @@ void Application::RenderFrame()
     // Copy passes (uploads) must happen before the render pass: first record the app's 2D shapes
     // and upload them, then ImGui's vertex/index data.
     SDL_GPUCommandBuffer* cmd = m_Renderer->GetCommandBuffer();
+    // The scenes first, then the app's own 2D (e.g. a debug overlay over every scene).
+    m_Scenes.Render2D(*m_Renderer2D, Vec2(GetWindowSize()));
     OnRender2D(*m_Renderer2D);
     m_Renderer2D->Upload(cmd);
 #if EMERALD_WITH_IMGUI
@@ -268,6 +276,7 @@ void Application::RenderFrame()
     SDL_GPURenderPass* pass =
         m_Renderer->BeginRenderPass(scene ? scene : output, m_Spec.ClearColor);
     OnRender(pass);
+    m_Scenes.Render(pass);
     m_Renderer2D->Render(cmd, pass, width, height);
     if (scene) {
         m_Renderer->EndRenderPass();

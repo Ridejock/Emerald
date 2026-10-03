@@ -4,7 +4,7 @@ Emerald is a small, modern C++20 game engine built on [SDL3](https://github.com/
 It is split into:
 
 - **`Emerald::Emerald`** – the engine library (logging, window, SDL GPU renderer, batched 2D renderer for lines and
-  textured sprites, sprite animation, a 2D camera, textures and texture atlases, keyboard input, application loop with a fixed-timestep update, image loading, thread pool, `std::pmr`
+  textured sprites, sprite animation, a 2D camera, textures and texture atlases, keyboard input, application loop with a fixed-timestep update, a scene stack with transitions, image loading, thread pool, `std::pmr`
   memory helpers).
 - **`Emerald::Math`** – a header-only math library (vectors, `Mat4`, optional SSE), included by the engine.
 - **`sandbox/`** – a minimal example app that links the engine and draws a rotating vertex-colored triangle
@@ -13,6 +13,7 @@ It is split into:
   an animated pixel-art hero (walk / idle / jump, from `tools/sprites/make_hero.py`) driven by
   keyboard or gamepad that a `Camera2D` follows around a larger world (pan, zoom, rotate, shake;
   with ImGui on, the panel shows the camera and lists connected pads and their live stick values).
+  It is organised as scenes (title, camera demo, tilemap room, pause) on the scene stack.
 - **`tests/`** – small unit-test executables run with `ctest`.
 
 All dependencies are fetched automatically with CMake `FetchContent` and pinned to specific versions.
@@ -116,6 +117,7 @@ Options can also be passed directly, e.g. `cmake --preset release -DEMERALD_USE_
 ./build/debug/bin/Sandbox --frames 120                     # quit automatically after 120 frames
 ./build/debug/bin/Sandbox --frames 60 --screenshot out.png # save the last frame as a PNG (GPU readback)
 ./build/debug/bin/Sandbox --gpu vulkan                     # pick the GPU backend (see below)
+./build/debug/bin/Sandbox --demo                           # skip the title: start in the camera demo
 ./build/debug/bin/Sandbox --tilemap                        # start in the tilemap room (see Tilemaps)
 SDL_GPU_DRIVER=vulkan ./build/debug/bin/Sandbox            # the same through SDL's environment variable
 ```
@@ -286,6 +288,7 @@ structure-of-arrays layout instead (all x together, all y together).
 | `CollisionTests` | circle/circle, circle/AABB, AABB/AABB and SAT polygon contacts (normals, depths, touching = none, concentric circles, center inside a box, containment, winding, degenerate input); raycasts against circles, boxes and polygons (hits, misses, parallel, max distance, starting inside); `SpatialHash` insert/update/remove/query/pairs, wrap-around, brute-force equivalence on random data |
 | `AssetTests` | asset manager bookkeeping with a GPU-less loader: dedupe (same path, `..` paths, absolute paths; other options or types are other assets), handle copy/move/reset reference counts, unloading on `Update` and reviving before it, placeholders for missing and broken files (texture, atlas, font, sound), hot reload in place (textures, atlas image + JSON with sprites and animators keeping their pointers, fonts, real WAVs), broken reloads keeping the old version, placeholders replaced when the file appears, reloads through `Update` on the thread pool within a second |
 | `TilemapTests` | the sample room from Tiled JSON: layer order and kinds, external `.tsj` and embedded tilesets (GID lookup, sprite regions), objects (shapes, class, position, size, properties), the collision grid from tile properties and classes (non-colliding layer), tile ranges with touching edges, `OverlapsSolid`, `MoveAndCollide` (flush stops, no tunneling, sliding along walls, one-way from above / below / inside); all 8 flip-bit combinations against Tiled's transform; missing and broken files (JSON, sizes, infinite, isometric, missing/XML tileset, missing image, base64, bad cells) logged and failing cleanly, unknown tile ids left empty; through the asset manager: placeholder for a missing map, hot reload of the map and of its external tileset, broken edits keeping the last version |
+| `SceneTests` | the scene stack without a GPU: requests applied only at the end of `Update`, hook order for push / pop / replace / clear / `ReplaceAll` (pause, resume, exit, destruction), requests from inside a scene's own hooks, `DrawBelow` / `UpdateBelow` chains (which scenes draw and update, in which order), fade timing (change at full cover, then uncover, requests queued meanwhile), fading into an empty stack, custom transition `Draw`, input blocked below the top and during transitions (and the app's own block kept), empty-stack pops, exiting every scene on destruction |
 | `TweenTests` | every easing curve at 0, 0.5 and 1, Out mirroring In and InOut symmetry, clamping; tweens of f32 / Vec2 / Vec4 with delay, start values, repeat and yoyo, endless tweens, cancelling (chains included, no callbacks), chaining with leftover time, completion firing exactly once, callbacks starting and clearing tweens, `CancelTarget` from a destructor, `Run`, stale ids; one big step vs many uneven ones giving the same result; timers `After` / `Every` / cancel (also from their own callback), callbacks adding timers, frame-rate independence with uneven dt |
 
 ```sh
@@ -698,11 +701,11 @@ way to be safe is to keep the `Tweens` in the same object as the values it anima
 component, a vector element), use `Run` and look the value up in the callback. The same goes for
 whatever a callback captures, `this` included.
 
-The sandbox opens with a tweened menu (`sandbox/src/MenuDemo.h`): the title drops in with
+The sandbox's title screen and pause menu use a tweened menu (`sandbox/src/MenuDemo.h`): the title drops in with
 `BounceOut`, the panel slides in from the right with `BackOut`, the items fade in one after another
 (delays), the selection highlight glides between items, and closing plays a chain (items fade out,
-then the panel slides away, then the title leaves). M / Start toggles it; Up / Down and Enter /
-South pick an item. The ImGui panel shows the menu's tween and timer counts and an easing
+then the panel slides away, then the title leaves). M / Start pauses and resumes; Up / Down and
+Enter / South pick an item. The ImGui panel shows the menu's tween and timer counts and an easing
 visualizer: pick a curve and a dot runs along it.
 
 ## Text (`Font`)
@@ -1001,7 +1004,8 @@ image. Saving any of them in Tiled (or an image editor) reloads the whole map wi
 second. Read layers, objects and tilesets through the handle each time instead of keeping
 pointers into them.
 
-**The sandbox's tilemap room.** Press T in the sandbox, or start it with `--tilemap`:
+**The sandbox's tilemap room.** Pick it on the title screen, press T in the camera demo, or start
+the sandbox with `--tilemap`:
 
 - **The map:** `sandbox/assets/tilemaps/room.tmj` is 48 x 30 tiles of 16 px.
   - Layers: Ground, Walls and Decor, then Objects, then Overhead (pillar tops drawn over the
@@ -1046,6 +1050,127 @@ Culling keeps the cost at the size of the screen rather than the size of the map
 
 `TilemapTests` loads the sample room, checks it in detail and breaks copies of it on purpose (see
 the table under [Tests](#tests)).
+
+## Scenes (`Scene/`)
+
+`Emerald/Scene/SceneStack.h` keeps the screens of a game on a stack: title, gameplay, pause, game
+over... Each one is a `Scene` with its own hooks, which mirror `Application`'s. The `Application`
+owns a stack (`GetScenes()`) and runs it after its own hooks every frame. An app that never pushes
+a scene works exactly as before.
+
+```cpp
+#include <Emerald/Scene/SceneStack.h>
+
+class PauseScene final : public Emerald::Scene {
+public:
+    explicit PauseScene(Emerald::Application& app) : Scene("Pause"), m_App(app)
+    {
+        DrawBelow = true; // the game stays visible (frozen) under the menu
+    }
+    void OnEnter() override { /* open the menu */ }
+    void OnUpdate(f32) override
+    {
+        if (m_App.GetInput().WasActionPressed("Pause"))
+            GetStack()->Pop(Emerald::Transition::Fade(0.2f));
+    }
+    void OnRender2D(Emerald::Renderer2D& r) override { /* the menu */ }
+
+private:
+    Emerald::Application& m_App;
+};
+
+// From the game scene:
+GetStack()->Push(std::make_unique<PauseScene>(m_App));
+```
+
+- **Hooks:** `OnEnter` / `OnExit` when a scene joins or leaves the stack, `OnPause` / `OnResume`
+  when another scene is pushed on top of it or popped off it. Then `OnEvent`, `OnFixedUpdate`,
+  `OnUpdate`, `OnRender` (raw SDL GPU draws), `OnRender2D` and `OnImGui`, as in `Application`.
+- **Requests:** `Push`, `Pop`, `Replace` (pop + push), `Clear` (everything leaves, top first) and
+  `ReplaceAll` (everything leaves, then a new scene enters: back to the title). Each one takes an
+  optional `Transition`.
+- **Deferred changes:** requests are queued and applied at the end of the stack's `Update`, after
+  every scene has updated. A scene can pop itself or push the next one from inside its own hooks;
+  nothing is destroyed while one of its hooks runs. Requests made during a transition wait for it.
+- **Below the top:** with `DrawBelow` the scene under this one is drawn first (a pause menu over
+  the game); with `UpdateBelow` it keeps updating too (a HUD over a running game). The flags chain:
+  the stack draws downwards for as long as each scene above has `DrawBelow`. `IsDrawn(i)` and
+  `IsUpdated(i)` say which scenes run this frame.
+- **Input focus:** only the top scene gets input, and only while no transition runs (`HasFocus()`).
+  For the others the stack sets `Input::SetBlocked(true)`: every action reads as up and every axis
+  as 0. `OnEvent` goes to the focused scene only. The app's own hooks run first and see input
+  unblocked (the sandbox's Escape and C keys work in every scene). The raw `Keyboard` and
+  `Gamepads` are not blocked.
+- **Transitions:** `Transition::Fade(seconds, color)` covers the screen in `seconds`, makes the
+  change while it is fully covered, then uncovers it in `seconds` again. The amount is a tween
+  (`Curve`, `QuadInOut` by default). Set `Draw` for a custom look: it gets the `Renderer2D`, the
+  view size and the cover amount (0 to 1), in a pixel-space batch drawn over every scene. Pushing
+  onto an empty stack with a transition starts covered, so the first scene fades in.
+- **Shutdown:** the application exits every scene after the main loop, before `OnShutdown` and
+  before the asset manager goes. Scenes can hold asset handles and GPU resources and release them
+  in their destructor.
+
+**Rock Blaster with scenes** (a sketch; the Asteroids project itself is unchanged). Its title
+screen, game, pause menu and options menu map onto the stack like this:
+
+```cpp
+// Title: a menu; starting a game replaces it with a fade.
+void TitleScene::OnUpdate(f32)
+{
+    if (input.WasActionPressed("Start"))
+        GetStack()->Replace(std::make_unique<GameScene>(app), Transition::Fade(0.4f));
+    else if (input.WasActionPressed("Options"))
+        GetStack()->Push(std::make_unique<OptionsScene>(app)); // over the title (DrawBelow)
+}
+
+// Game: pausing pushes an overlay; losing the last ship goes to the game over screen.
+void GameScene::OnUpdate(f32)
+{
+    if (input.WasActionPressed("Pause"))
+        GetStack()->Push(std::make_unique<PauseScene>(app)); // DrawBelow: the frozen game shows
+    if (m_Lives == 0)
+        GetStack()->Replace(std::make_unique<GameOverScene>(app, m_Score), Transition::Fade(1.0f));
+}
+void GameScene::OnPause() { app.GetAudio().SetMuted(true); } // the thrust sound stops, etc.
+void GameScene::OnResume() { app.GetAudio().SetMuted(false); }
+
+// Pause: resume, options, or quit to the title.
+void PauseScene::OnUpdate(f32)
+{
+    if (input.WasActionPressed("Pause"))
+        GetStack()->Pop();
+    else if (selected == Options)
+        GetStack()->Push(std::make_unique<OptionsScene>(app)); // Pop returns to the pause menu
+    else if (selected == QuitToTitle)
+        GetStack()->ReplaceAll(std::make_unique<TitleScene>(app), Transition::Fade(0.4f));
+}
+```
+
+The stack then reads, bottom to top: `Title`; or `Game`; or `Game, Pause`; or
+`Game, Pause, Options`. The options scene is the same class wherever it is pushed from, and
+popping it always returns to whatever opened it.
+
+**The sandbox's scenes** (`sandbox/src`):
+
+- **Title** (`TitleScene.h`): the tweened menu over drifting gems. "Camera demo" fades to black.
+  "Tilemap room" uses a custom transition, horizontal blinds closing from alternate sides
+  (`Blinds` in `Shared.h`). "Quit" quits.
+- **Camera demo** (`DemoScene.h`): the shapes, sprites, text, camera, hero and collision yard.
+- **Tilemap room** (`TilemapScene.h`): the Tiled map (see Tilemaps).
+- **Pause** (`PauseScene.h`): M / Start in either game scene. It has `DrawBelow` and plays its
+  menu intro over the frozen scene. Choices: Resume (the outro plays, then the scene pops), CRT
+  effect, Replay intro, Title screen (`ReplaceAll` with a fade), Quit.
+- T switches between the camera demo and the tilemap room (`Replace` with a fade).
+- `main.cpp` keeps what is global: input bindings, the shared assets (`Shared.h`), the triangle
+  and EnTT quads under every scene, Escape / C, and screenshots. It also builds the scenes
+  (`SandboxShared::Make`), so they never include each other.
+- **ImGui:** the panel's "Scene stack" section lists the scenes top first. For each one it shows
+  DrawBelow and UpdateBelow (both editable), and whether it is drawn, updated and has focus. It
+  also shows the transition's cover and the pending requests. Its buttons push a pause, pop
+  (with a fade), go to the title (blinds) or go to the demo (white fade). Each scene appends its
+  own section below.
+
+`SceneTests` covers the stack without a GPU (see the table under [Tests](#tests)).
 
 ## Input (actions)
 
@@ -1246,7 +1371,7 @@ It is always built in Release and lives in `build/_shadercross`, which every pre
 ## Project layout
 
 ```
-include/Emerald/   Public engine headers (Core/, Input/, Audio/, Renderer/, Particles/, Physics/, Tilemap/, Assets/, Tween/, Math/, Memory/)
+include/Emerald/   Public engine headers (Core/, Input/, Audio/, Renderer/, Particles/, Physics/, Tilemap/, Scene/, Assets/, Tween/, Math/, Memory/)
 src/               Engine implementation
 shaders/           The engine's HLSL shaders (Renderer2D lines, Sprite, the CRT post-process; compiled at build time for every app)
 sandbox/           Example application (src/, its own shaders/, assets/ for the demo font, hero sheet and tilemap room)

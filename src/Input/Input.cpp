@@ -109,6 +109,8 @@ std::span<const MouseButton> Input::GetActionMouseButtons(std::string_view actio
 
 bool Input::IsActionDown(std::string_view action) const
 {
+    if (m_Blocked)
+        return false;
     const Action* a = FindAction(action);
     if (!a)
         return false;
@@ -122,6 +124,8 @@ bool Input::IsActionDown(std::string_view action) const
 
 bool Input::WasActionPressed(std::string_view action) const
 {
+    if (m_Blocked)
+        return false;
     const Action* a = FindAction(action);
     if (!a)
         return false;
@@ -143,6 +147,8 @@ bool Input::WasActionPressed(std::string_view action) const
 
 bool Input::WasActionReleased(std::string_view action) const
 {
+    if (m_Blocked)
+        return false;
     const Action* a = FindAction(action);
     if (!a || IsActionDown(action))
         return false;
@@ -156,6 +162,8 @@ bool Input::WasActionReleased(std::string_view action) const
 
 f32 Input::GetAxis(std::string_view axis) const
 {
+    if (m_Blocked)
+        return 0.0f;
     const Axis* a = FindAxis(axis);
     if (!a)
         return 0.0f;

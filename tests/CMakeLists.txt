@@ -93,3 +93,9 @@ target_compile_definitions(EmeraldTilemapTests PRIVATE
     EMERALD_TEST_TILEMAPS="${PROJECT_SOURCE_DIR}/sandbox/assets/tilemaps")
 emerald_set_warnings(EmeraldTilemapTests)
 add_test(NAME TilemapTests COMMAND EmeraldTilemapTests)
+
+# Scene stack: deferred changes and hook order, DrawBelow / UpdateBelow, transitions, input focus.
+add_executable(EmeraldSceneTests TestMain.cpp SceneTests.cpp)
+target_link_libraries(EmeraldSceneTests PRIVATE Emerald::Emerald)
+emerald_set_warnings(EmeraldSceneTests)
+add_test(NAME SceneTests COMMAND EmeraldSceneTests)

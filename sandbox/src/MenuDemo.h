@@ -3,9 +3,12 @@
 // Menu demo (Emerald/Tween): an overlay menu animated with tweens and timers. Opening it drops the
 // title in with a bounce, slides the panel in from the right with a little overshoot and fades the
 // items in one after another; the selection highlight glides between items. Closing plays a chain:
-// the items fade out, then the panel slides away, then the title leaves and the menu hides.
+// the items fade out, then the panel slides away, then the title leaves and the menu hides. The
+// title screen and the pause menu (TitleScene.h, PauseScene.h) each have one, with their own items.
 
-#include <array>
+#include <string>
+#include <utility>
+#include <vector>
 
 #include <Emerald/Emerald.h>
 
@@ -14,9 +17,11 @@ public:
     using Vec2 = Emerald::Vec2;
     using Vec4 = Emerald::Vec4;
 
-    enum class Choice : u8 { Resume, ShakeCamera, CrtEffect, ReplayIntro };
-    static constexpr std::array<const char*, 4> kItems{"Resume", "Shake camera", "CRT effect",
-                                                       "Replay intro"};
+    MenuDemo(std::string title, std::vector<std::string> items, std::string prompt)
+        : m_Title(std::move(title)), m_Items(std::move(items)), m_Prompt(std::move(prompt)),
+          m_ItemAlpha(m_Items.size(), 0.0f) // sized once: the tweens point into it
+    {
+    }
 
     // Plays the intro from the start (also when it is already open).
     void Open()
@@ -30,7 +35,7 @@ public:
         m_Tweens.FromTo(&m_TitleY, -80.0f, 70.0f, 0.9f, {.Curve = Easing::BounceOut});
         m_Tweens.FromTo(&m_TitleAlpha, 0.0f, 1.0f, 0.4f);
         m_Tweens.FromTo(&m_PanelSlide, 0.0f, 1.0f, 0.6f, {.Curve = Easing::BackOut, .Delay = 0.3f});
-        for (usize i = 0; i < kItems.size(); ++i)
+        for (usize i = 0; i < m_Items.size(); ++i)
             m_Tweens.FromTo(&m_ItemAlpha[i], 0.0f, 1.0f, 0.3f,
                             {.Delay = 0.6f + 0.1f * static_cast<f32>(i)}); // one after another
         // The highlight breathes for as long as the menu is open.
@@ -75,7 +80,7 @@ public:
 
     void MoveSelection(i32 delta)
     {
-        const i32 count = static_cast<i32>(kItems.size());
+        const i32 count = static_cast<i32>(m_Items.size());
         m_Selected = (m_Selected + delta + count) % count;
         // A new glide replaces the old one, so two tweens never fight over the highlight.
         m_Tweens.CancelTarget(&m_HighlightY);
@@ -85,7 +90,8 @@ public:
         m_Tweens.FromTo(&m_HighlightColor, {1.0f, 1.0f, 1.0f, 1.0f}, kGreen, 0.3f);
     }
 
-    [[nodiscard]] Choice GetSelected() const { return static_cast<Choice>(m_Selected); }
+    // The selected item's index into the items given to the constructor.
+    [[nodiscard]] i32 GetSelected() const { return m_Selected; }
 
     // Driven by the game's update dt, like everything else that moves.
     void Update(f32 dt)
@@ -106,12 +112,12 @@ public:
         };
         fill({0.0f, 0.0f}, size, {0.0f, 0.02f, 0.04f, m_Backdrop});
 
-        r.DrawString(title, "EMERALD", {size.x * 0.5f, m_TitleY},
-                     {0.35f, 0.95f, 0.55f, m_TitleAlpha}, 1.6f, TextAlign::Center);
+        r.DrawString(title, m_Title, {size.x * 0.5f, m_TitleY}, {0.35f, 0.95f, 0.55f, m_TitleAlpha},
+                     1.6f, TextAlign::Center);
 
         // The panel slides between just off the right edge (0) and its place (1).
         const Vec2 panelSize{kPanelWidth,
-                             kTop * 2.0f + kItemStep * static_cast<f32>(kItems.size())};
+                             kTop * 2.0f + kItemStep * static_cast<f32>(m_Items.size())};
         const f32 x = Emerald::Lerp(size.x + 10.0f, size.x - kPanelWidth - 60.0f, m_PanelSlide);
         const f32 y = size.y * 0.5f - panelSize.y * 0.5f;
         fill({x, y}, panelSize, {0.05f, 0.1f, 0.12f, 0.92f});
@@ -120,15 +126,14 @@ public:
         const Vec4 highlight{m_HighlightColor.x, m_HighlightColor.y, m_HighlightColor.z, m_Glow};
         fill({x + 10.0f, y + m_HighlightY - 8.0f}, {kPanelWidth - 20.0f, kItemStep - 4.0f},
              highlight);
-        for (usize i = 0; i < kItems.size(); ++i) {
+        for (usize i = 0; i < m_Items.size(); ++i) {
             const bool selected = static_cast<i32>(i) == m_Selected;
             const Vec4 color = selected ? Vec4(1.0f, 1.0f, 1.0f, m_ItemAlpha[i])
                                         : Vec4(0.7f, 0.8f, 0.8f, m_ItemAlpha[i]);
-            r.DrawString(font, kItems[i], {x + 30.0f, y + GetItemY(static_cast<i32>(i))}, color);
+            r.DrawString(font, m_Items[i], {x + 30.0f, y + GetItemY(static_cast<i32>(i))}, color);
         }
         if (m_PromptOn)
-            r.DrawString(small, "Up/Down + Enter, M toggles the menu",
-                         {x + kPanelWidth * 0.5f, y + panelSize.y + 14.0f},
+            r.DrawString(small, m_Prompt, {x + kPanelWidth * 0.5f, y + panelSize.y + 14.0f},
                          {1.0f, 0.85f, 0.3f, 1.0f}, 1.0f, TextAlign::Center);
     }
 
@@ -154,12 +159,16 @@ private:
     Emerald::Tweens m_Tweens;
     Emerald::Timers m_Timers;
 
+    std::string m_Title;
+    std::vector<std::string> m_Items;
+    std::string m_Prompt; // blinks under the panel
+
     // Animated values (all written by m_Tweens).
     f32 m_Backdrop = 0.0f; // alpha of the dark overlay
     f32 m_TitleY = -80.0f; // window units
     f32 m_TitleAlpha = 0.0f;
     f32 m_PanelSlide = 0.0f; // 0 = off screen, 1 = in place
-    std::array<f32, kItems.size()> m_ItemAlpha{};
+    std::vector<f32> m_ItemAlpha;
     f32 m_HighlightY = 0.0f; // relative to the panel's top
     Vec4 m_HighlightColor = kGreen;
     f32 m_Glow = 0.5f; // highlight alpha

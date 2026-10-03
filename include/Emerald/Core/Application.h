@@ -20,6 +20,7 @@
 #include "Emerald/Renderer/CrtEffect.h"
 #include "Emerald/Renderer/Renderer.h"
 #include "Emerald/Renderer/Renderer2D.h"
+#include "Emerald/Scene/SceneStack.h"
 
 #if EMERALD_WITH_ENTT
 #include <entt/entt.hpp>
@@ -85,6 +86,9 @@ public:
     // Textures, atlases, fonts and sounds by path, loaded once and hot reloaded in debug builds.
     [[nodiscard]] Assets& GetAssets() { return *m_Assets; }
     [[nodiscard]] u64 GetFrameCount() const { return m_FrameCount; }
+    // Title, gameplay, pause...: scenes pushed here get their hooks called after the app's own
+    // (see SceneStack.h). An app that never pushes a scene works as before.
+    [[nodiscard]] SceneStack& GetScenes() { return m_Scenes; }
 
     // Optional CRT monitor post-process over the whole frame (below the ImGui overlay), off by
     // default. Enabling it the first time creates its pipelines; returns false if that failed
@@ -171,6 +175,7 @@ private:
     Mouse m_Mouse;             // raw mouse state, fed from SDL events
     Audio m_Audio;
     Input m_Input{m_Keyboard, m_Gamepads, &m_Mouse}; // actions on top of all three
+    SceneStack m_Scenes{&m_Input};                   // empties itself before the assets go
     FixedTimestep m_FixedTimestep;
     bool m_SdlInitialized = false;
     bool m_RendererInitialized = false;

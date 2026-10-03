@@ -83,6 +83,7 @@ add_library(Emerald STATIC
     src/Physics/Collision.cpp
     src/Physics/SpatialHash.cpp
     src/Tilemap/Tilemap.cpp
+    src/Scene/SceneStack.cpp
     src/Renderer/Texture.cpp
     src/Renderer/TextureAtlas.cpp
     src/Renderer/Font.cpp

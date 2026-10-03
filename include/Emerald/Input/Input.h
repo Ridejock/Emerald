@@ -85,6 +85,11 @@ public:
     // -1, 0 or +1 (opposite directions cancel), analog bindings anything in between.
     [[nodiscard]] f32 GetAxis(std::string_view axis) const;
 
+    // While blocked, every action is up and every axis 0 (the raw state below still works).
+    // SceneStack blocks it for scenes that do not have focus and during transitions.
+    void SetBlocked(bool blocked) { m_Blocked = blocked; }
+    [[nodiscard]] bool IsBlocked() const { return m_Blocked; }
+
     // Rumbles the gamepads; 0..1 per motor (low = heavy, high = light).
     void Rumble(f32 low, f32 high, u32 milliseconds) { m_Gamepads.Rumble(low, high, milliseconds); }
 
@@ -130,6 +135,7 @@ private:
     const Mouse& m_Mouse;
     std::vector<Action> m_Actions;
     std::vector<Axis> m_Axes;
+    bool m_Blocked = false;
 };
 
 } // namespace Emerald

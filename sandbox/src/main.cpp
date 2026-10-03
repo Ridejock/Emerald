@@ -1,9 +1,22 @@
+// The sandbox: every engine feature in one app, organised as scenes on the Application's
+// SceneStack (Emerald/Scene):
+//
+//   Title (TitleScene.h) --Enter--> Camera demo (DemoScene.h) <--T--> Tilemap room (TilemapScene.h)
+//                                          \---------- M ----------/
+//                                                       v
+//                                          Pause (PauseScene.h, drawn over the scene below)
+//
+// The app itself keeps what is global: input bindings, the shared assets (Shared.h), the
+// triangle pipeline and EnTT quads drawn under every scene, Escape / C, screenshots, and the ImGui
+// "Emerald" window with the scene stack (the scenes append their own sections to it).
+
 #include <array>
 #include <charconv>
 #include <cmath>
 #include <cstddef>
 #include <filesystem>
 #include <future>
+#include <memory>
 #include <numeric>
 #include <optional>
 #include <string>
@@ -15,9 +28,11 @@
 
 #include <Emerald/Emerald.h>
 
-#include "CollisionDemo.h"
-#include "MenuDemo.h"
-#include "TilemapRoom.h"
+#include "DemoScene.h"
+#include "PauseScene.h"
+#include "Shared.h"
+#include "TilemapScene.h"
+#include "TitleScene.h"
 
 #if EMERALD_WITH_IMGUI
 #include <imgui.h>
@@ -81,25 +96,6 @@ struct DrawItem {
     u32 VertexCount = 0;
 };
 
-// A five-pointed star (alternating outer/inner radius), built once at startup.
-std::array<Vec2, 10> MakeStar()
-{
-    std::array<Vec2, 10> points{};
-    for (usize i = 0; i < points.size(); ++i) {
-        const f32 angle = Emerald::TwoPi * static_cast<f32>(i) / 10.0f - Emerald::HalfPi;
-        const f32 radius = (i % 2 == 0) ? 1.0f : 0.45f;
-        points[i] = Vec2(std::cos(angle), std::sin(angle)) * radius;
-    }
-    return points;
-}
-const std::array<Vec2, 10> kStar = MakeStar();
-
-// Camera demo: the shapes and sprites live in a world larger than the window, the camera follows
-// the hero inside its bounds. The original demo layout is a 1280 x 720 "room" in the middle.
-constexpr Vec2 kWorldSize{2560.0f, 1600.0f};
-constexpr Vec2 kRoomSize{1280.0f, 720.0f};
-constexpr Vec2 kRoomOrigin = (kWorldSize - kRoomSize) * 0.5f; // the room's top-left
-
 // A tiny procedural sprite sheet (no image files needed): a 16 x 16 pixel-art gem at (0, 0) and
 // a ring at (16, 0). Real games load one with TextureAtlas::Load(device, "atlas.png", ...).
 Emerald::Image MakeSpriteSheet()
@@ -141,23 +137,10 @@ Emerald::Image MakeSpriteSheet()
     return image;
 }
 
-struct SandboxOptions {
-    u64 Frames = 0;
-    std::string ScreenshotPath;
-    // The tilemap room (T switches): --tilemap starts in it, --map <file.tmj> loads another map,
-    // --pan / --stats / --zoom <z> / --no-cull for the benchmark, --collision / --objects turn
-    // the overlays on.
-    bool Tilemap = false;
-    TilemapRoom::Options Room;
-    bool Collision = false;
-    bool Objects = false;
-    bool NoCull = false;
-};
-
 class Sandbox final : public Emerald::Application {
 public:
     Sandbox(const Emerald::ApplicationSpec& spec, SandboxOptions options)
-        : Application(spec), m_Options(std::move(options))
+        : Application(spec), m_Shared(*this, std::move(options))
     {
     }
 
@@ -178,225 +161,37 @@ protected:
         EM_INFO("EnTT enabled: created entity {}", static_cast<u32>(entity));
 #endif
         RunThreadPoolDemo();
+        BindInput();
+        LoadAssets();
 
-        // Controls are actions bound to keys and gamepad inputs; the code below only uses the
-        // action names.
-        Emerald::Input& input = GetInput();
-        input.BindAxis("MoveX", Key::A, Key::D);
-        input.BindAxis("MoveX", Key::Left, Key::Right);
-        input.BindAxis("MoveX", GamepadButton::DPadLeft, GamepadButton::DPadRight);
-        input.BindAxis("MoveX", GamepadAxis::LeftX);
-        input.BindAxis("MoveY", Key::W, Key::S);
-        input.BindAxis("MoveY", Key::Up, Key::Down);
-        input.BindAxis("MoveY", GamepadButton::DPadUp, GamepadButton::DPadDown);
-        input.BindAxis("MoveY", GamepadAxis::LeftY); // +Y is down on screen and on the stick
-        input.BindAction("Pulse", {Key::Space});
-        input.BindAction("Pulse", {GamepadButton::South});
-        input.BindAction("Run", {Key::LeftShift});
-        input.BindAction("Run", {GamepadButton::East});
-        input.BindAction("Quit", {Key::Escape});
-        input.BindAction("Crt", {Key::C}); // CRT post-process on/off
-        // The tweened menu (open at startup): M / Start toggles it, Up / Down and Enter / South
-        // pick an item. While it is open the hero stands still.
-        input.BindAction("Menu", {Key::M});
-        input.BindAction("Menu", {GamepadButton::Start});
-        input.BindAction("MenuUp", {Key::Up});
-        input.BindAction("MenuUp", {Key::W});
-        input.BindAction("MenuUp", {GamepadButton::DPadUp});
-        input.BindAction("MenuDown", {Key::Down});
-        input.BindAction("MenuDown", {Key::S});
-        input.BindAction("MenuDown", {GamepadButton::DPadDown});
-        input.BindAction("MenuSelect", {Key::Enter});
-        input.BindAction("MenuSelect", {GamepadButton::South});
-        // Camera: Tab / North toggles following the hero or free panning (with the move keys),
-        // zoom with the wheel, Q / E or the triggers, rotate with F / G or the shoulders.
-        input.BindAction("CameraMode", {Key::Tab});
-        input.BindAction("CameraMode", {GamepadButton::North});
-        input.BindAction("Shake", {Key::X});
-        input.BindAction("Shake", {GamepadButton::West});
-        input.BindAction("CameraReset", {Key::R});
-        input.BindAction("CameraReset", {GamepadButton::Back});
-        input.BindAxis("Zoom", Key::Q, Key::E);
-        input.BindAxis("Zoom", GamepadButton::LeftTrigger, GamepadButton::RightTrigger);
-        input.BindAxis("Rotate", Key::F, Key::G);
-        input.BindAxis("Rotate", GamepadButton::LeftShoulder, GamepadButton::RightShoulder);
-        input.BindAction("Scene", {Key::T}); // the camera demo <-> the tilemap room
-        m_Camera.SetBounds({.Min = {0.0f, 0.0f}, .Max = kWorldSize});
-        m_Camera.GetFollowParams() = {.DeadZone = {160.0f, 100.0f}, .Damping = 5.0f};
-        m_Camera.SetViewSize(GetViewSize());
-        m_Camera.SetPosition(kRoomOrigin + kRoomSize * 0.5f); // the room fills the window
-
-        // Files come from the asset manager: loaded once, placeholders for missing files, and
-        // (debug builds) hot reload from the source folder.
-        Emerald::Assets& assets = GetAssets();
-        if constexpr (Emerald::Assets::kHotReload)
-            assets.SetRoot(SANDBOX_SOURCE_ASSETS);
+        // The scenes are made here, so they can reach each other through m_Shared.Make without
+        // including each other.
+        m_Shared.Make = [this](SceneId id) -> std::unique_ptr<Emerald::Scene> {
+            switch (id) {
+            case SceneId::Title:
+                return std::make_unique<TitleScene>(m_Shared);
+            case SceneId::Demo:
+                return std::make_unique<DemoScene>(m_Shared);
+            case SceneId::Tilemap:
+                return std::make_unique<TilemapScene>(m_Shared);
+            case SceneId::Pause:
+                return std::make_unique<PauseScene>(m_Shared);
+            }
+            return nullptr;
+        };
+        // --demo / --tilemap (screenshots, the benchmark) start there at once; otherwise the
+        // title fades in from black.
+        if (m_Shared.Options.Start)
+            GetScenes().Push(m_Shared.Make(*m_Shared.Options.Start));
         else
-            assets.SetRoot(Emerald::Paths::GetBasePath() / "assets");
+            GetScenes().Push(m_Shared.Make(SceneId::Title), Emerald::Transition::Fade(0.6f));
 
-        // A short generated "blip" for the pulse, rising in pitch (files would use
-        // Emerald::LoadSound("x.mp3")).
-        using namespace Emerald::Synth;
-        std::vector<f32> blip = Generate({.Shape = Wave::Sine,
-                                          .Seconds = 0.15f,
-                                          .StartHz = 520.0f,
-                                          .EndHz = 880.0f,
-                                          .Volume = 0.4f});
-        ApplyDecay(blip, 0.03f);
-        m_Blip = ToSound(blip);
-
-        // Sprites: upload the generated sheet (nearest filtering: crisp pixel art) and name its
-        // two regions, like an atlas.json would.
-        if (std::optional<Emerald::Texture> sheet =
-                Emerald::Texture::Create(GetRenderer().GetDevice(), MakeSpriteSheet())) {
-            m_Atlas = Emerald::TextureAtlas::Create(std::move(*sheet),
-                                                    {{"gem", {{0.0f, 0.0f}, {16.0f, 16.0f}}},
-                                                     {"ring", {{16.0f, 0.0f}, {16.0f, 16.0f}}}});
-        }
-        LoadFonts();
-        LoadHero();
-        m_Room.Load(assets, m_Options.Room);
-        m_Room.SetOverlays(m_Options.Collision, m_Options.Objects, !m_Options.NoCull);
-        m_InRoom = m_Options.Tilemap;
-
-        // A 1 x 1 white texture: tinted and stretched, it fills the menu's rectangles.
-        Emerald::Image white;
-        white.Width = 1;
-        white.Height = 1;
-        white.Pixels = {255, 255, 255, 255};
-        m_White = Emerald::Texture::Create(GetRenderer().GetDevice(), white);
-        if (!m_InRoom)
-            m_Menu.Open();
         // The ImGui easing preview: a dot running along the curve, over and over.
         m_Tweens.FromTo(&m_PreviewT, 0.0f, 1.0f, 1.5f,
                         {.Curve = Emerald::Easing::Linear, .Repeat = Emerald::Tweens::kForever});
     }
 
-    // Input + fixed-step demo: move the hero with WASD / arrow keys / left stick / d-pad (at
-    // 120 Hz, independent of the frame rate; Shift / East runs), Space or South (A / Cross) jumps
-    // with a ring pulse and a short rumble. The camera follows the hero (or pans freely) and
-    // shakes on X / West.
-    void OnFixedUpdate(f32 dt) override
-    {
-        Emerald::Input& input = GetInput();
-        Vec2 direction(input.GetAxis("MoveX"), input.GetAxis("MoveY"));
-        if (m_Menu.IsOpen())
-            direction = Vec2(0.0f); // the arrows drive the menu
-        const f32 length = Emerald::Length(direction);
-        // Keys give length 1 or 1.41 (diagonal), a stick anything up to 1: cap it at 1 so
-        // diagonals are not faster and a half-tilted stick moves at half speed.
-        if (length > 1.0f)
-            direction = direction / length;
-        if (m_InRoom) { // the tilemap room has its own camera and collision
-            const bool run = input.IsActionDown("Run");
-            UpdateHero(m_Room.Update(direction, run, dt, GetViewSize()), run ? 1.8f : 1.0f, dt);
-            return;
-        }
-        if (input.WasActionPressed("CameraMode"))
-            m_FreeCamera = !m_FreeCamera;
-        m_Camera.SetViewSize(GetViewSize());
-        if (m_FreeCamera) {
-            // Pan at the same on-screen speed at any zoom.
-            m_Camera.SetPosition(m_Camera.GetPosition() +
-                                 direction * (600.0f * dt / m_Camera.GetZoom()));
-            UpdateHero(false, 1.0f, dt);
-        } else {
-            const f32 speed = input.IsActionDown("Run") ? 1.8f : 1.0f;
-            m_HeroPosition += direction * (220.0f * speed * dt);
-            if (std::abs(direction.x) > 0.1f)
-                m_FacingLeft = direction.x < 0.0f;
-            UpdateHero(length > 0.1f, speed, dt);
-            // Keep it in the world.
-            m_HeroPosition = Emerald::Min(Emerald::Max(m_HeroPosition, Vec2(0.0f)), kWorldSize);
-            m_Camera.Follow(m_HeroPosition, dt);
-        }
-        m_Camera.SetZoom(m_Camera.GetZoom() * std::exp(1.5f * input.GetAxis("Zoom") * dt));
-        m_Camera.SetRotation(m_Camera.GetRotation() + 1.2f * input.GetAxis("Rotate") * dt);
-        if (input.WasActionPressed("CameraReset")) {
-            m_Camera.SetZoom(1.0f);
-            m_Camera.SetRotation(0.0f);
-        }
-        if (input.WasActionPressed("Shake"))
-            m_Camera.AddTrauma(0.6f);
-
-        if (input.WasActionPressed("Pulse") && !m_Menu.IsOpen()) {
-            m_PulseAge = 0.0f;
-            if (m_Hero) {
-                m_Jumping = true;
-                m_HeroAnimator.Play(m_Hero->GetAnimation("jump"), true);
-            }
-            input.Rumble(0.3f, 0.6f, 120);
-            m_Camera.AddTrauma(0.25f);
-            // Panned towards the side of the screen the hero is on.
-            const f32 x = m_Camera.WorldToScreen(m_HeroPosition).x / m_Camera.GetTargetSize().x;
-            const f32 pan = Emerald::Clamp(x * 2.0f - 1.0f, -1.0f, 1.0f);
-            GetAudio().Play(m_Blip, {.Volume = 0.7f, .Pan = pan * 0.8f});
-        }
-        m_PulseAge += dt;
-        m_Collision.Update(dt, m_HeroPosition);
-        m_Camera.Update(dt);
-        m_CoinAnimator.Update(dt);
-        m_Flash = Emerald::Max(m_Flash - dt, 0.0f);
-    }
-
-    // Menu input, then the tweens and timers advance by this frame's dt.
-    void UpdateMenu(f32 dt)
-    {
-        const Emerald::Input& input = GetInput();
-        if (input.WasActionPressed("Menu")) {
-            if (m_Menu.IsOpen())
-                m_Menu.Close();
-            else
-                m_Menu.Open();
-        } else if (m_Menu.IsOpen()) {
-            if (input.WasActionPressed("MenuUp"))
-                m_Menu.MoveSelection(-1);
-            if (input.WasActionPressed("MenuDown"))
-                m_Menu.MoveSelection(1);
-            if (input.WasActionPressed("MenuSelect")) {
-                switch (m_Menu.GetSelected()) {
-                case MenuDemo::Choice::Resume:
-                    m_Menu.Close();
-                    break;
-                case MenuDemo::Choice::ShakeCamera:
-                    m_Camera.AddTrauma(0.6f);
-                    break;
-                case MenuDemo::Choice::CrtEffect:
-                    SetCrtEnabled(!IsCrtEnabled());
-                    break;
-                case MenuDemo::Choice::ReplayIntro:
-                    m_Menu.Open();
-                    break;
-                }
-            }
-        }
-        m_Menu.Update(dt);
-        m_Tweens.Update(dt);
-    }
-
-    // Idle or walk (unless a jump is playing; its finish event ends it), at the run speed.
-    void UpdateHero(bool moving, f32 speed, f32 dt)
-    {
-        if (!m_Hero)
-            return;
-        if (!m_Jumping)
-            m_HeroAnimator.Play(m_Hero->GetAnimation(moving ? "walk" : "idle"));
-        m_HeroAnimator.SetSpeed(moving ? speed : 1.0f);
-        m_HeroAnimator.Update(dt);
-    }
-
-    // Mouse wheel zoom (unless the mouse is over an ImGui window).
-    void OnEvent(const SDL_Event& event) override
-    {
-        if (event.type != SDL_EVENT_MOUSE_WHEEL)
-            return;
-#if EMERALD_WITH_IMGUI
-        if (ImGui::GetIO().WantCaptureMouse)
-            return;
-#endif
-        m_Camera.SetZoom(m_Camera.GetZoom() * std::pow(1.15f, event.wheel.y));
-    }
-
+    // Global keys only; the scenes read the rest (they run after this, see SceneStack.h).
     void OnUpdate(f32 dt) override
     {
         m_Time += dt;
@@ -404,18 +199,16 @@ protected:
             Quit();
         if (GetInput().WasActionPressed("Crt"))
             SetCrtEnabled(!IsCrtEnabled());
-        if (GetInput().WasActionPressed("Scene"))
-            m_InRoom = !m_InRoom;
-        UpdateMenu(dt);
+        m_Tweens.Update(dt);
 
         // Capture the last frame of a --frames run (or frame 60 otherwise).
-        const u64 shotFrame = m_Options.Frames != 0 ? m_Options.Frames : 60;
-        if (!m_Options.ScreenshotPath.empty() && GetFrameCount() + 1 == shotFrame)
-            GetRenderer().RequestScreenshot(m_Options.ScreenshotPath);
+        const u64 shotFrame = m_Shared.Options.Frames != 0 ? m_Shared.Options.Frames : 60;
+        if (!m_Shared.Options.ScreenshotPath.empty() && GetFrameCount() + 1 == shotFrame)
+            GetRenderer().RequestScreenshot(m_Shared.Options.ScreenshotPath);
 
 #if EMERALD_WITH_ENTT
         // Bounce the quads off the window edges.
-        const Vec2 limit = GetViewSize() - Vec2(kQuadSize);
+        const Vec2 limit = m_Shared.GetViewSize() - Vec2(kQuadSize);
         GetRegistry().view<Position, Velocity>().each([&](Position& p, Velocity& v) {
             p.Value += v.Value * dt;
             if (p.Value.x < 0.0f || p.Value.x > limit.x)
@@ -426,244 +219,7 @@ protected:
 #endif
     }
 
-    // 2D shapes: recorded here, drawn by the engine on top of OnRender's triangle. The world goes
-    // through the camera; text and stats are a second, screen-space batch on top.
-    void OnRender2D(Emerald::Renderer2D& r) override
-    {
-        const Vec2 size = GetViewSize();
-        const Emerald::Renderer& renderer = GetRenderer();
-        m_Camera.SetViewSize(size); // 1 world unit = 1 window unit at zoom 1
-        m_Camera.SetTargetSize({static_cast<f32>(renderer.GetFrameWidth()),
-                                static_cast<f32>(renderer.GetFrameHeight())});
-        if (m_InRoom) {
-            DrawRoom(r, size, m_Camera.GetTargetSize());
-            return;
-        }
-
-        r.Begin(m_Camera);
-        DrawWorld(r);
-        r.End();
-
-        r.Begin(Mat4::OrthoPixelSpace(size.x, size.y));
-        DrawTextDemo(r, size);
-        if (m_PixelFont && m_SmallFont && m_SmoothFont && m_White)
-            m_Menu.Draw(r, size, *m_SmoothFont, *m_PixelFont, *m_SmallFont, *m_White);
-        r.End();
-    }
-
-    // The tilemap room, the hero in it at the map's scale, and a line of help on top.
-    void DrawRoom(Emerald::Renderer2D& r, Vec2 size, Vec2 target)
-    {
-        m_Room.Draw(r, size, target, [&](Vec2 feet, bool facingLeft) {
-            if (m_Hero)
-                r.DrawSprite(m_HeroAnimator, feet,
-                             {.Origin = {0.5f, 1.0f}, .FlipX = facingLeft, .PixelSnap = true});
-        });
-        r.Begin(Mat4::OrthoPixelSpace(size.x, size.y));
-        if (m_SmallFont)
-            r.DrawString(*m_SmallFont,
-                         "Tilemap room: WASD walks, Shift runs, T back to the camera demo",
-                         {12.0f, size.y - 20.0f}, {1.0f, 1.0f, 1.0f, 0.9f});
-        if (m_PixelFont && m_SmallFont && m_SmoothFont && m_White)
-            m_Menu.Draw(r, size, *m_SmoothFont, *m_PixelFont, *m_SmallFont, *m_White);
-        r.End();
-    }
-
-    void DrawWorld(Emerald::Renderer2D& r)
-    {
-        const Vec4 green{0.18f, 0.8f, 0.44f, 1.0f};
-        const Vec4 white{1.0f, 1.0f, 1.0f, 1.0f};
-        const Vec4 dim{1.0f, 1.0f, 1.0f, 0.25f}; // the pipeline alpha-blends
-        const Vec2 room = kRoomOrigin;
-        const Vec2 size = kRoomSize;
-
-        // Frame around the world (its bounds), a faint grid and the room's outline.
-        r.DrawRect({2.0f, 2.0f}, kWorldSize - Vec2(4.0f), green);
-        for (f32 x = 80.0f; x < kWorldSize.x; x += 80.0f)
-            r.DrawLine({x, 0.0f}, {x, kWorldSize.y}, Vec4(1.0f, 1.0f, 1.0f, 0.06f));
-        for (f32 y = 80.0f; y < kWorldSize.y; y += 80.0f)
-            r.DrawLine({0.0f, y}, {kWorldSize.x, y}, Vec4(1.0f, 1.0f, 1.0f, 0.06f));
-        r.DrawRect(room, size, Vec4(0.18f, 0.8f, 0.44f, 0.35f));
-
-        // Spinning stars in the room's bottom corners, one of them pulsing in size, and smaller
-        // ones in a ring around the world.
-        const f32 pulse = 1.0f + 0.2f * std::sin(3.0f * m_Time);
-        r.DrawPolygon(kStar, {1.0f, 0.85f, 0.2f, 1.0f},
-                      {.Position = room + Vec2(90.0f, size.y - 90.0f),
-                       .Rotation = m_Time,
-                       .Scale = Vec2(60.0f)});
-        r.DrawPolygon(kStar, {0.3f, 0.7f, 1.0f, 1.0f},
-                      {.Position = room + size - Vec2(90.0f),
-                       .Rotation = -0.7f * m_Time,
-                       .Scale = Vec2(60.0f * pulse)});
-        for (u32 i = 0; i < 24; ++i) {
-            const f32 a = Emerald::TwoPi * static_cast<f32>(i) / 24.0f;
-            const Vec2 at = kWorldSize * 0.5f + Vec2(std::cos(a) * 1100.0f, std::sin(a) * 680.0f);
-            r.DrawPolygon(kStar, Vec4(0.9f, 0.5f + 0.02f * static_cast<f32>(i), 0.3f, 0.8f),
-                          {.Position = at, .Rotation = a + 0.3f * m_Time, .Scale = Vec2(24.0f)});
-        }
-
-        // Concentric circles around the center with increasing segment counts.
-        for (u32 i = 0; i < 4; ++i)
-            r.DrawCircle(room + size * 0.5f, 60.0f + 40.0f * static_cast<f32>(i), dim, 8u << i);
-
-        DrawSprites(r, room, size);
-        m_Collision.Draw(r, m_HeroPosition, GetMouseWorld(), m_FacingLeft, m_ShowHashGrid);
-
-        DrawHero(r);
-        // The Space pulse (a ring growing for half a second).
-        if (m_PulseAge < 0.5f)
-            r.DrawCircle(m_HeroPosition, 20.0f + 200.0f * m_PulseAge,
-                         {1.0f, 1.0f, 1.0f, 1.0f - 2.0f * m_PulseAge});
-
-        // A cross under the mouse, placed via ScreenToWorld (it should sit right on the cursor).
-        if (const std::optional<Vec2> mouse = GetMouseWorld()) {
-            const f32 arm = 8.0f / m_Camera.GetZoom();
-            r.DrawLine(*mouse - Vec2(arm, 0.0f), *mouse + Vec2(arm, 0.0f), green);
-            r.DrawLine(*mouse - Vec2(0.0f, arm), *mouse + Vec2(0.0f, arm), green);
-        }
-    }
-
-    // The animated hero (flipped to face where it walks, gold flash when a jump lands) and a row
-    // of ping-pong coins with tints and a vertical flip.
-    void DrawHero(Emerald::Renderer2D& r)
-    {
-        if (!m_Hero)
-            return;
-        const Vec4 gold{1.0f, 0.85f, 0.3f, 1.0f};
-        const Vec4 white{1.0f, 1.0f, 1.0f, 1.0f};
-        const Vec2 coins = kRoomOrigin + Vec2(440.0f, 520.0f);
-        const Vec4 tints[] = {white,
-                              {0.6f, 0.8f, 1.0f, 1.0f},
-                              {1.0f, 0.5f, 0.5f, 1.0f},
-                              white,
-                              {1.0f, 1.0f, 1.0f, 0.4f}};
-        for (usize i = 0; i < 5; ++i)
-            r.DrawSprite(m_CoinAnimator, coins + Vec2(100.0f * static_cast<f32>(i), 0.0f),
-                         {.Scale = Vec2(3.0f), .Tint = tints[i], .FlipY = i == 3});
-        // Lift the hero while the jump is in the air (its middle frame).
-        const bool inAir = m_Jumping && m_HeroAnimator.GetFrameIndex() == 1;
-        const Vec2 at = m_HeroPosition - Vec2(0.0f, inAir ? 28.0f : 0.0f);
-        r.DrawSprite(m_HeroAnimator, at,
-                     {.Scale = Vec2(4.0f),
-                      .Tint = m_Flash > 0.0f ? gold : white,
-                      .FlipX = m_FacingLeft,
-                      .PixelSnap = true});
-    }
-
-    // The mouse in world units, if it is over the window.
-    [[nodiscard]] std::optional<Vec2> GetMouseWorld() const
-    {
-        if (!SDL_GetMouseFocus())
-            return std::nullopt;
-        Vec2 mouse;
-        SDL_GetMouseState(&mouse.x, &mouse.y);
-        // Window units -> render target pixels (they differ on high-DPI displays).
-        const Vec2 pixels = mouse * (m_Camera.GetTargetSize().x / GetViewSize().x);
-        return m_Camera.ScreenToWorld(pixels);
-    }
-
-    // Text demo: one pixel font baked at three sizes (Nearest: crisp), and smooth (Linear,
-    // oversampled) at a large size, scaling, measuring, alignment and Latin-1 characters.
-    void DrawTextDemo(Emerald::Renderer2D& r, const Vec2& size)
-    {
-        if (!m_PixelFont || !m_SmallFont || !m_SmoothFont)
-            return;
-        using Emerald::TextAlign;
-        const Vec4 white{1.0f, 1.0f, 1.0f, 1.0f};
-        const Vec4 gold{1.0f, 0.85f, 0.3f, 1.0f};
-        const Vec4 grey{0.65f, 0.7f, 0.75f, 1.0f};
-
-        // Header, top-left: the pixel font at 16 px and 8 px.
-        r.DrawString(*m_PixelFont, "EMERALD TEXT", {30.0f, 30.0f}, {0.35f, 0.95f, 0.55f, 1.0f});
-        r.DrawString(*m_SmallFont,
-                     "stb_truetype -> one atlas per font\nsprite batch, 1 draw call each",
-                     {30.0f, 56.0f}, grey);
-
-        // Smooth text in the middle, gently breathing: Linear filtering keeps it soft when scaled.
-        const f32 breathe = 1.0f + 0.08f * std::sin(1.5f * m_Time);
-        r.DrawString(*m_SmoothFont, "Hello, world!", {size.x * 0.5f, 140.0f}, white, breathe,
-                     TextAlign::Center);
-
-        // MeasureText: a box drawn exactly around a string.
-        const std::string_view measured = "MeasureText";
-        const Vec2 box = m_PixelFont->MeasureText(measured, 2.0f);
-        const Vec2 boxAt{size.x - 30.0f - box.x, 30.0f};
-        r.DrawRect(boxAt - Vec2(4.0f), box + Vec2(8.0f), gold);
-        r.DrawString(*m_PixelFont, measured, boxAt, gold, 2.0f);
-        r.DrawString(*m_SmallFont,
-                     std::to_string(static_cast<i32>(box.x)) + " x " +
-                         std::to_string(static_cast<i32>(box.y)) + " px",
-                     {size.x - 30.0f, boxAt.y + box.y + 12.0f}, grey, 1.0f, TextAlign::Right);
-
-        // Alignment: three blocks, each line aligned on the marker line through its anchor.
-        const f32 top = size.y - 190.0f;
-        const TextAlign aligns[] = {TextAlign::Left, TextAlign::Center, TextAlign::Right};
-        const std::string_view texts[] = {"Left\naligned\ntext", "Center\naligned\ntext",
-                                          "Right\naligned\ntext"};
-        for (usize i = 0; i < 3; ++i) {
-            const f32 x = size.x * (0.3f + 0.2f * static_cast<f32>(i));
-            r.DrawLine({x, top - 10.0f}, {x, top + 60.0f}, {0.3f, 0.7f, 1.0f, 0.6f});
-            r.DrawString(*m_PixelFont, texts[i], {x, top}, white, 1.0f, aligns[i]);
-        }
-
-        // Latin-1 from the extra glyph range, and the pixel font scaled 3x (still crisp).
-        r.DrawString(*m_PixelFont,
-                     "Caf\xC3\xA9 \xC2\xBFQu\xC3\xA9 tal? Gr\xC3\xBC\xC3\x9F"
-                     "e \xC2\xA9 2026",
-                     {size.x * 0.5f, size.y - 100.0f}, gold, 1.0f, TextAlign::Center);
-        r.DrawString(*m_PixelFont, "x3", {size.x * 0.5f - 20.0f, size.y - 76.0f}, white, 3.0f);
-
-        // Live stats, bottom-left (last frame's numbers), and the camera controls.
-        const Emerald::Renderer2D& stats = GetRenderer2D();
-        r.DrawString(*m_SmallFont,
-                     std::string("camera: ") + (m_FreeCamera ? "free pan" : "follow") +
-                         "  Tab mode, wheel/Q/E zoom, F/G rotate, X shake, R reset",
-                     {30.0f, size.y - 44.0f}, grey);
-        r.DrawString(*m_SmallFont,
-                     "frame " + std::to_string(GetFrameCount()) + "  sprites " +
-                         std::to_string(stats.GetLastFrameSpriteCount()) + "  draw calls " +
-                         std::to_string(stats.GetLastFrameDrawCalls()),
-                     {30.0f, size.y - 30.0f}, grey);
-    }
-
-    // Sprite demo: scaling, rotation, flipping, tint and alpha, pixel snapping, and layering in
-    // call order with lines.
-    void DrawSprites(Emerald::Renderer2D& r, const Vec2& room, const Vec2& size)
-    {
-        if (!m_Atlas)
-            return;
-        const Emerald::Sprite gem = m_Atlas->Get("gem");
-        const Emerald::Sprite ring = m_Atlas->Get("ring");
-
-        // A row along the top: plain, flipped, tinted, half transparent (4x, snapped to pixels).
-        const f32 y = room.y + 70.0f;
-        const Emerald::SpriteOptions big{.Scale = Vec2(4.0f), .PixelSnap = true};
-        r.DrawSprite(gem, {room.x + size.x * 0.5f - 200.0f, y}, big);
-        r.DrawSprite(gem, {room.x + size.x * 0.5f - 120.0f, y},
-                     {.Scale = Vec2(4.0f), .FlipX = true});
-        r.DrawSprite(gem, {room.x + size.x * 0.5f - 40.0f, y},
-                     {.Scale = Vec2(4.0f), .Tint = {1.0f, 0.4f, 0.4f, 1.0f}});
-        r.DrawSprite(gem, {room.x + size.x * 0.5f + 40.0f, y},
-                     {.Scale = Vec2(4.0f), .Tint = {0.5f, 0.7f, 1.0f, 1.0f}});
-        r.DrawSprite(gem, {room.x + size.x * 0.5f + 120.0f, y},
-                     {.Scale = Vec2(4.0f), .Tint = {1.0f, 1.0f, 1.0f, 0.4f}});
-        r.DrawSprite(ring, {room.x + size.x * 0.5f + 200.0f, y}, big);
-        // A texture whose file does not exist: the asset manager's checkerboard placeholder.
-        const Vec2 missingAt = room + Vec2(size.x - 110.0f, size.y * 0.42f);
-        r.DrawSprite(*m_Missing, missingAt);
-        if (m_SmallFont)
-            r.DrawString(*m_SmallFont, "missing.png", missingAt + Vec2(0.0f, 44.0f),
-                         {1.0f, 0.4f, 1.0f, 1.0f}, 1.0f, Emerald::TextAlign::Center);
-
-        // Layering: a spinning gem, a line on top of it, then a ring on top of the line.
-        const Vec2 center = room + size * 0.5f;
-        r.DrawSprite(gem, center, {.Scale = Vec2(8.0f), .Rotation = 0.6f * m_Time});
-        r.DrawLine(center - Vec2(90.0f, 0.0f), center + Vec2(90.0f, 0.0f),
-                   {1.0f, 1.0f, 1.0f, 1.0f});
-        r.DrawSprite(ring, center + Vec2(40.0f, 0.0f), {.Scale = Vec2(3.0f), .Rotation = -m_Time});
-    }
-
+    // Under every scene: the triangle and the EnTT quads (raw SDL GPU draws, below the 2D).
     void OnRender(SDL_GPURenderPass* pass) override
     {
         SDL_GPUCommandBuffer* cmd = GetRenderer().GetCommandBuffer();
@@ -672,7 +228,7 @@ protected:
         // Everything is drawn in pixel space: (0, 0) top-left, window size bottom-right, +Y down.
         // Window size is in the same units as mouse/window coordinates; the projection maps it to
         // the whole swapchain whatever its pixel size.
-        const Vec2 size = GetViewSize();
+        const Vec2 size = m_Shared.GetViewSize();
         const Mat4 projection = Mat4::OrthoPixelSpace(size.x, size.y);
 
         // First collect this frame's draws into a list, then record them. The list lives in the
@@ -706,11 +262,14 @@ protected:
         }
     }
 
+    // The global part of the "Emerald" window; each scene's OnImGui appends its own section.
     void OnImGui() override
     {
 #if EMERALD_WITH_IMGUI
         ImGui::SetNextWindowPos(ImVec2(20.0f, 20.0f), ImGuiCond_FirstUseEver);
-        ImGui::Begin("Emerald");
+        // No keyboard navigation here: the arrows and Enter drive the game's menus, and would
+        // otherwise also move ImGui's focus and press its buttons (e.g. "Push pause").
+        ImGui::Begin("Emerald", nullptr, ImGuiWindowFlags_NoNavInputs);
         const std::string driver(GetRenderer().GetDriverName());
         ImGui::Text("GPU: %s", driver.c_str());
         ImGui::Text("Frame: %llu", static_cast<unsigned long long>(GetFrameCount()));
@@ -724,74 +283,84 @@ protected:
                     GetRenderer2D().GetLastFrameDrawCalls());
         ImGui::Text("Move the hero: WASD / arrows / left stick (Shift runs), jump: Space / %s",
                     GetInput().GetGamepads().GetButtonLabel(GamepadButton::South));
-        if (m_InRoom)
-            m_Room.ShowImGui();
-        ShowAnimation();
-        ShowCamera();
-        ShowCollision();
-        ShowAssets();
-        ShowTweens();
-        ShowGamepads();
-        ImGui::Text("Audio: %s", GetAudio().IsAvailable() ? "on" : "no device");
-        ImGui::Separator();
-        ImGui::Text("Workers: %u", GetThreadPool().GetThreadCount());
-        const Emerald::FrameArena::Stats arena = GetFrameArena().GetStats();
-        ImGui::Text("Frame arena: %zu B last frame, peak %zu B of %zu KiB", arena.LastFrameBytes,
-                    arena.PeakBytes, arena.Capacity / 1024);
-        // Frames whose arena allocations did not fit and went to the heap (should stay 0).
-        ImGui::Text("Frames that spilled to the heap: %llu",
-                    static_cast<unsigned long long>(arena.OverflowFrames));
-        const Emerald::TrackingResource::Stats pools = GetPoolStats();
-        ImGui::Text("Pools: %zu B in use (peak %zu B), %zu chunks", pools.BytesInUse,
-                    pools.PeakBytes, pools.AllocationsInUse);
+        ShowScenes();
+        if (ImGui::CollapsingHeader("Engine")) {
+            ShowAssets();
+            ShowTweens();
+            ShowGamepads();
+            ImGui::Text("Audio: %s", GetAudio().IsAvailable() ? "on" : "no device");
+            ImGui::Separator();
+            ImGui::Text("Workers: %u", GetThreadPool().GetThreadCount());
+            const Emerald::FrameArena::Stats arena = GetFrameArena().GetStats();
+            ImGui::Text("Frame arena: %zu B last frame, peak %zu B of %zu KiB",
+                        arena.LastFrameBytes, arena.PeakBytes, arena.Capacity / 1024);
+            // Frames whose arena allocations did not fit and went to the heap (should stay 0).
+            ImGui::Text("Frames that spilled to the heap: %llu",
+                        static_cast<unsigned long long>(arena.OverflowFrames));
+            const Emerald::TrackingResource::Stats pools = GetPoolStats();
+            ImGui::Text("Pools: %zu B in use (peak %zu B), %zu chunks", pools.BytesInUse,
+                        pools.PeakBytes, pools.AllocationsInUse);
+        }
         ImGui::End();
 #endif
     }
 
 #if EMERALD_WITH_IMGUI
-    void ShowAnimation()
+    // The scene stack, top first: flags (editable), whether each scene is drawn / updated / has
+    // focus this frame, the transition, and buttons that queue requests like the scenes do.
+    void ShowScenes()
     {
-        ImGui::Separator();
-        const Emerald::Animation* animation = m_HeroAnimator.GetAnimation();
-        ImGui::Text("Hero: %s, frame %u (%.2f s), speed %.1f, %u loops",
-                    animation ? animation->Name.c_str() : "-", m_HeroAnimator.GetFrameIndex(),
-                    static_cast<f64>(m_HeroAnimator.GetFrameTime()),
-                    static_cast<f64>(m_HeroAnimator.GetSpeed()), m_HeroAnimator.GetLoopCount());
-        ImGui::Text("Jumps landed (finish events): %u  coin frame %u", m_JumpsLanded,
-                    m_CoinAnimator.GetFrameIndex());
-        if (m_Hero)
-            ImGui::Text("Atlas: %zu sprites, %zu animations, %zu missing frames",
-                        m_Hero->GetRegions().size(), m_Hero->GetAnimations().size(),
-                        m_Hero->GetMissingFrames().size());
-    }
-
-    // Camera stats and a few live controls.
-    void ShowCamera()
-    {
-        ImGui::Separator();
-        const Vec2 pos = m_Camera.GetPosition();
-        const Vec2 eye = m_Camera.GetEyePosition();
-        ImGui::Text("Camera (%s): %.1f, %.1f  eye %.1f, %.1f", m_FreeCamera ? "free" : "follow",
-                    static_cast<f64>(pos.x), static_cast<f64>(pos.y), static_cast<f64>(eye.x),
-                    static_cast<f64>(eye.y));
-        ImGui::Text("Zoom %.2f  rotation %.1f deg  trauma %.2f",
-                    static_cast<f64>(m_Camera.GetZoom()),
-                    static_cast<f64>(Emerald::ToDegrees(m_Camera.GetEyeRotation())),
-                    static_cast<f64>(m_Camera.GetTrauma()));
-        const Emerald::Rect2D visible = m_Camera.GetVisibleBounds();
-        ImGui::Text("Visible %.0f, %.0f - %.0f, %.0f  (%.2f px/unit)",
-                    static_cast<f64>(visible.Min.x), static_cast<f64>(visible.Min.y),
-                    static_cast<f64>(visible.Max.x), static_cast<f64>(visible.Max.y),
-                    static_cast<f64>(m_Camera.GetPixelsPerUnit()));
-        if (const std::optional<Vec2> mouse = GetMouseWorld())
-            ImGui::Text("Mouse in world: %.1f, %.1f", static_cast<f64>(mouse->x),
-                        static_cast<f64>(mouse->y));
+        Emerald::SceneStack& scenes = GetScenes();
+        if (!ImGui::CollapsingHeader("Scene stack", ImGuiTreeNodeFlags_DefaultOpen))
+            return;
+        if (scenes.IsTransitioning())
+            ImGui::Text("%zu scenes, transition: cover %.2f, %zu pending", scenes.GetCount(),
+                        static_cast<f64>(scenes.GetCover()), scenes.GetPendingCount());
         else
-            ImGui::TextDisabled("Mouse in world: -");
-        if (ImGui::Button("Shake"))
-            m_Camera.AddTrauma(0.6f);
+            ImGui::Text("%zu scenes, no transition, %zu pending", scenes.GetCount(),
+                        scenes.GetPendingCount());
+        constexpr ImGuiTableFlags flags =
+            ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingFixedFit;
+        if (ImGui::BeginTable("scenes", 6, flags)) {
+            ImGui::TableSetupColumn("Scene");
+            ImGui::TableSetupColumn("DrawBelow");
+            ImGui::TableSetupColumn("UpdateBelow");
+            ImGui::TableSetupColumn("Drawn");
+            ImGui::TableSetupColumn("Updated");
+            ImGui::TableSetupColumn("Focus");
+            ImGui::TableHeadersRow();
+            for (usize i = scenes.GetCount(); i-- > 0;) {
+                Emerald::Scene& scene = scenes.GetScene(i);
+                ImGui::PushID(static_cast<i32>(i));
+                ImGui::TableNextRow();
+                ImGui::TableNextColumn();
+                ImGui::TextUnformatted(scene.GetName().c_str());
+                ImGui::TableNextColumn();
+                ImGui::Checkbox("##draw", &scene.DrawBelow);
+                ImGui::TableNextColumn();
+                ImGui::Checkbox("##update", &scene.UpdateBelow);
+                ImGui::TableNextColumn();
+                ImGui::TextUnformatted(scenes.IsDrawn(i) ? "yes" : "-");
+                ImGui::TableNextColumn();
+                ImGui::TextUnformatted(scenes.IsUpdated(i) ? "yes" : "-");
+                ImGui::TableNextColumn();
+                ImGui::TextUnformatted(scene.HasFocus() ? "input" : "-");
+                ImGui::PopID();
+            }
+            ImGui::EndTable();
+        }
+        if (ImGui::Button("Push pause"))
+            scenes.Push(m_Shared.Make(SceneId::Pause));
         ImGui::SameLine();
-        ImGui::SliderFloat("Max offset", &m_Camera.GetShakeParams().MaxOffset, 0.0f, 40.0f);
+        if (ImGui::Button("Pop"))
+            scenes.Pop(Emerald::Transition::Fade(0.3f));
+        ImGui::SameLine();
+        if (ImGui::Button("Title (blinds)"))
+            scenes.ReplaceAll(m_Shared.Make(SceneId::Title), Blinds(0.5f, {0.1f, 0.0f, 0.2f}));
+        ImGui::SameLine();
+        if (ImGui::Button("Demo (white fade)"))
+            scenes.ReplaceAll(m_Shared.Make(SceneId::Demo),
+                              Emerald::Transition::Fade(0.4f, {1.0f, 1.0f, 1.0f}));
         ImGui::Separator();
     }
 
@@ -837,12 +406,9 @@ protected:
         ImGui::Separator();
     }
 
-    // The menu's tween and timer counts, and an easing curve preview with a dot running along it.
+    // An easing curve preview with a dot running along it.
     void ShowTweens()
     {
-        ImGui::Text("Menu: %s, %zu tweens, %zu timers running",
-                    m_Menu.IsClosing() ? "closing" : (m_Menu.IsVisible() ? "open" : "closed"),
-                    m_Menu.GetTweenCount(), m_Menu.GetTimerCount());
         if (ImGui::BeginCombo("Easing", Emerald::GetEasingName(m_PreviewEasing))) {
             for (const Emerald::Easing easing : Emerald::kAllEasings)
                 if (ImGui::Selectable(Emerald::GetEasingName(easing), easing == m_PreviewEasing))
@@ -866,27 +432,6 @@ protected:
         ImGui::GetWindowDrawList()->AddCircleFilled(dot, 4.0f, IM_COL32(255, 215, 80, 255));
         ImGui::SameLine();
         ImGui::Text("t %.2f\nvalue %.2f", static_cast<f64>(m_PreviewT), static_cast<f64>(value));
-        ImGui::Separator();
-    }
-
-    // The collision yard (right of the room): broadphase and narrowphase counts, SAT and ray.
-    void ShowCollision()
-    {
-        const CollisionDemo& c = m_Collision;
-        ImGui::Text("Collision: %zu balls in %zu hash cells, %zu candidate pairs, %u contacts",
-                    c.GetBallCount(), c.GetCellCount(), c.GetPairCount(), c.GetContactCount());
-        if (c.GetSat())
-            ImGui::Text("SAT: overlap, normal %+.2f %+.2f, depth %.1f",
-                        static_cast<f64>(c.GetSat()->Normal.x),
-                        static_cast<f64>(c.GetSat()->Normal.y),
-                        static_cast<f64>(c.GetSat()->Depth));
-        else
-            ImGui::TextDisabled("SAT: separated");
-        if (c.GetHit())
-            ImGui::Text("Ray (hero -> mouse): hit at %.0f", static_cast<f64>(c.GetHit()->Distance));
-        else
-            ImGui::TextDisabled("Ray (hero -> mouse): no hit");
-        ImGui::Checkbox("Show hash cells", &m_ShowHashGrid);
         ImGui::Separator();
     }
 
@@ -946,6 +491,95 @@ protected:
     }
 
 private:
+    // Controls are actions bound to keys and gamepad inputs; the scenes only use the names.
+    void BindInput()
+    {
+        Emerald::Input& input = GetInput();
+        input.BindAxis("MoveX", Key::A, Key::D);
+        input.BindAxis("MoveX", Key::Left, Key::Right);
+        input.BindAxis("MoveX", GamepadButton::DPadLeft, GamepadButton::DPadRight);
+        input.BindAxis("MoveX", GamepadAxis::LeftX);
+        input.BindAxis("MoveY", Key::W, Key::S);
+        input.BindAxis("MoveY", Key::Up, Key::Down);
+        input.BindAxis("MoveY", GamepadButton::DPadUp, GamepadButton::DPadDown);
+        input.BindAxis("MoveY", GamepadAxis::LeftY); // +Y is down on screen and on the stick
+        input.BindAction("Pulse", {Key::Space});
+        input.BindAction("Pulse", {GamepadButton::South});
+        input.BindAction("Run", {Key::LeftShift});
+        input.BindAction("Run", {GamepadButton::East});
+        input.BindAction("Quit", {Key::Escape});
+        input.BindAction("Crt", {Key::C}); // CRT post-process on/off
+        // Menus (title, pause): M / Start pauses and resumes, Up / Down and Enter / South pick.
+        input.BindAction("Menu", {Key::M});
+        input.BindAction("Menu", {GamepadButton::Start});
+        input.BindAction("MenuUp", {Key::Up});
+        input.BindAction("MenuUp", {Key::W});
+        input.BindAction("MenuUp", {GamepadButton::DPadUp});
+        input.BindAction("MenuDown", {Key::Down});
+        input.BindAction("MenuDown", {Key::S});
+        input.BindAction("MenuDown", {GamepadButton::DPadDown});
+        input.BindAction("MenuSelect", {Key::Enter});
+        input.BindAction("MenuSelect", {GamepadButton::South});
+        // Camera: Tab / North toggles following the hero or free panning (with the move keys),
+        // zoom with the wheel, Q / E or the triggers, rotate with F / G or the shoulders.
+        input.BindAction("CameraMode", {Key::Tab});
+        input.BindAction("CameraMode", {GamepadButton::North});
+        input.BindAction("Shake", {Key::X});
+        input.BindAction("Shake", {GamepadButton::West});
+        input.BindAction("CameraReset", {Key::R});
+        input.BindAction("CameraReset", {GamepadButton::Back});
+        input.BindAxis("Zoom", Key::Q, Key::E);
+        input.BindAxis("Zoom", GamepadButton::LeftTrigger, GamepadButton::RightTrigger);
+        input.BindAxis("Rotate", Key::F, Key::G);
+        input.BindAxis("Rotate", GamepadButton::LeftShoulder, GamepadButton::RightShoulder);
+        input.BindAction("Scene", {Key::T}); // the camera demo <-> the tilemap room
+    }
+
+    // Files come from the asset manager: loaded once, placeholders for missing files, and (debug
+    // builds) hot reload from the source folder. Loaded here once and shared by the scenes.
+    void LoadAssets()
+    {
+        Emerald::Assets& assets = GetAssets();
+        if constexpr (Emerald::Assets::kHotReload)
+            assets.SetRoot(SANDBOX_SOURCE_ASSETS);
+        else
+            assets.SetRoot(Emerald::Paths::GetBasePath() / "assets");
+
+        // A short generated "blip" for the jump, rising in pitch (files would use
+        // Emerald::LoadSound("x.mp3")).
+        using namespace Emerald::Synth;
+        std::vector<f32> blip = Generate({.Shape = Wave::Sine,
+                                          .Seconds = 0.15f,
+                                          .StartHz = 520.0f,
+                                          .EndHz = 880.0f,
+                                          .Volume = 0.4f});
+        ApplyDecay(blip, 0.03f);
+        m_Shared.Blip = ToSound(blip);
+
+        // Sprites: upload the generated sheet (nearest filtering: crisp pixel art) and name its
+        // two regions, like an atlas.json would.
+        SDL_GPUDevice* device = GetRenderer().GetDevice();
+        if (std::optional<Emerald::Texture> sheet =
+                Emerald::Texture::Create(device, MakeSpriteSheet())) {
+            m_Shared.Atlas = Emerald::TextureAtlas::Create(
+                std::move(*sheet), {{"gem", {{0.0f, 0.0f}, {16.0f, 16.0f}}},
+                                    {"ring", {{16.0f, 0.0f}, {16.0f, 16.0f}}}});
+        }
+        LoadFonts();
+        // The hero sheet (tools/sprites/make_hero.py): sprites and animations from hero.json,
+        // the image from hero.png next to it. Edit either while the sandbox runs (debug build)
+        // and the hero updates. Also a file that does not exist, to show the placeholder.
+        m_Shared.Hero = assets.Load<Emerald::TextureAtlas>("sprites/hero.json");
+        m_Shared.Missing = assets.Load<Emerald::Texture>("sprites/missing.png");
+
+        // A 1 x 1 white texture: tinted and stretched, it fills the menus' rectangles.
+        Emerald::Image white;
+        white.Width = 1;
+        white.Height = 1;
+        white.Pixels = {255, 255, 255, 255};
+        m_Shared.White = Emerald::Texture::Create(device, white);
+    }
+
     // Shows the thread pool once at startup: fills an array in parallel with ParallelFor, then
     // sums it in a background task and waits for the result through its future.
     void RunThreadPoolDemo()
@@ -981,30 +615,10 @@ private:
                        .Oversample = 1,
                        .Filter = Emerald::TextureFilter::Nearest});
         };
-        m_PixelFont = pixel(16.0f);
-        m_SmallFont = pixel(8.0f);
-        m_SmoothFont = assets.Load<Emerald::Font>(path, {.Size = 40.0f, .Oversample = 2});
+        m_Shared.PixelFont = pixel(16.0f);
+        m_Shared.SmallFont = pixel(8.0f);
+        m_Shared.SmoothFont = assets.Load<Emerald::Font>(path, {.Size = 40.0f, .Oversample = 2});
     }
-
-    // The hero sheet (tools/sprites/make_hero.py): sprites and animations from hero.json, the
-    // image from hero.png next to it. Edit either while the sandbox runs (debug build) and the
-    // hero updates. Also a file that does not exist, to show the placeholder.
-    void LoadHero()
-    {
-        m_Hero = GetAssets().Load<Emerald::TextureAtlas>("sprites/hero.json");
-        m_Missing = GetAssets().Load<Emerald::Texture>("sprites/missing.png");
-        m_HeroAnimator.Play(m_Hero->GetAnimation("idle"));
-        m_CoinAnimator.Play(m_Hero->GetAnimation("coin"));
-        // The jump is a "once" animation: when it ends, flash and go back to idle / walk.
-        m_HeroAnimator.OnFinished = [this](const Emerald::Animation&) {
-            m_Jumping = false;
-            m_Flash = 0.25f;
-            ++m_JumpsLanded;
-        };
-    }
-
-    // Window size in window coordinates as floats: the pixel-space projections use it.
-    [[nodiscard]] Vec2 GetViewSize() const { return Vec2(GetWindowSize()); }
 
     bool CreateGpuResources()
     {
@@ -1058,34 +672,11 @@ private:
         return m_Pipeline && m_TriangleBuffer;
     }
 
-    SandboxOptions m_Options;
+    SandboxShared m_Shared; // options, assets and the scene factory, for the scenes
     f32 m_Time = 0.0f;
-    Vec2 m_HeroPosition = kRoomOrigin + Vec2(640.0f, 450.0f); // world units
-    Emerald::Camera2D m_Camera;
-    bool m_FreeCamera = false; // false: follow the hero
-    Emerald::Sound m_Blip;
-    Emerald::AssetHandle<Emerald::TextureAtlas> m_Hero; // animated character + coins
-    Emerald::AssetHandle<Emerald::Texture> m_Missing;   // no such file: the placeholder
-    Emerald::Animator m_HeroAnimator;
-    Emerald::Animator m_CoinAnimator;
-    bool m_FacingLeft = false;
-    bool m_Jumping = false;
-    f32 m_Flash = 0.0f; // seconds of gold tint left
-    u32 m_JumpsLanded = 0;
-    CollisionDemo m_Collision; // the yard right of the room
-    TilemapRoom m_Room;        // the tilemap scene (T)
-    bool m_InRoom = false;
-    bool m_ShowHashGrid = true;
-    f32 m_PulseAge = 1.0f;                        // seconds since Space was pressed
-    std::optional<Emerald::TextureAtlas> m_Atlas; // the sprite demo's sheet
-    std::optional<Emerald::Texture> m_White;      // 1 x 1 white, for filled rectangles
-    MenuDemo m_Menu;                              // the tweened overlay menu
-    Emerald::Tweens m_Tweens;                     // the sandbox's own (the easing preview)
-    f32 m_PreviewT = 0.0f;                        // 0 to 1, over and over
+    Emerald::Tweens m_Tweens; // the sandbox's own (the easing preview)
+    f32 m_PreviewT = 0.0f;    // 0 to 1, over and over
     Emerald::Easing m_PreviewEasing = Emerald::Easing::BounceOut;
-    Emerald::AssetHandle<Emerald::Font> m_PixelFont;  // text demo: 16 px, Nearest
-    Emerald::AssetHandle<Emerald::Font> m_SmallFont;  // 8 px, Nearest
-    Emerald::AssetHandle<Emerald::Font> m_SmoothFont; // 40 px, Linear + oversampling
     SDL_GPUGraphicsPipeline* m_Pipeline = nullptr;
     SDL_GPUBuffer* m_TriangleBuffer = nullptr;
     SDL_GPUBuffer* m_QuadBuffer = nullptr;
@@ -1105,13 +696,15 @@ SandboxOptions ParseOptions(i32 argc, char** argv)
             ++i;
         } else if (arg == "--map") {
             options.Room.Map = std::filesystem::path(value);
-            options.Tilemap = true;
+            options.Start = SceneId::Tilemap;
             ++i;
         } else if (arg == "--zoom") {
             std::from_chars(value.data(), value.data() + value.size(), options.Room.Zoom);
             ++i;
         } else if (arg == "--tilemap") {
-            options.Tilemap = true;
+            options.Start = SceneId::Tilemap;
+        } else if (arg == "--demo") {
+            options.Start = SceneId::Demo;
         } else if (arg == "--pan") {
             options.Room.Pan = true;
         } else if (arg == "--stats") {

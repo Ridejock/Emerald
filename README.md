@@ -935,6 +935,10 @@ input.BindAction("Thrust", {GamepadButton::RightTrigger});  // trigger as a butt
 input.BindAxis("Rotate", GamepadAxis::LeftX);                // analog, deadzoned
 input.BindAxis("Rotate", GamepadButton::DPadLeft, GamepadButton::DPadRight);
 
+// Mouse buttons work like keys; the cursor position is in window coordinates.
+input.BindAction("Fire", {MouseButton::Left});
+const Vec2 cursor = input.GetMouse().GetPosition();
+
 // In OnFixedUpdate / OnUpdate:
 if (input.IsActionDown("Thrust"))    Accelerate(dt); // held
 if (input.WasActionPressed("Fire"))  Shoot();        // once per press
@@ -952,7 +956,12 @@ when its last key is. Opposite axis keys cancel out. Underneath, `Emerald::Keybo
 (`Keyboard.h`, `input.GetKeyboard()`) tracks raw key state; `Key` values are physical keys (SDL
 scancodes, so `Key::W` is the key left of `E` on any layout). `GetAxis` returns the binding with
 the largest magnitude, so a full key press beats a half-tilted stick. Rebinding keys keeps the pad
-bindings and vice versa.
+bindings and vice versa (and the mouse buttons).
+
+`Emerald::Mouse` (`Mouse.h`, `input.GetMouse()`) has the buttons (`Left`, `Middle`, `Right`, `X1`,
+`X2`), `GetPosition()`, `HasMoved()` (this frame, e.g. to switch aiming from a stick back to the
+mouse) and `IsInWindow()`. Clicks on the ImGui overlay don't reach the game, and losing focus
+releases the buttons like keys.
 
 ### Gamepads
 

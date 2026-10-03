@@ -168,8 +168,9 @@ private:
     f32 m_FrameSeconds = 0.0f; // last frame's time, for the CRT afterglow
     Keyboard m_Keyboard;       // raw key state, fed from SDL events
     Gamepads m_Gamepads;       // raw gamepad state, fed from SDL events
+    Mouse m_Mouse;             // raw mouse state, fed from SDL events
     Audio m_Audio;
-    Input m_Input{m_Keyboard, m_Gamepads}; // actions on top of both
+    Input m_Input{m_Keyboard, m_Gamepads, &m_Mouse}; // actions on top of all three
     FixedTimestep m_FixedTimestep;
     bool m_SdlInitialized = false;
     bool m_RendererInitialized = false;

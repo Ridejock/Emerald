@@ -27,6 +27,11 @@ void Input::BindAction(std::string_view action, std::initializer_list<GamepadBut
     AddUnique(GetOrAddAction(action).Buttons, buttons);
 }
 
+void Input::BindAction(std::string_view action, std::initializer_list<MouseButton> buttons)
+{
+    AddUnique(GetOrAddAction(action).MouseButtons, buttons);
+}
+
 void Input::RebindAction(std::string_view action, std::initializer_list<Key> keys)
 {
     GetOrAddAction(action).Keys.clear();
@@ -36,6 +41,12 @@ void Input::RebindAction(std::string_view action, std::initializer_list<Key> key
 void Input::RebindAction(std::string_view action, std::initializer_list<GamepadButton> buttons)
 {
     GetOrAddAction(action).Buttons.clear();
+    BindAction(action, buttons);
+}
+
+void Input::RebindAction(std::string_view action, std::initializer_list<MouseButton> buttons)
+{
+    GetOrAddAction(action).MouseButtons.clear();
     BindAction(action, buttons);
 }
 
@@ -90,6 +101,12 @@ std::span<const GamepadButton> Input::GetActionButtons(std::string_view action) 
     return a ? std::span<const GamepadButton>(a->Buttons) : std::span<const GamepadButton>();
 }
 
+std::span<const MouseButton> Input::GetActionMouseButtons(std::string_view action) const
+{
+    const Action* a = FindAction(action);
+    return a ? std::span<const MouseButton>(a->MouseButtons) : std::span<const MouseButton>();
+}
+
 bool Input::IsActionDown(std::string_view action) const
 {
     const Action* a = FindAction(action);
@@ -98,7 +115,9 @@ bool Input::IsActionDown(std::string_view action) const
     return std::any_of(a->Keys.begin(), a->Keys.end(),
                        [&](Key k) { return m_Keyboard.IsKeyDown(k); }) ||
            std::any_of(a->Buttons.begin(), a->Buttons.end(),
-                       [&](GamepadButton b) { return m_Gamepads.IsButtonDown(b); });
+                       [&](GamepadButton b) { return m_Gamepads.IsButtonDown(b); }) ||
+           std::any_of(a->MouseButtons.begin(), a->MouseButtons.end(),
+                       [&](MouseButton b) { return m_Mouse.IsButtonDown(b); });
 }
 
 bool Input::WasActionPressed(std::string_view action) const
@@ -117,6 +136,8 @@ bool Input::WasActionPressed(std::string_view action) const
         check(m_Keyboard.IsKeyDown(k), m_Keyboard.WasKeyPressed(k));
     for (GamepadButton b : a->Buttons)
         check(m_Gamepads.IsButtonDown(b), m_Gamepads.WasButtonPressed(b));
+    for (MouseButton b : a->MouseButtons)
+        check(m_Mouse.IsButtonDown(b), m_Mouse.WasButtonPressed(b));
     return pressedNow && !heldBefore;
 }
 
@@ -128,7 +149,9 @@ bool Input::WasActionReleased(std::string_view action) const
     return std::any_of(a->Keys.begin(), a->Keys.end(),
                        [&](Key k) { return m_Keyboard.WasKeyReleased(k); }) ||
            std::any_of(a->Buttons.begin(), a->Buttons.end(),
-                       [&](GamepadButton b) { return m_Gamepads.WasButtonReleased(b); });
+                       [&](GamepadButton b) { return m_Gamepads.WasButtonReleased(b); }) ||
+           std::any_of(a->MouseButtons.begin(), a->MouseButtons.end(),
+                       [&](MouseButton b) { return m_Mouse.WasButtonReleased(b); });
 }
 
 f32 Input::GetAxis(std::string_view axis) const
@@ -181,7 +204,7 @@ Input::Action& Input::GetOrAddAction(std::string_view name)
         if (a.Name == name)
             return a;
     }
-    m_Actions.push_back({std::string(name), {}, {}});
+    m_Actions.push_back({std::string(name), {}, {}, {}});
     return m_Actions.back();
 }
 

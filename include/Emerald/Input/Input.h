@@ -9,6 +9,7 @@
 #include "Emerald/Core/Defines.h"
 #include "Emerald/Input/Gamepads.h"
 #include "Emerald/Input/Keyboard.h"
+#include "Emerald/Input/Mouse.h"
 
 namespace Emerald {
 
@@ -19,6 +20,7 @@ namespace Emerald {
 //   // Once, e.g. in OnStart:
 //   input.BindAction("Fire", {Key::Space, Key::J});
 //   input.BindAction("Fire", {GamepadButton::South, GamepadButton::RightTrigger});
+//   input.BindAction("Fire", {MouseButton::Left});
 //   input.BindAxis("Rotate", Key::A, Key::D);          // negative key, positive key
 //   input.BindAxis("Rotate", Key::Left, Key::Right);   // more pairs for the same axis
 //   input.BindAxis("Rotate", GamepadAxis::LeftX);      // analog stick (deadzoned)
@@ -36,16 +38,23 @@ namespace Emerald {
 // gamepad drives the actions (single player); see Gamepads.h for deadzones, labels and pads.
 class Input {
 public:
-    Input(const Keyboard& keyboard, Gamepads& gamepads) : m_Keyboard(keyboard), m_Gamepads(gamepads)
+    // Without a mouse (e.g. in tests), mouse bindings are simply never down.
+    Input(const Keyboard& keyboard, Gamepads& gamepads, const Mouse* mouse = nullptr)
+        : m_Keyboard(keyboard), m_Gamepads(gamepads), m_Mouse(mouse ? *mouse : m_NoMouse)
     {
     }
+    // Not copyable: it may refer to its own stand-in mouse.
+    Input(const Input&) = delete;
+    Input& operator=(const Input&) = delete;
 
     // --- Action bindings (any bound key or button triggers the action) ---
     void BindAction(std::string_view action, std::initializer_list<Key> keys);
     void BindAction(std::string_view action, std::initializer_list<GamepadButton> buttons);
+    void BindAction(std::string_view action, std::initializer_list<MouseButton> buttons);
     // Replace only the keys, or only the gamepad buttons, of an action.
     void RebindAction(std::string_view action, std::initializer_list<Key> keys);
     void RebindAction(std::string_view action, std::initializer_list<GamepadButton> buttons);
+    void RebindAction(std::string_view action, std::initializer_list<MouseButton> buttons);
 
     // --- Axis bindings ---
     // A key or button pair: `negative` gives -1, `positive` +1, both or neither 0.
@@ -63,6 +72,7 @@ public:
     // What is bound to an action (empty if there is no such action).
     [[nodiscard]] std::span<const Key> GetActionKeys(std::string_view action) const;
     [[nodiscard]] std::span<const GamepadButton> GetActionButtons(std::string_view action) const;
+    [[nodiscard]] std::span<const MouseButton> GetActionMouseButtons(std::string_view action) const;
 
     // --- Queries ---
     // True while any bound key or button is held.
@@ -81,6 +91,8 @@ public:
     // Raw state, for the rare cases actions do not fit (e.g. "press a key to rebind"), and the
     // gamepad list, settings (deadzones) and button labels.
     [[nodiscard]] const Keyboard& GetKeyboard() const { return m_Keyboard; }
+    // The cursor position (window coordinates) and raw buttons.
+    [[nodiscard]] const Mouse& GetMouse() const { return m_Mouse; }
     [[nodiscard]] Gamepads& GetGamepads() { return m_Gamepads; }
     [[nodiscard]] const Gamepads& GetGamepads() const { return m_Gamepads; }
 
@@ -89,6 +101,7 @@ private:
         std::string Name;
         std::vector<Key> Keys;
         std::vector<GamepadButton> Buttons;
+        std::vector<MouseButton> MouseButtons;
     };
     template <typename T> struct Pair {
         T Negative;
@@ -113,6 +126,8 @@ private:
 
     const Keyboard& m_Keyboard;
     Gamepads& m_Gamepads;
+    Mouse m_NoMouse; // stands in when there is no mouse (declared before m_Mouse, which uses it)
+    const Mouse& m_Mouse;
     std::vector<Action> m_Actions;
     std::vector<Axis> m_Axes;
 };

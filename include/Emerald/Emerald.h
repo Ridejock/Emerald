@@ -19,6 +19,7 @@
 #include "Emerald/Input/Gamepads.h"
 #include "Emerald/Input/Input.h"
 #include "Emerald/Input/Keyboard.h"
+#include "Emerald/Input/Mouse.h"
 #include "Emerald/Math/Math.h"
 #include "Emerald/Memory/Memory.h"
 #include "Emerald/Particles/ParticleSystem.h"

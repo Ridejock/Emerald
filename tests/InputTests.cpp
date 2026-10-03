@@ -4,6 +4,7 @@
 #include <Emerald/Core/FixedTimestep.h>
 #include <Emerald/Input/Input.h>
 #include <Emerald/Input/Keyboard.h>
+#include <Emerald/Input/Mouse.h>
 
 #include "Test.h"
 
@@ -117,6 +118,53 @@ TEST(ActionsWithSeveralKeys)
     // Unknown names are never active.
     CHECK(!input.IsActionDown("Jump") && !input.WasActionPressed("Jump"));
     CHECK(input.GetAxis("Nothing") == 0.0f);
+}
+
+TEST(ActionsWithMouseButtons)
+{
+    Keyboard keyboard;
+    Gamepads pads;
+    Mouse mouse;
+    Input input(keyboard, pads, &mouse);
+    input.BindAction("Fire", {Key::Space});
+    input.BindAction("Fire", {MouseButton::Left});
+    CHECK(input.GetActionMouseButtons("Fire").size() == 1);
+
+    mouse.BeginFrame();
+    mouse.OnButton(MouseButton::Left, true);
+    CHECK(input.IsActionDown("Fire") && input.WasActionPressed("Fire"));
+    // Space while the button is held is not a new press.
+    keyboard.BeginFrame();
+    mouse.BeginFrame();
+    keyboard.OnKeyDown(SDL_SCANCODE_SPACE);
+    CHECK(!input.WasActionPressed("Fire"));
+    keyboard.OnKeyUp(SDL_SCANCODE_SPACE);
+    mouse.OnButton(MouseButton::Left, false);
+    CHECK(!input.IsActionDown("Fire") && input.WasActionReleased("Fire"));
+
+    // Rebinding replaces only the mouse buttons.
+    input.RebindAction("Fire", {MouseButton::Right});
+    mouse.BeginFrame();
+    mouse.OnButton(MouseButton::Left, true);
+    CHECK(!input.IsActionDown("Fire"));
+    mouse.OnButton(MouseButton::Right, true);
+    CHECK(input.IsActionDown("Fire"));
+    CHECK(input.GetActionKeys("Fire").size() == 1);
+
+    // Position and motion, and a focus loss releasing everything.
+    CHECK(!mouse.HasMoved() && !mouse.IsInWindow());
+    mouse.OnMotion({120.0f, 45.5f});
+    CHECK(mouse.HasMoved() && mouse.IsInWindow());
+    CHECK(input.GetMouse().GetPosition() == Vec2(120.0f, 45.5f));
+    mouse.BeginFrame();
+    CHECK(!mouse.HasMoved());
+    mouse.ReleaseAll();
+    CHECK(!input.IsActionDown("Fire"));
+
+    // Without a mouse, mouse bindings are never down.
+    Input noMouse(keyboard, pads);
+    noMouse.BindAction("Fire", {MouseButton::Left});
+    CHECK(!noMouse.IsActionDown("Fire"));
 }
 
 TEST(ActionsTapAndFixedSteps)

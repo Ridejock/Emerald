@@ -125,6 +125,7 @@ int Application::Run()
 
         m_Keyboard.BeginFrame();
         m_Gamepads.BeginFrame();
+        m_Mouse.BeginFrame();
         SDL_Event event;
         while (SDL_PollEvent(&event))
             ProcessEvent(event);
@@ -140,9 +141,11 @@ int Application::Run()
         for (u32 i = 0; i < steps && m_Running; ++i) {
             m_Keyboard.BeginFixedStep();
             m_Gamepads.BeginFixedStep();
+            m_Mouse.BeginFixedStep();
             OnFixedUpdate(m_FixedTimestep.GetStepSeconds());
             m_Keyboard.EndFixedStep();
             m_Gamepads.EndFixedStep();
+            m_Mouse.EndFixedStep();
         }
         m_FrameSeconds = static_cast<f32>(elapsedNs) / 1e9f;
         OnUpdate(m_FrameSeconds);
@@ -174,8 +177,10 @@ void Application::ProcessEvent(const SDL_Event& event)
     // not WantCaptureKeyboard: with keyboard navigation on, the latter is true whenever an ImGui
     // window has focus, which would block the game.) Key-ups always pass, so no key stays stuck.
     const bool imguiWantsKeys = ImGui::GetIO().WantTextInput;
+    const bool imguiWantsMouse = ImGui::GetIO().WantCaptureMouse; // the cursor is over ImGui
 #else
     const bool imguiWantsKeys = false;
+    const bool imguiWantsMouse = false;
 #endif
 
     switch (event.type) {
@@ -194,6 +199,19 @@ void Application::ProcessEvent(const SDL_Event& event)
         // We will not see key-ups (or gamepad events) while another window has focus.
         m_Keyboard.ReleaseAll();
         m_Gamepads.ReleaseAll();
+        m_Mouse.ReleaseAll();
+        break;
+    case SDL_EVENT_MOUSE_BUTTON_DOWN:
+    case SDL_EVENT_MOUSE_BUTTON_UP:
+        // Clicks on the ImGui overlay are for ImGui (releases always go through).
+        if (!event.button.down || !imguiWantsMouse)
+            m_Mouse.OnButton(static_cast<MouseButton>(event.button.button), event.button.down);
+        break;
+    case SDL_EVENT_MOUSE_MOTION:
+        m_Mouse.OnMotion({event.motion.x, event.motion.y});
+        break;
+    case SDL_EVENT_WINDOW_MOUSE_LEAVE:
+        m_Mouse.OnLeave();
         break;
     case SDL_EVENT_GAMEPAD_ADDED:
         m_Gamepads.Open(event.gdevice.which);

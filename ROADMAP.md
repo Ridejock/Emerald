@@ -186,6 +186,22 @@ Done when:
 - `Tweak` variables (float/int/bool/color) registered from code appear in a panel and can be saved
 - Compiled out entirely in builds without ImGui
 
+### Branching dialogue system ([#23](https://github.com/Ridejock/Emerald/issues/23))
+
+A small branching dialogue module inspired by Jari Komppa's DialogTree (D3), written fresh (no D3
+code): a conversation is a deck of cards, each with text and answers that jump to other cards;
+answers can require flags and set or clear them. Dialogues are JSON files loaded and hot reloaded
+through the asset manager, shown in a text box with a typewriter reveal (tweens) and an answer
+menu (UI widgets, #12); flags and the current card are saved with the save system (#15).
+
+Done when:
+- Load a dialogue file and walk it: question, answers, choose, goto; missing card ids are logged,
+  not a crash
+- Flags gate answers and can be set/cleared by choices; unit tests port D3's guard and tag samples
+- Text box with typewriter effect and answer selection works with mouse, keyboard and gamepad
+- State round-trips through the save system
+- Used for NPCs in a test game (e.g. the Blaster Master-style platformer)
+
 ### Phase 3 test game ([#17](https://github.com/Ridejock/Emerald/issues/17))
 
 Polish pass on the phase 2 platformer (or a new small game) using the UI widgets, lighting/post chain, music crossfades, saves and the editor tools.

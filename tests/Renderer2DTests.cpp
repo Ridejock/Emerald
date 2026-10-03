@@ -138,6 +138,24 @@ TEST(Renderer2DSpriteQuad)
     CHECK(v[0].Color == Renderer2D::PackColor({1.0f, 0.0f, 0.0f, 1.0f}));
 }
 
+TEST(Renderer2DFillRect)
+{
+    Renderer2D r; // no device: FillRect makes a texture without GPU resources
+    r.Begin(Mat4::Identity());
+    r.FillRect({10.0f, 20.0f}, {30.0f, 40.0f}, {0.0f, 1.0f, 0.0f, 0.5f});
+    r.End();
+
+    const auto v = r.GetSpriteVertices();
+    CHECK(v.size() == 6);
+    CHECK_NEAR(v[0].Position, Vec2(10.0f, 20.0f));
+    CHECK_NEAR(v[2].Position, Vec2(40.0f, 60.0f));
+    CHECK_NEAR(v[0].TexCoord, Vec2(0.0f, 0.0f));
+    CHECK_NEAR(v[2].TexCoord, Vec2(1.0f, 1.0f));
+    CHECK(v[0].Color == Renderer2D::PackColor({0.0f, 1.0f, 0.0f, 0.5f}));
+    CHECK(r.GetCommands().size() == 1 &&
+          r.GetCommands()[0].Type == Renderer2D::CommandType::Sprites);
+}
+
 TEST(Renderer2DSpriteOptions)
 {
     const Texture texture = Texture::CreateWithoutGpu(10, 10);

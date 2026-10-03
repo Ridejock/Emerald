@@ -4,10 +4,13 @@
 #include <cmath>
 #include <cstddef>
 #include <cstring>
+#include <memory>
+#include <optional>
 #include <utility>
 
 #include <SDL3/SDL.h>
 
+#include "Emerald/Assets/Image.h"
 #include "Emerald/Core/Log.h"
 #include "Emerald/Math/Common.h"
 #include "Emerald/Renderer/Pipeline.h"
@@ -122,6 +125,11 @@ bool Renderer2D::Init(SDL_GPUDevice* device, SDL_GPUTextureFormat colorFormat)
                       "drawn (lines still work)");
         return false;
     }
+
+    // One white pixel, tinted by FillRect.
+    const Image white{.Width = 1, .Height = 1, .Pixels = {255, 255, 255, 255}};
+    if (std::optional<Texture> texture = Texture::Create(device, white))
+        m_White = std::make_unique<Texture>(std::move(*texture));
     return true;
 }
 
@@ -136,6 +144,7 @@ void Renderer2D::Shutdown()
             SDL_ReleaseGPUGraphicsPipeline(m_Device, pipeline);
     m_LineStream.Release(m_Device);
     m_SpriteStream.Release(m_Device);
+    m_White.reset();
     m_Pipeline = nullptr;
     m_SpritePipeline = nullptr;
     m_AdditivePipeline = nullptr;
@@ -265,6 +274,14 @@ void Renderer2D::DrawRect(const Vec2& topLeft, const Vec2& size, const Vec4& col
     const Vec2 corners[] = {topLeft, topLeft + Vec2(size.x, 0.0f), topLeft + size,
                             topLeft + Vec2(0.0f, size.y)};
     DrawPolygon(corners, color);
+}
+
+void Renderer2D::FillRect(const Vec2& topLeft, const Vec2& size, const Vec4& color)
+{
+    if (!m_White)
+        m_White = std::make_unique<Texture>(Texture::CreateWithoutGpu(1, 1));
+    DrawSprite(Sprite::FromTexture(*m_White), topLeft,
+               {.Size = size, .Origin = {0.0f, 0.0f}, .Tint = color});
 }
 
 void Renderer2D::DrawSprite(const Texture& texture, const Vec2& position,

@@ -386,7 +386,8 @@ void OnRender2D(Emerald::Renderer2D& r) override
     r.DrawPolygon(shipPoints, color, {.Position = pos, .Rotation = angle, .Scale = Vec2(2)});
     r.DrawPolyline(points, color);                  // open; pass closed = true to close it
     r.DrawCircle({400, 300}, 50, color, 24);        // 24 segments
-    r.DrawRect({20, 20}, {100, 50}, color);
+    r.DrawRect({20, 20}, {100, 50}, color);         // outline
+    r.FillRect({20, 80}, {100, 50}, color);         // filled (a tinted white sprite)
     r.End();
 }
 ```

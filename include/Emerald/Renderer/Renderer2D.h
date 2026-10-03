@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include <span>
 #include <string_view>
 #include <vector>
@@ -14,6 +15,7 @@
 #include "Emerald/Renderer/Camera2D.h"
 #include "Emerald/Renderer/Font.h"
 #include "Emerald/Renderer/Sprite.h"
+#include "Emerald/Renderer/Texture.h"
 
 namespace Emerald {
 
@@ -135,7 +137,10 @@ public:
     void DrawPolygon(std::span<const Vec2> points, const Vec4& color,
                      const Transform2D& transform = {});
     void DrawCircle(const Vec2& center, f32 radius, const Vec4& color, u32 segments = 32);
-    void DrawRect(const Vec2& topLeft, const Vec2& size, const Vec4& color);
+    void DrawRect(const Vec2& topLeft, const Vec2& size, const Vec4& color); // outline
+    // Filled rectangle (panels, fades, bars). It is a sprite of a 1x1 white texture, so it keeps
+    // the call order with other sprites and uses the sprite pipeline's blend modes.
+    void FillRect(const Vec2& topLeft, const Vec2& size, const Vec4& color);
 
     // A textured quad; see SpriteOptions for size, rotation, origin, tint, flipping and pixel
     // snapping. `position` is where the sprite's origin (by default its center) goes.
@@ -225,6 +230,9 @@ private:
     SDL_GPUGraphicsPipeline* m_AdditiveSpritePipeline = nullptr;
     GpuStream m_LineStream{.Name = "line"};
     GpuStream m_SpriteStream{.Name = "sprite"};
+    // For FillRect: made by Init, or without GPU resources on first use when there is no device
+    // (tests).
+    std::unique_ptr<Texture> m_White;
 };
 
 } // namespace Emerald

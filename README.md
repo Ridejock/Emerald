@@ -284,6 +284,7 @@ structure-of-arrays layout instead (all x together, all y together).
 | `ParticleTests` | particle spawning (shapes, ranges, base velocity), capacity limit, drag/gravity step, swap-remove, continuous rate, color/size fade when drawing, scalar and SSE updates agreeing over 240 steps |
 | `CollisionTests` | circle/circle, circle/AABB, AABB/AABB and SAT polygon contacts (normals, depths, touching = none, concentric circles, center inside a box, containment, winding, degenerate input); raycasts against circles, boxes and polygons (hits, misses, parallel, max distance, starting inside); `SpatialHash` insert/update/remove/query/pairs, wrap-around, brute-force equivalence on random data |
 | `AssetTests` | asset manager bookkeeping with a GPU-less loader: dedupe (same path, `..` paths, absolute paths; other options or types are other assets), handle copy/move/reset reference counts, unloading on `Update` and reviving before it, placeholders for missing and broken files (texture, atlas, font, sound), hot reload in place (textures, atlas image + JSON with sprites and animators keeping their pointers, fonts, real WAVs), broken reloads keeping the old version, placeholders replaced when the file appears, reloads through `Update` on the thread pool within a second |
+| `TweenTests` | every easing curve at 0, 0.5 and 1, Out mirroring In and InOut symmetry, clamping; tweens of f32 / Vec2 / Vec4 with delay, start values, repeat and yoyo, endless tweens, cancelling (chains included, no callbacks), chaining with leftover time, completion firing exactly once, callbacks starting and clearing tweens, `CancelTarget` from a destructor, `Run`, stale ids; one big step vs many uneven ones giving the same result; timers `After` / `Every` / cancel (also from their own callback), callbacks adding timers, frame-rate independence with uneven dt |
 
 ```sh
 cmake --build --preset debug
@@ -632,6 +633,72 @@ The sandbox's hero sheet is hand-made pixel art written as text in `tools/sprite
 (standard-library Python, fixed 8-color palette, deterministic output); run
 `python3 tools/sprites/make_hero.py` to regenerate `sandbox/assets/sprites/hero.png` and
 `hero.json`.
+
+## Tweens, easing and timers (`Tween/`)
+
+`Emerald/Tween/Easing.h` has the usual easing curves, `Tween.h` animates values with them, and
+`Timers.h` runs code later or repeatedly. The game owns a `Tweens` and a `Timers` and advances them
+with its update dt, so they pause and slow down with the game:
+
+```cpp
+#include <Emerald/Tween/Timers.h>
+#include <Emerald/Tween/Tween.h>
+
+using Emerald::Easing;
+
+// Drop the title in with a bounce, then fade the hint in after it.
+m_TitleY = -80.0f;
+const Emerald::TweenId drop = m_Tweens.To(&m_TitleY, 70.0f, 0.9f, {.Curve = Easing::BounceOut});
+m_Tweens.FromTo(&m_HintAlpha, 0.0f, 1.0f, 0.3f, {.After = drop});
+// Blink a color three times (there and back, three times), then say so.
+m_Tweens.To(&m_Color, red, 0.15f,
+            {.Repeat = 5, .Yoyo = true, .OnComplete = [this] { EM_INFO("done blinking"); }});
+// Timers: once, and every half second until cancelled.
+m_Timers.After(2.0f, [this] { ShowHint(); });
+const Emerald::TimerId blink = m_Timers.Every(0.5f, [this] { m_On = !m_On; });
+
+// Every frame:
+m_Tweens.Update(dt);
+m_Timers.Update(dt);
+```
+
+- **Easing:** `Ease(Easing::QuadOut, t)` maps t in [0, 1] to the eased amount (0 at 0, exactly 1
+  at 1). Linear, Quad, Cubic, Back (overshoots a little), Elastic (wobbles) and Bounce, each as In
+  (slow start), Out (slow end) and InOut. `kAllEasings` and `GetEasingName` are there for menus.
+- **Tweens:** `To(&value, target, seconds, options)` for `f32`, `Vec2` and `Vec4` (colors) starts
+  from wherever the value is when the tween starts (after its delay); `FromTo` jumps to a start
+  value first. `Run(seconds, [](f32 eased) { ... })` has no target and just calls you back.
+  `TweenOptions` is `{.Curve, .Delay, .Repeat, .Yoyo, .After, .OnComplete}`: `Repeat` is extra
+  plays (`Tweens::kForever` never stops), `Yoyo` plays every other one backwards, `After` chains
+  this tween to start when another completes, and `OnComplete` fires exactly once, when the last
+  play ends (never for a cancelled or endless tween).
+- **Cancelling:** `Cancel(id)` stops a tween where it is (no `OnComplete`) along with everything
+  chained after it; `CancelTarget(&value)` cancels every tween writing to `value`; `Clear()`
+  everything. Ids are never reused, so cancelling a finished tween is a harmless no-op that
+  returns false.
+- **Timers:** `After(seconds, fn)`, `Every(interval, fn)`, `Cancel(id)`, `GetTimeLeft(id)`.
+- **Frame-rate independent:** time past the end of a play, a delay, a chained tween or a timer
+  deadline carries over, so the result depends only on the total time: `Every(0.1f, ...)` fires
+  ten times in a second however that second is split into frames (a long frame fires it several
+  times). Easing at 0, 0.5 and 1 and these timing rules are unit-tested (`TweenTests`).
+- **Callbacks** may start, cancel or chain tweens and timers, including their own; new ones begin
+  on the next `Update`.
+
+**Lifetime (read this one):** a tween keeps a pointer to its target and writes through it on every
+`Update` until it completes or is cancelled. So the value must stay where it is until then: cancel
+its tweens (`CancelTarget(&value)` or `Cancel(id)`) before the value is destroyed or moved, e.g. in
+its owner's destructor. Pointers into a `std::vector` that grows are the classic trap. The easiest
+way to be safe is to keep the `Tweens` in the same object as the values it animates (the sandbox's
+`MenuDemo` does that), so they go away together. When the value lives somewhere that moves (an ECS
+component, a vector element), use `Run` and look the value up in the callback. The same goes for
+whatever a callback captures, `this` included.
+
+The sandbox opens with a tweened menu (`sandbox/src/MenuDemo.h`): the title drops in with
+`BounceOut`, the panel slides in from the right with `BackOut`, the items fade in one after another
+(delays), the selection highlight glides between items, and closing plays a chain (items fade out,
+then the panel slides away, then the title leaves). M / Start toggles it; Up / Down and Enter /
+South pick an item. The ImGui panel shows the menu's tween and timer counts and an easing
+visualizer: pick a curve and a dot runs along it.
 
 ## Text (`Font`)
 
@@ -1038,7 +1105,7 @@ It is always built in Release and lives in `build/_shadercross`, which every pre
 ## Project layout
 
 ```
-include/Emerald/   Public engine headers (Core/, Input/, Audio/, Renderer/, Particles/, Physics/, Assets/, Math/, Memory/)
+include/Emerald/   Public engine headers (Core/, Input/, Audio/, Renderer/, Particles/, Physics/, Assets/, Tween/, Math/, Memory/)
 src/               Engine implementation
 shaders/           The engine's HLSL shaders (Renderer2D lines, Sprite, the CRT post-process; compiled at build time for every app)
 sandbox/           Example application (src/, its own shaders/, assets/ for the demo font and hero sheet)

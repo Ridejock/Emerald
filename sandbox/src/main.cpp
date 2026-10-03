@@ -16,6 +16,7 @@
 #include <Emerald/Emerald.h>
 
 #include "CollisionDemo.h"
+#include "MenuDemo.h"
 
 #if EMERALD_WITH_IMGUI
 #include <imgui.h>
@@ -186,6 +187,18 @@ protected:
         input.BindAction("Run", {GamepadButton::East});
         input.BindAction("Quit", {Key::Escape});
         input.BindAction("Crt", {Key::C}); // CRT post-process on/off
+        // The tweened menu (open at startup): M / Start toggles it, Up / Down and Enter / South
+        // pick an item. While it is open the hero stands still.
+        input.BindAction("Menu", {Key::M});
+        input.BindAction("Menu", {GamepadButton::Start});
+        input.BindAction("MenuUp", {Key::Up});
+        input.BindAction("MenuUp", {Key::W});
+        input.BindAction("MenuUp", {GamepadButton::DPadUp});
+        input.BindAction("MenuDown", {Key::Down});
+        input.BindAction("MenuDown", {Key::S});
+        input.BindAction("MenuDown", {GamepadButton::DPadDown});
+        input.BindAction("MenuSelect", {Key::Enter});
+        input.BindAction("MenuSelect", {GamepadButton::South});
         // Camera: Tab / North toggles following the hero or free panning (with the move keys),
         // zoom with the wheel, Q / E or the triggers, rotate with F / G or the shoulders.
         input.BindAction("CameraMode", {Key::Tab});
@@ -232,6 +245,17 @@ protected:
         }
         LoadFonts();
         LoadHero();
+
+        // A 1 x 1 white texture: tinted and stretched, it fills the menu's rectangles.
+        Emerald::Image white;
+        white.Width = 1;
+        white.Height = 1;
+        white.Pixels = {255, 255, 255, 255};
+        m_White = Emerald::Texture::Create(GetRenderer().GetDevice(), white);
+        m_Menu.Open();
+        // The ImGui easing preview: a dot running along the curve, over and over.
+        m_Tweens.FromTo(&m_PreviewT, 0.0f, 1.0f, 1.5f,
+                        {.Curve = Emerald::Easing::Linear, .Repeat = Emerald::Tweens::kForever});
     }
 
     // Input + fixed-step demo: move the hero with WASD / arrow keys / left stick / d-pad (at
@@ -242,6 +266,8 @@ protected:
     {
         Emerald::Input& input = GetInput();
         Vec2 direction(input.GetAxis("MoveX"), input.GetAxis("MoveY"));
+        if (m_Menu.IsOpen())
+            direction = Vec2(0.0f); // the arrows drive the menu
         const f32 length = Emerald::Length(direction);
         // Keys give length 1 or 1.41 (diagonal), a stick anything up to 1: cap it at 1 so
         // diagonals are not faster and a half-tilted stick moves at half speed.
@@ -274,7 +300,7 @@ protected:
         if (input.WasActionPressed("Shake"))
             m_Camera.AddTrauma(0.6f);
 
-        if (input.WasActionPressed("Pulse")) {
+        if (input.WasActionPressed("Pulse") && !m_Menu.IsOpen()) {
             m_PulseAge = 0.0f;
             if (m_Hero) {
                 m_Jumping = true;
@@ -292,6 +318,41 @@ protected:
         m_Camera.Update(dt);
         m_CoinAnimator.Update(dt);
         m_Flash = Emerald::Max(m_Flash - dt, 0.0f);
+    }
+
+    // Menu input, then the tweens and timers advance by this frame's dt.
+    void UpdateMenu(f32 dt)
+    {
+        const Emerald::Input& input = GetInput();
+        if (input.WasActionPressed("Menu")) {
+            if (m_Menu.IsOpen())
+                m_Menu.Close();
+            else
+                m_Menu.Open();
+        } else if (m_Menu.IsOpen()) {
+            if (input.WasActionPressed("MenuUp"))
+                m_Menu.MoveSelection(-1);
+            if (input.WasActionPressed("MenuDown"))
+                m_Menu.MoveSelection(1);
+            if (input.WasActionPressed("MenuSelect")) {
+                switch (m_Menu.GetSelected()) {
+                case MenuDemo::Choice::Resume:
+                    m_Menu.Close();
+                    break;
+                case MenuDemo::Choice::ShakeCamera:
+                    m_Camera.AddTrauma(0.6f);
+                    break;
+                case MenuDemo::Choice::CrtEffect:
+                    SetCrtEnabled(!IsCrtEnabled());
+                    break;
+                case MenuDemo::Choice::ReplayIntro:
+                    m_Menu.Open();
+                    break;
+                }
+            }
+        }
+        m_Menu.Update(dt);
+        m_Tweens.Update(dt);
     }
 
     // Idle or walk (unless a jump is playing; its finish event ends it), at the run speed.
@@ -324,6 +385,7 @@ protected:
             Quit();
         if (GetInput().WasActionPressed("Crt"))
             SetCrtEnabled(!IsCrtEnabled());
+        UpdateMenu(dt);
 
         // Capture the last frame of a --frames run (or frame 60 otherwise).
         const u64 shotFrame = m_Options.Frames != 0 ? m_Options.Frames : 60;
@@ -359,6 +421,8 @@ protected:
 
         r.Begin(Mat4::OrthoPixelSpace(size.x, size.y));
         DrawTextDemo(r, size);
+        if (m_PixelFont && m_SmallFont && m_SmoothFont && m_White)
+            m_Menu.Draw(r, size, *m_SmoothFont, *m_PixelFont, *m_SmallFont, *m_White);
         r.End();
     }
 
@@ -621,6 +685,7 @@ protected:
         ShowCamera();
         ShowCollision();
         ShowAssets();
+        ShowTweens();
         ShowGamepads();
         ImGui::Text("Audio: %s", GetAudio().IsAvailable() ? "on" : "no device");
         ImGui::Separator();
@@ -724,6 +789,38 @@ protected:
             }
             ImGui::EndTable();
         }
+        ImGui::Separator();
+    }
+
+    // The menu's tween and timer counts, and an easing curve preview with a dot running along it.
+    void ShowTweens()
+    {
+        ImGui::Text("Menu: %s, %zu tweens, %zu timers running",
+                    m_Menu.IsClosing() ? "closing" : (m_Menu.IsVisible() ? "open" : "closed"),
+                    m_Menu.GetTweenCount(), m_Menu.GetTimerCount());
+        if (ImGui::BeginCombo("Easing", Emerald::GetEasingName(m_PreviewEasing))) {
+            for (const Emerald::Easing easing : Emerald::kAllEasings)
+                if (ImGui::Selectable(Emerald::GetEasingName(easing), easing == m_PreviewEasing))
+                    m_PreviewEasing = easing;
+            ImGui::EndCombo();
+        }
+        // The curve from t = 0 to 1, with room above and below for Back / Elastic overshoot.
+        std::array<f32, 64> curve{};
+        for (usize i = 0; i < curve.size(); ++i)
+            curve[i] = Emerald::Ease(m_PreviewEasing,
+                                     static_cast<f32>(i) / static_cast<f32>(curve.size() - 1));
+        constexpr f32 kLow = -0.4f;
+        constexpr f32 kHigh = 1.4f;
+        ImGui::PlotLines("##curve", curve.data(), static_cast<i32>(curve.size()), 0, nullptr, kLow,
+                         kHigh, ImVec2(260.0f, 110.0f));
+        const ImVec2 min = ImGui::GetItemRectMin();
+        const ImVec2 max = ImGui::GetItemRectMax();
+        const f32 value = Emerald::Ease(m_PreviewEasing, m_PreviewT);
+        const ImVec2 dot(min.x + (max.x - min.x) * m_PreviewT,
+                         max.y - (max.y - min.y) * (value - kLow) / (kHigh - kLow));
+        ImGui::GetWindowDrawList()->AddCircleFilled(dot, 4.0f, IM_COL32(255, 215, 80, 255));
+        ImGui::SameLine();
+        ImGui::Text("t %.2f\nvalue %.2f", static_cast<f64>(m_PreviewT), static_cast<f64>(value));
         ImGui::Separator();
     }
 
@@ -932,8 +1029,13 @@ private:
     u32 m_JumpsLanded = 0;
     CollisionDemo m_Collision; // the yard right of the room
     bool m_ShowHashGrid = true;
-    f32 m_PulseAge = 1.0f;                            // seconds since Space was pressed
-    std::optional<Emerald::TextureAtlas> m_Atlas;     // the sprite demo's sheet
+    f32 m_PulseAge = 1.0f;                        // seconds since Space was pressed
+    std::optional<Emerald::TextureAtlas> m_Atlas; // the sprite demo's sheet
+    std::optional<Emerald::Texture> m_White;      // 1 x 1 white, for filled rectangles
+    MenuDemo m_Menu;                              // the tweened overlay menu
+    Emerald::Tweens m_Tweens;                     // the sandbox's own (the easing preview)
+    f32 m_PreviewT = 0.0f;                        // 0 to 1, over and over
+    Emerald::Easing m_PreviewEasing = Emerald::Easing::BounceOut;
     Emerald::AssetHandle<Emerald::Font> m_PixelFont;  // text demo: 16 px, Nearest
     Emerald::AssetHandle<Emerald::Font> m_SmallFont;  // 8 px, Nearest
     Emerald::AssetHandle<Emerald::Font> m_SmoothFont; // 40 px, Linear + oversampling

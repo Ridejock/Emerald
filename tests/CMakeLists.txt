@@ -79,3 +79,9 @@ target_compile_definitions(EmeraldAssetTests PRIVATE
     EMERALD_TEST_FONT="${PROJECT_SOURCE_DIR}/sandbox/assets/fonts/PressStart2P-Regular.ttf")
 emerald_set_warnings(EmeraldAssetTests)
 add_test(NAME AssetTests COMMAND EmeraldAssetTests)
+
+# Easing curves, tweens (delay, repeat, yoyo, chaining, cancelling) and timers, at varied dt.
+add_executable(EmeraldTweenTests TestMain.cpp TweenTests.cpp)
+target_link_libraries(EmeraldTweenTests PRIVATE Emerald::Emerald)
+emerald_set_warnings(EmeraldTweenTests)
+add_test(NAME TweenTests COMMAND EmeraldTweenTests)

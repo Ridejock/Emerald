@@ -35,3 +35,6 @@
 #include "Emerald/Renderer/Texture.h"
 #include "Emerald/Renderer/TextureAtlas.h"
 #include "Emerald/Renderer/Shader.h"
+#include "Emerald/Tween/Easing.h"
+#include "Emerald/Tween/Timers.h"
+#include "Emerald/Tween/Tween.h"

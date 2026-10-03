@@ -87,6 +87,9 @@ add_library(Emerald STATIC
     src/Renderer/Font.cpp
     src/Renderer/CrtEffect.cpp
     src/Particles/ParticleSystem.cpp
+    src/Tween/Easing.cpp
+    src/Tween/Timers.cpp
+    src/Tween/Tween.cpp
     src/Assets/AssetLoader.cpp
     src/Assets/Assets.cpp
     src/Assets/Image.cpp

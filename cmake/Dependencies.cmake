@@ -93,12 +93,14 @@ if(EMERALD_USE_IMGUI)
     target_link_libraries(emerald_imgui PUBLIC SDL3::SDL3)
 endif()
 
-# --- EnTT (optional) --------------------------------------------------------
-if(EMERALD_USE_ENTT)
-    FetchContent_Declare(EnTT
-        GIT_REPOSITORY https://github.com/skypjack/entt.git
-        GIT_TAG        v3.16.0
-        GIT_SHALLOW    TRUE
-    )
-    FetchContent_MakeAvailable(EnTT)
-endif()
+# --- EnTT --------------------------------------------------------------------
+# The entity layer (Entity/World.h) is built on it. Its include directory is marked SYSTEM, so
+# warnings from inside EnTT's headers do not count against ours (-Wpedantic, /W4).
+FetchContent_Declare(EnTT
+    GIT_REPOSITORY https://github.com/skypjack/entt.git
+    GIT_TAG        v3.16.0
+    GIT_SHALLOW    TRUE
+)
+FetchContent_MakeAvailable(EnTT)
+get_target_property(EMERALD_ENTT_INCLUDES EnTT INTERFACE_INCLUDE_DIRECTORIES)
+set_target_properties(EnTT PROPERTIES INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${EMERALD_ENTT_INCLUDES}")

@@ -1,14 +1,16 @@
 // The sandbox: every engine feature in one app, organised as scenes on the Application's
 // SceneStack (Emerald/Scene):
 //
-//   Title (TitleScene.h) --Enter--> Camera demo (DemoScene.h) <--T--> Tilemap room (TilemapScene.h)
-//                                          \---------- M ----------/
-//                                                       v
-//                                          Pause (PauseScene.h, drawn over the scene below)
+//   Title (TitleScene.h) --Enter--> Camera demo (DemoScene.h) --T--> Tilemap room (TilemapScene.h)
+//                                        ^                                  |
+//                                        +---T--- Entity swarm (SwarmScene.h) <--T--+
+//
+//   M in any of the three pushes Pause (PauseScene.h, drawn over the scene below).
 //
 // The app itself keeps what is global: input bindings, the shared assets (Shared.h), the
-// triangle pipeline and EnTT quads drawn under every scene, Escape / C, screenshots, and the ImGui
-// "Emerald" window with the scene stack (the scenes append their own sections to it).
+// triangle pipeline and the app-level entity's quad drawn under every scene, Escape / C,
+// screenshots, and the ImGui "Emerald" window with the scene stack (the scenes append their own
+// sections to it).
 
 #include <array>
 #include <charconv>
@@ -31,6 +33,7 @@
 #include "DemoScene.h"
 #include "PauseScene.h"
 #include "Shared.h"
+#include "SwarmScene.h"
 #include "TilemapScene.h"
 #include "TitleScene.h"
 
@@ -68,8 +71,8 @@ constexpr std::array<Vertex, 3> kTriangle{{
     {{0.866f, 0.5f}, {0.2f, 0.4f, 1.0f}},  // bottom right: blue
 }};
 
-#if EMERALD_WITH_ENTT
-// Unit quad from (0, 0) (top-left) to (1, 1) (bottom-right) in pixel space (+Y down).
+// Unit quad from (0, 0) (top-left) to (1, 1) (bottom-right) in pixel space (+Y down): the app-wide
+// World's entity (see OnStart).
 constexpr Vec3 kEmerald{0.18f, 0.8f, 0.44f};
 constexpr std::array<Vertex, 6> kQuad{{
     {{0.0f, 0.0f}, kEmerald},
@@ -80,14 +83,6 @@ constexpr std::array<Vertex, 6> kQuad{{
     {{0.0f, 1.0f}, kEmerald},
 }};
 constexpr f32 kQuadSize = 50.0f; // pixels
-
-struct Position {
-    Vec2 Value; // pixels, top-left origin
-};
-struct Velocity {
-    Vec2 Value; // pixels per second
-};
-#endif
 
 // One draw call, collected into a per-frame list before recording (see OnRender).
 struct DrawItem {
@@ -153,13 +148,11 @@ protected:
             Quit();
             return;
         }
-#if EMERALD_WITH_ENTT
-        auto& registry = GetRegistry();
-        const auto entity = registry.create();
-        registry.emplace<Position>(entity, Vec2(160.0f, 220.0f)); // below the ImGui panel
-        registry.emplace<Velocity>(entity, Vec2(120.0f, 80.0f));
-        EM_INFO("EnTT enabled: created entity {}", static_cast<u32>(entity));
-#endif
+        // An app-level entity, outside of any scene: a quad bouncing around under every scene
+        // (Application::GetWorld; the scenes own their worlds, see SwarmScene.h).
+        Emerald::Entity quad = GetWorld().Spawn();
+        quad.Add<Emerald::Transform>(Emerald::Transform{.Position = {160.0f, 220.0f}});
+        quad.Add<Emerald::Velocity>(Emerald::Velocity{.Linear = {120.0f, 80.0f}});
         RunThreadPoolDemo();
         BindInput();
         LoadAssets();
@@ -174,13 +167,15 @@ protected:
                 return std::make_unique<DemoScene>(m_Shared);
             case SceneId::Tilemap:
                 return std::make_unique<TilemapScene>(m_Shared);
+            case SceneId::Swarm:
+                return std::make_unique<SwarmScene>(m_Shared);
             case SceneId::Pause:
                 return std::make_unique<PauseScene>(m_Shared);
             }
             return nullptr;
         };
-        // --demo / --tilemap (screenshots, the benchmark) start there at once; otherwise the
-        // title fades in from black.
+        // --demo / --tilemap / --swarm (screenshots, the benchmark) start there at once; otherwise
+        // the title fades in from black.
         if (m_Shared.Options.Start)
             GetScenes().Push(m_Shared.Make(*m_Shared.Options.Start));
         else
@@ -206,20 +201,23 @@ protected:
         if (!m_Shared.Options.ScreenshotPath.empty() && GetFrameCount() + 1 == shotFrame)
             GetRenderer().RequestScreenshot(m_Shared.Options.ScreenshotPath);
 
-#if EMERALD_WITH_ENTT
-        // Bounce the quads off the window edges.
+        // Move the app's entities and bounce them off the window edges.
+        Emerald::UpdateMovement(GetWorld(), dt);
         const Vec2 limit = m_Shared.GetViewSize() - Vec2(kQuadSize);
-        GetRegistry().view<Position, Velocity>().each([&](Position& p, Velocity& v) {
-            p.Value += v.Value * dt;
-            if (p.Value.x < 0.0f || p.Value.x > limit.x)
-                v.Value.x = -v.Value.x;
-            if (p.Value.y < 0.0f || p.Value.y > limit.y)
-                v.Value.y = -v.Value.y;
-        });
-#endif
+        GetWorld().Each<Emerald::Transform, Emerald::Velocity>(
+            [&](Emerald::Entity, const Emerald::Transform& t, Emerald::Velocity& v) {
+                if ((t.Position.x < 0.0f && v.Linear.x < 0.0f) ||
+                    (t.Position.x > limit.x && v.Linear.x > 0.0f))
+                    v.Linear.x = -v.Linear.x;
+                if ((t.Position.y < 0.0f && v.Linear.y < 0.0f) ||
+                    (t.Position.y > limit.y && v.Linear.y > 0.0f))
+                    v.Linear.y = -v.Linear.y;
+            });
+        GetWorld().Flush();
     }
 
-    // Under every scene: the triangle and the EnTT quads (raw SDL GPU draws, below the 2D).
+    // Under every scene: the triangle and the app-level entity quads (raw SDL GPU draws, below
+    // the 2D).
     void OnRender(SDL_GPURenderPass* pass) override
     {
         SDL_GPUCommandBuffer* cmd = GetRenderer().GetCommandBuffer();
@@ -243,13 +241,11 @@ protected:
             Mat4::Translate(size * 0.5f) * Mat4::RotateZ(0.5f * m_Time) * Mat4::Scale(Vec2(radius));
         draws.push_back({projection * model, m_TriangleBuffer, static_cast<u32>(kTriangle.size())});
 
-#if EMERALD_WITH_ENTT
-        // One quad per entity: the unit quad scaled to kQuadSize pixels and moved to its position.
-        GetRegistry().view<Position>().each([&](const Position& p) {
-            draws.push_back({projection * Mat4::Translate(p.Value) * Mat4::Scale(kQuadSize),
+        // One quad per app-level entity: the unit quad scaled to kQuadSize pixels and moved there.
+        GetWorld().Each<Emerald::Transform>([&](Emerald::Entity, const Emerald::Transform& t) {
+            draws.push_back({projection * Mat4::Translate(t.Position) * Mat4::Scale(kQuadSize),
                              m_QuadBuffer, static_cast<u32>(kQuad.size())});
         });
-#endif
 
         for (const DrawItem& draw : draws) {
             // Uniform data is pushed into the command buffer and applies to the draws that follow
@@ -532,7 +528,8 @@ private:
         input.BindAxis("Zoom", GamepadButton::LeftTrigger, GamepadButton::RightTrigger);
         input.BindAxis("Rotate", Key::F, Key::G);
         input.BindAxis("Rotate", GamepadButton::LeftShoulder, GamepadButton::RightShoulder);
-        input.BindAction("Scene", {Key::T}); // the camera demo <-> the tilemap room
+        input.BindAction("Scene", {Key::T}); // demo -> tilemap room -> entity swarm -> demo
+        input.BindAction("SwarmCut", {Key::Backspace}); // the swarm: destroy half
     }
 
     // Files come from the asset manager: loaded once, placeholders for missing files, and (debug
@@ -663,12 +660,10 @@ private:
 
         m_TriangleBuffer = renderer.CreateBuffer(SDL_GPU_BUFFERUSAGE_VERTEX, kTriangle.data(),
                                                  static_cast<u32>(sizeof(kTriangle)));
-#if EMERALD_WITH_ENTT
         m_QuadBuffer = renderer.CreateBuffer(SDL_GPU_BUFFERUSAGE_VERTEX, kQuad.data(),
                                              static_cast<u32>(sizeof(kQuad)));
         if (!m_QuadBuffer)
             return false;
-#endif
         return m_Pipeline && m_TriangleBuffer;
     }
 
@@ -705,6 +700,8 @@ SandboxOptions ParseOptions(i32 argc, char** argv)
             options.Start = SceneId::Tilemap;
         } else if (arg == "--demo") {
             options.Start = SceneId::Demo;
+        } else if (arg == "--swarm") {
+            options.Start = SceneId::Swarm;
         } else if (arg == "--pan") {
             options.Room.Pan = true;
         } else if (arg == "--stats") {

@@ -2,7 +2,8 @@
 
 // The title screen: the tweened menu (MenuDemo.h) over drifting gems and the idle hero. Up / Down
 // + Enter (d-pad + South) picks: the camera demo (a fade to black), the tilemap room (a custom
-// "blinds" transition, see Shared.h) or quit. Each choice replaces the title with the new scene.
+// "blinds" transition, see Shared.h), the entity swarm (a white fade) or quit. Each choice replaces
+// the title with the new scene.
 
 #include <cmath>
 
@@ -38,6 +39,10 @@ public:
                 GetStack()->Replace(m_Shared.Make(SceneId::Tilemap),
                                     Blinds(0.45f, {0.02f, 0.08f, 0.06f}));
                 break;
+            case 2:
+                GetStack()->Replace(m_Shared.Make(SceneId::Swarm),
+                                    Emerald::Transition::Fade(0.4f, {1.0f, 1.0f, 1.0f}));
+                break;
             default:
                 m_Shared.App.Quit();
                 break;
@@ -72,7 +77,7 @@ public:
         if (m_Shared.HasFonts() && m_Shared.White) {
             m_Menu.Draw(r, size, *m_Shared.SmoothFont, *m_Shared.PixelFont, *m_Shared.SmallFont,
                         *m_Shared.White);
-            r.DrawString(*m_Shared.SmallFont, "a scene stack demo: title > game > pause",
+            r.DrawString(*m_Shared.SmallFont, "scenes: title > game > pause, entities: the swarm",
                          {size.x * 0.5f, 170.0f}, {0.65f, 0.7f, 0.75f, 1.0f}, 1.0f,
                          Emerald::TextAlign::Center);
         }
@@ -93,7 +98,8 @@ public:
 
 private:
     SandboxShared& m_Shared;
-    MenuDemo m_Menu{"EMERALD", {"Camera demo", "Tilemap room", "Quit"}, "Up/Down + Enter"};
+    MenuDemo m_Menu{
+        "EMERALD", {"Camera demo", "Tilemap room", "Entity swarm", "Quit"}, "Up/Down + Enter"};
     HeroSprite m_Hero{m_Shared.Hero};
     f32 m_Time = 0.0f;
 };

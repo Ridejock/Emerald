@@ -13,3 +13,9 @@ emerald_set_warnings(EmeraldParticleBench)
 add_executable(EmeraldCollisionBench CollisionBench.cpp)
 target_link_libraries(EmeraldCollisionBench PRIVATE Emerald::Emerald)
 emerald_set_warnings(EmeraldCollisionBench)
+
+# Entities: spawn / destroy throughput, sustained churn (memory must not grow), and the systems
+# (movement, collisions, sprite drawing) at 1k / 10k / 50k entities.
+add_executable(EmeraldEntityBench EntityBench.cpp)
+target_link_libraries(EmeraldEntityBench PRIVATE Emerald::Emerald)
+emerald_set_warnings(EmeraldEntityBench)

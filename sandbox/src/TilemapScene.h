@@ -1,7 +1,7 @@
 #pragma once
 
 // The tilemap room scene (TilemapRoom.h): the hero walks the Tiled map with tile collision and a
-// camera of its own. WASD walks, Shift runs, M / Start pauses, T fades back to the camera demo.
+// camera of its own. WASD walks, Shift runs, M / Start pauses, T fades to the entity swarm.
 
 #include <Emerald/Emerald.h>
 
@@ -38,7 +38,7 @@ public:
         if (input.WasActionPressed("Menu"))
             GetStack()->Push(m_Shared.Make(SceneId::Pause));
         else if (input.WasActionPressed("Scene"))
-            GetStack()->Replace(m_Shared.Make(SceneId::Demo), FadeBlack());
+            GetStack()->Replace(m_Shared.Make(SceneId::Swarm), FadeBlack());
     }
 
     // The room, the hero in it at the map's scale, and a line of help on top.
@@ -53,7 +53,7 @@ public:
         r.Begin(Emerald::Mat4::OrthoPixelSpace(size.x, size.y));
         if (m_Shared.SmallFont)
             r.DrawString(*m_Shared.SmallFont,
-                         "Tilemap room: WASD walks, Shift runs, M pause, T back to the camera demo",
+                         "Tilemap room: WASD walks, Shift runs, M pause, T entity swarm",
                          {12.0f, size.y - 20.0f}, {1.0f, 1.0f, 1.0f, 0.9f});
         r.End();
     }

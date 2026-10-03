@@ -25,11 +25,10 @@
     },
     {
       "name": "debug-full",
-      "displayName": "Debug (ImGui + EnTT)",
+      "displayName": "Debug (ImGui)",
       "inherits": "debug",
       "cacheVariables": {
-        "EMERALD_USE_IMGUI": "ON",
-        "EMERALD_USE_ENTT": "ON"
+        "EMERALD_USE_IMGUI": "ON"
       }
     }
   ],

@@ -30,7 +30,6 @@ endif()
 # game pulls it in.
 option(EMERALD_BUILD_SANDBOX "Build the sandbox example application" ${PROJECT_IS_TOP_LEVEL})
 option(EMERALD_USE_IMGUI     "Enable Dear ImGui (SDL3 + SDL GPU backends)" OFF)
-option(EMERALD_USE_ENTT      "Enable the EnTT entity-component system" OFF)
 option(EMERALD_MATH_SIMD     "Use the SSE code paths of the math library on x86/x64" ON)
 option(EMERALD_BUILD_TESTS   "Build the unit tests (run with ctest)" ${PROJECT_IS_TOP_LEVEL})
 option(EMERALD_BUILD_BENCH   "Build the math micro-benchmark" OFF)
@@ -84,6 +83,8 @@ add_library(Emerald STATIC
     src/Physics/SpatialHash.cpp
     src/Tilemap/Tilemap.cpp
     src/Scene/SceneStack.cpp
+    src/Entity/World.cpp
+    src/Entity/Systems.cpp
     src/Renderer/Texture.cpp
     src/Renderer/TextureAtlas.cpp
     src/Renderer/Font.cpp
@@ -112,22 +113,19 @@ target_include_directories(Emerald PUBLIC
 )
 
 target_link_libraries(Emerald
-    PUBLIC  Emerald::Math SDL3::SDL3 spdlog::spdlog Threads::Threads
+    PUBLIC  Emerald::Math SDL3::SDL3 spdlog::spdlog EnTT::EnTT Threads::Threads
     PRIVATE Emerald::stb Emerald::dr_libs nlohmann_json::nlohmann_json
 )
 
 target_compile_definitions(Emerald PUBLIC
     EMERALD_WITH_IMGUI=$<BOOL:${EMERALD_USE_IMGUI}>
-    EMERALD_WITH_ENTT=$<BOOL:${EMERALD_USE_ENTT}>
+    EMERALD_WITH_ENTT=1 # always on now (entities); kept for code that tests it
     # Asset hot reload (Assets.h) in debug builds only.
     EMERALD_HOT_RELOAD=$<IF:$<CONFIG:Debug>,1,0>
 )
 
 if(EMERALD_USE_IMGUI)
     target_link_libraries(Emerald PUBLIC Emerald::imgui)
-endif()
-if(EMERALD_USE_ENTT)
-    target_link_libraries(Emerald PUBLIC EnTT::EnTT)
 endif()
 
 emerald_set_warnings(Emerald)

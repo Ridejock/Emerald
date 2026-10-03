@@ -95,6 +95,7 @@ Application::~Application()
 {
     m_ThreadPool.reset(); // stops and joins the workers while everything they might use exists
     m_Scenes.ExitAll();   // scenes hold asset handles and GPU resources
+    m_World.Clear();      // so may components
     m_Assets.reset();     // textures before the GPU device
     ShutdownImGui();
     m_Crt.reset();

@@ -4,7 +4,7 @@ Emerald is a small, modern C++20 game engine built on [SDL3](https://github.com/
 It is split into:
 
 - **`Emerald::Emerald`** – the engine library (logging, window, SDL GPU renderer, batched 2D renderer for lines and
-  textured sprites, sprite animation, a 2D camera, textures and texture atlases, keyboard input, application loop with a fixed-timestep update, a scene stack with transitions, image loading, thread pool, `std::pmr`
+  textured sprites, sprite animation, a 2D camera, textures and texture atlases, keyboard input, application loop with a fixed-timestep update, a scene stack with transitions, entities and components (EnTT), image loading, thread pool, `std::pmr`
   memory helpers).
 - **`Emerald::Math`** – a header-only math library (vectors, `Mat4`, optional SSE), included by the engine.
 - **`sandbox/`** – a minimal example app that links the engine and draws a rotating vertex-colored triangle
@@ -13,7 +13,7 @@ It is split into:
   an animated pixel-art hero (walk / idle / jump, from `tools/sprites/make_hero.py`) driven by
   keyboard or gamepad that a `Camera2D` follows around a larger world (pan, zoom, rotate, shake;
   with ImGui on, the panel shows the camera and lists connected pads and their live stick values).
-  It is organised as scenes (title, camera demo, tilemap room, pause) on the scene stack.
+  It is organised as scenes (title, camera demo, tilemap room, entity swarm, pause) on the scene stack.
 - **`tests/`** – small unit-test executables run with `ctest`.
 
 All dependencies are fetched automatically with CMake `FetchContent` and pinned to specific versions.
@@ -31,7 +31,7 @@ What is planned next (camera, animation, collision, tilemaps, scenes, UI, shippi
 | [nlohmann/json](https://github.com/nlohmann/json) | `v3.12.0` | Texture atlas JSON; release tarball (SHA-256 pinned), linked PRIVATE |
 | [dr_libs](https://github.com/mackron/dr_libs) | commit `dfe8377` | Only `dr_mp3.h` (MP3 decoding); header-only, public domain / MIT-0 |
 | [Dear ImGui](https://github.com/ocornut/imgui) | `v1.92.9b-docking` | Optional, SDL3 + SDLGPU3 backends |
-| [EnTT](https://github.com/skypjack/entt) | `v3.16.0` | Optional |
+| [EnTT](https://github.com/skypjack/entt) | `v3.16.0` | Entity storage behind `World` / `Entity` (see [Entities](#entities-entity)); headers included as SYSTEM |
 | [SDL_shadercross](https://github.com/libsdl-org/SDL_shadercross) | commit `1ff05be` | Build-time host tool (HLSL → SPIR-V/DXIL/MSL), built from source with vendored DXC + SPIRV-Cross |
 
 ## Options
@@ -40,17 +40,16 @@ What is planned next (camera, animation, collision, tilemaps, scenes, UI, shippi
 |---|---|---|
 | `EMERALD_BUILD_SANDBOX` | `ON` | Build the sandbox example executable |
 | `EMERALD_USE_IMGUI` | `OFF` | Fetch Dear ImGui (docking) and integrate it into the app loop |
-| `EMERALD_USE_ENTT` | `OFF` | Fetch EnTT and give each `Application` an `entt::registry` |
 | `EMERALD_BUILD_SHADERCROSS` | `ON` | Build the `shadercross` tool from source if `EMERALD_SHADERCROSS_EXECUTABLE` is empty |
 | `EMERALD_SHADERCROSS_EXECUTABLE` | *(empty)* | Use this prebuilt `shadercross` instead of building it |
 | `EMERALD_SHADERCROSS_BUILD_DIR` | `build/_shadercross` | Where the tool is built; shared by all presets |
 | `EMERALD_SHADER_FORMATS` | `SPIRV;DXIL;MSL` | Shader formats generated at build time |
 | `EMERALD_MATH_SIMD` | `ON` | Use the SSE code paths of the math library on x86/x64 (see [Math library](#math-library)) |
 | `EMERALD_BUILD_TESTS` | `ON` | Build the unit tests and register them with CTest |
-| `EMERALD_BUILD_BENCH` | `OFF` | Build `EmeraldMathBench`, a scalar-vs-SSE micro-benchmark |
+| `EMERALD_BUILD_BENCH` | `OFF` | Build the micro-benchmarks (math, particles, collision, entities) |
 
-The engine exports `EMERALD_WITH_IMGUI` / `EMERALD_WITH_ENTT` / `EMERALD_MATH_SIMD` (0 or 1) as public
-compile definitions.
+The engine exports `EMERALD_WITH_IMGUI` / `EMERALD_MATH_SIMD` (0 or 1) as public compile
+definitions. `EMERALD_WITH_ENTT` is still exported and is always 1: EnTT is now a regular dependency.
 
 ## Requirements
 
@@ -106,7 +105,7 @@ cmake --build --preset debug
 |---|---|
 | `debug` | Debug build, default options |
 | `release` | Release build, default options |
-| `debug-full` | Debug build with `EMERALD_USE_IMGUI=ON` and `EMERALD_USE_ENTT=ON` |
+| `debug-full` | Debug build with `EMERALD_USE_IMGUI=ON` |
 
 Options can also be passed directly, e.g. `cmake --preset release -DEMERALD_USE_IMGUI=ON`.
 
@@ -119,6 +118,7 @@ Options can also be passed directly, e.g. `cmake --preset release -DEMERALD_USE_
 ./build/debug/bin/Sandbox --gpu vulkan                     # pick the GPU backend (see below)
 ./build/debug/bin/Sandbox --demo                           # skip the title: start in the camera demo
 ./build/debug/bin/Sandbox --tilemap                        # start in the tilemap room (see Tilemaps)
+./build/debug/bin/Sandbox --swarm                          # start in the entity swarm (see Entities)
 SDL_GPU_DRIVER=vulkan ./build/debug/bin/Sandbox            # the same through SDL's environment variable
 ```
 
@@ -289,6 +289,7 @@ structure-of-arrays layout instead (all x together, all y together).
 | `AssetTests` | asset manager bookkeeping with a GPU-less loader: dedupe (same path, `..` paths, absolute paths; other options or types are other assets), handle copy/move/reset reference counts, unloading on `Update` and reviving before it, placeholders for missing and broken files (texture, atlas, font, sound), hot reload in place (textures, atlas image + JSON with sprites and animators keeping their pointers, fonts, real WAVs), broken reloads keeping the old version, placeholders replaced when the file appears, reloads through `Update` on the thread pool within a second |
 | `TilemapTests` | the sample room from Tiled JSON: layer order and kinds, external `.tsj` and embedded tilesets (GID lookup, sprite regions), objects (shapes, class, position, size, properties), the collision grid from tile properties and classes (non-colliding layer), tile ranges with touching edges, `OverlapsSolid`, `MoveAndCollide` (flush stops, no tunneling, sliding along walls, one-way from above / below / inside); all 8 flip-bit combinations against Tiled's transform; missing and broken files (JSON, sizes, infinite, isometric, missing/XML tileset, missing image, base64, bad cells) logged and failing cleanly, unknown tile ids left empty; through the asset manager: placeholder for a missing map, hot reload of the map and of its external tileset, broken edits keeping the last version |
 | `SceneTests` | the scene stack without a GPU: requests applied only at the end of `Update`, hook order for push / pop / replace / clear / `ReplaceAll` (pause, resume, exit, destruction), requests from inside a scene's own hooks, `DrawBelow` / `UpdateBelow` chains (which scenes draw and update, in which order), fade timing (change at full cover, then uncover, requests queued meanwhile), fading into an empty stack, custom transition `Draw`, input blocked below the top and during transitions (and the app's own block kept), empty-stack pops, exiting every scene on destruction |
+| `EntityTests` | add / get / has / remove and replacing components, deferred destroy (skipped by `Each`, invalid at once, destructors at `Flush`, stale handles after slot reuse), `Clear`; spawning, adding and destroying inside `Each`; churn of 400,000 spawns without leaks (destructor counts, bounded storage); movement, animation (an `OnFinished` that destroys); collisions (circle / circle normal and depth, circle / box, layer masks, destroyed and collider-less entities leaving the broadphase); `DrawSprites` order by layer and y, culling |
 | `TweenTests` | every easing curve at 0, 0.5 and 1, Out mirroring In and InOut symmetry, clamping; tweens of f32 / Vec2 / Vec4 with delay, start values, repeat and yoyo, endless tweens, cancelling (chains included, no callbacks), chaining with leftover time, completion firing exactly once, callbacks starting and clearing tweens, `CancelTarget` from a destructor, `Run`, stale ids; one big step vs many uneven ones giving the same result; timers `After` / `Every` / cancel (also from their own callback), callbacks adding timers, frame-rate independence with uneven dt |
 
 ```sh
@@ -315,6 +316,7 @@ cmake --build --preset release
 ./build/release/bin/EmeraldMathBench
 ./build/release/bin/EmeraldParticleBench
 ./build/release/bin/EmeraldCollisionBench
+./build/release/bin/EmeraldEntityBench
 ```
 
 ## Renderer (SDL GPU)
@@ -1154,15 +1156,16 @@ popping it always returns to whatever opened it.
 
 - **Title** (`TitleScene.h`): the tweened menu over drifting gems. "Camera demo" fades to black.
   "Tilemap room" uses a custom transition, horizontal blinds closing from alternate sides
-  (`Blinds` in `Shared.h`). "Quit" quits.
+  (`Blinds` in `Shared.h`). "Entity swarm" fades to white. "Quit" quits.
 - **Camera demo** (`DemoScene.h`): the shapes, sprites, text, camera, hero and collision yard.
 - **Tilemap room** (`TilemapScene.h`): the Tiled map (see Tilemaps).
-- **Pause** (`PauseScene.h`): M / Start in either game scene. It has `DrawBelow` and plays its
+- **Entity swarm** (`SwarmScene.h`): thousands of entities in the scene's own `World` (see Entities).
+- **Pause** (`PauseScene.h`): M / Start in any game scene. It has `DrawBelow` and plays its
   menu intro over the frozen scene. Choices: Resume (the outro plays, then the scene pops), CRT
   effect, Replay intro, Title screen (`ReplaceAll` with a fade), Quit.
-- T switches between the camera demo and the tilemap room (`Replace` with a fade).
+- T cycles camera demo → tilemap room → entity swarm → camera demo (`Replace` with a fade).
 - `main.cpp` keeps what is global: input bindings, the shared assets (`Shared.h`), the triangle
-  and EnTT quads under every scene, Escape / C, and screenshots. It also builds the scenes
+  and the bouncing quads (entities in the app's `GetWorld()`) under every scene, Escape / C, and screenshots. It also builds the scenes
   (`SandboxShared::Make`), so they never include each other.
 - **ImGui:** the panel's "Scene stack" section lists the scenes top first. For each one it shows
   DrawBelow and UpdateBelow (both editable), and whether it is drawn, updated and has focus. It
@@ -1171,6 +1174,147 @@ popping it always returns to whatever opened it.
   own section below.
 
 `SceneTests` covers the stack without a GPU (see the table under [Tests](#tests)).
+
+## Entities (`Entity/`)
+
+Game objects are **entities** made of **components** (plain structs), updated by **systems**
+(plain functions). The storage is [EnTT](https://github.com/skypjack/entt), behind a thin Emerald
+layer: `World`, `Entity` and `Each`.
+
+**Why EnTT behind a thin layer** (rather than our own small ECS):
+
+- **For EnTT:** it is fast (packed component arrays, cache-friendly views), battle-tested in shipped
+  games, and scales to hundreds of thousands of entities. Writing and debugging our own would take
+  time that games should get.
+- **For the layer:** game code reads like the rest of Emerald (`Spawn`, `Add`, `Each`, `Destroy`)
+  instead of EnTT's API, destruction is always deferred (safe inside loops and callbacks), and
+  the backend could be swapped later without touching games.
+- **Against EnTT:** it is template-heavy, so mistakes give long error messages and the headers cost
+  compile time. The layer keeps most calls on a few simple functions, which keeps the errors
+  shorter. EnTT's headers are included as SYSTEM headers, so their warnings don't show up in our
+  builds. `GetRegistry()` is the escape hatch for what the layer does not cover (groups, sorting,
+  signals...).
+
+```cpp
+#include <Emerald/Emerald.h>
+
+class GameScene : public Emerald::Scene {
+    Emerald::World m_World;                       // a scene owns its world
+    Emerald::CollisionSystem m_Collisions{32.0f}; // broadphase cell size
+    Emerald::Camera2D m_Camera;
+    Emerald::Sprite m_Coin; // e.g. atlas->Get("coin")
+
+    void OnEnter() override {
+        for (int i = 0; i < 1000; ++i) {
+            Emerald::Entity e = m_World.Spawn();
+            e.Add<Emerald::Transform>(Emerald::Transform{.Position = {f32(i), 100.0f}});
+            e.Add<Emerald::Velocity>(Emerald::Velocity{.Linear = {0.0f, 50.0f}});
+            e.Add<Emerald::Collider>(Emerald::Collider::MakeCircle(8.0f));
+            e.Add<Emerald::SpriteRenderer>(Emerald::SpriteRenderer{.Image = m_Coin, .Layer = 1});
+        }
+    }
+    void OnUpdate(f32 dt) override {
+        Emerald::UpdateMovement(m_World, dt);
+        Emerald::UpdateAnimation(m_World, dt);
+        for (const Emerald::CollisionEvent& hit : m_Collisions.Update(m_World))
+            hit.B.Destroy(); // deferred: safe while looping
+        m_World.Each<Emerald::Transform>([](Emerald::Entity e, Emerald::Transform& t) {
+            if (t.Position.y > 720.0f)
+                e.Destroy();
+        });
+        m_World.Flush(); // destroy what was marked, once per frame
+    }
+    void OnRender2D(Emerald::Renderer2D& r) override
+    {
+        r.Begin(m_Camera);
+        Emerald::DrawSprites(m_World, r);
+        r.End();
+    }
+};
+```
+
+**`World`** (`Entity/World.h`) owns the `entt::registry`. It is not copyable.
+- `Spawn()` returns an `Entity`.
+- `Each<Ts...>(fn)` calls `fn(Entity, Ts&...)` for every entity that has all of `Ts`. Pass only
+  components that hold data (a tag struct can't be passed by reference).
+- `Destroy(e)` / `e.Destroy()` only *marks* the entity. Marked entities are skipped by `Each` and
+  report `IsValid() == false`. `Flush()` destroys them (their components' destructors run there),
+  so call it once per frame at a safe point, e.g. the end of `OnUpdate`. `Clear()` destroys
+  everything now.
+- Stats: `GetCount()`, `GetPendingDestroyCount()`, `GetSpawnedTotal()`, `GetDestroyedTotal()`.
+- Inside `Each` you may spawn, add components and destroy anything. Don't remove components
+  from *other* entities of the same view while iterating.
+
+**`Entity`** is a small handle: the world plus EnTT's versioned id, so a handle to a destroyed
+entity stays invalid even when its slot is reused. It has `IsValid()` / `explicit operator bool`,
+`Add<T>(args...)` (adds or replaces; aggregates are brace-initialized), `Get<T>()`, `TryGet<T>()`
+(nullptr if missing), `Has<T>()`, `Remove<T>()`, `Destroy()`, `GetWorld()` and `ToU32()` (for
+logs and ImGui).
+
+**Components** (`Entity/Components.h`):
+
+| Component | Fields | Used by |
+|---|---|---|
+| `Transform` | the same `Transform2D` as `Renderer2D` (position, rotation, scale) | everything |
+| `Velocity` | `Linear` (px/s), `Angular` (rad/s) | `UpdateMovement` |
+| `SpriteRenderer` | `Image` (a `Sprite`, e.g. an atlas region), `Options` (tint, flip, origin...), `Layer` | `DrawSprites` |
+| `Animator` | the [sprite animation](#sprite-animation-animator) player itself | `UpdateAnimation`, `DrawSprites` |
+| `Collider` | `MakeCircle(radius)` or `MakeBox(halfSize)`, `Offset`, `Layer` / `Mask` bits | `CollisionSystem` |
+
+There is **no parent / child transform**: an entity's transform is in world space. A hierarchy
+costs an ordering pass every frame and is not needed yet. Store a parent `Entity` in your own
+component if something has to follow another entity.
+
+**Systems** (`Entity/Systems.h`): the scene calls them, in the order it wants.
+- `UpdateMovement(world, dt)`: moves `Transform` by `Velocity`.
+- `UpdateAnimation(world, dt)`: advances every `Animator`. Its `OnFinished` / loop callbacks may
+  destroy the entity.
+- `CollisionSystem(cellSize, wrapSize)`: `Update(world)` keeps a [`SpatialHash`](#collision-physics)
+  of every `Transform` + `Collider` (updated in place each frame; destroyed entities and removed
+  colliders leave it). It tests each candidate pair with the exact shape test from
+  `Physics/Collision.h`, skipping pairs whose layer/mask bits don't match. It returns
+  `CollisionEvent{A, B, Hit}` (normal from A to B, depth) sorted by id, so results are
+  deterministic. `GetCandidateCount()` and `GetBroadphase()` are there for debugging. Colliders
+  ignore the transform's rotation and scale.
+- `DrawSprites(world, r, {.SortByY, .Visible})`: draws every `Transform` + `SpriteRenderer`, sorted by
+  `Layer`, then by y (lower on screen is in front), then by id so equal keys don't flicker. If
+  an `Animator` is present its current frame is drawn. `Visible` (e.g. the camera's world rect)
+  culls off-screen entities. It returns the number of sprites drawn. Keep each layer on one
+  texture to keep the draw calls low.
+
+**Per app:** `Application::GetWorld()` is a world for apps that don't use scenes (the old
+`GetRegistry()` returns its registry). It is cleared before the asset manager goes away.
+
+**Numbers** (`EmeraldEntityBench`, release, 8-core Intel Xeon VM):
+
+| Test | Time |
+|---|---|
+| spawn 100,000 entities with 4 components | 7.1 ms (14 M/s) |
+| destroy 100,000 (deferred + `Flush`) | 4.8 ms (21 M/s) |
+| churn: 10,000 alive, 1,000 spawned + 1,000 destroyed per frame, 1,000 frames | 0.13 ms per frame (7.6 M spawn+destroy/s); storages 2000 KiB before and after |
+| systems, 10,000 moving circles (Transform, Velocity, Collider, SpriteRenderer) | movement 0.05 ms, collisions 2.5 ms (7,181 pairs → 5,670 contacts), sprites 1.06 ms |
+| systems, 50,000 at the same density | movement 0.29 ms, collisions 15.3 ms, sprites 6.6 ms |
+
+`EntityTests` checks that churn doesn't leak: 400,000 spawns over 200 frames, with every
+component destructor counted and the storages not growing past the peak.
+
+**Sandbox: "Entity swarm"** (`SwarmScene.h`; title menu, T from the tilemap room, or `--swarm`).
+Thousands of walking heroes, spinning gems and coins bounce off the walls and off each other
+through the broadphase, flash gold on contact, and fade in and out at the end of their lives.
+The scene refills to the target count at up to 4000 entities/s. Under lavapipe (software
+Vulkan), a release build runs 6,000 entities at about 55 fps.
+
+| Key | Action |
+|---|---|
+| Space / gamepad South | burst of 1000 at the mouse |
+| Backspace | destroy half |
+| Up / Down | target -1000 / +1000 (default 3000) |
+| M / Start | pause |
+| T | camera demo |
+
+The HUD shows entities, target, fps, spawned and destroyed per second, contacts and pairs, and
+each system's time. With ImGui, the "Entity swarm" section shows the same, plus the broadphase
+cells, a target slider, collision and y-sort toggles and burst / destroy buttons.
 
 ## Input (actions)
 
@@ -1371,12 +1515,12 @@ It is always built in Release and lives in `build/_shadercross`, which every pre
 ## Project layout
 
 ```
-include/Emerald/   Public engine headers (Core/, Input/, Audio/, Renderer/, Particles/, Physics/, Tilemap/, Scene/, Assets/, Tween/, Math/, Memory/)
+include/Emerald/   Public engine headers (Core/, Input/, Audio/, Renderer/, Particles/, Physics/, Tilemap/, Scene/, Entity/, Assets/, Tween/, Math/, Memory/)
 src/               Engine implementation
 shaders/           The engine's HLSL shaders (Renderer2D lines, Sprite, the CRT post-process; compiled at build time for every app)
 sandbox/           Example application (src/, its own shaders/, assets/ for the demo font, hero sheet and tilemap room)
 tests/             Unit tests (ctest)
-bench/             Math, particle and collision micro-benchmarks (EMERALD_BUILD_BENCH)
+bench/             Math, particle, collision and entity micro-benchmarks (EMERALD_BUILD_BENCH)
 cmake/             Dependency setup (FetchContent) and shader compilation (Shaders.cmake)
 tools/shadercross/ Host-tool project that builds SDL_shadercross
 tools/sprites/     Script that generates the sandbox's pixel-art hero sheet

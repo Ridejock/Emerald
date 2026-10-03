@@ -99,3 +99,9 @@ add_executable(EmeraldSceneTests TestMain.cpp SceneTests.cpp)
 target_link_libraries(EmeraldSceneTests PRIVATE Emerald::Emerald)
 emerald_set_warnings(EmeraldSceneTests)
 add_test(NAME SceneTests COMMAND EmeraldSceneTests)
+
+# Entities: the World / Entity layer over EnTT, churn without leaks, and the core systems.
+add_executable(EmeraldEntityTests TestMain.cpp EntityTests.cpp)
+target_link_libraries(EmeraldEntityTests PRIVATE Emerald::Emerald)
+emerald_set_warnings(EmeraldEntityTests)
+add_test(NAME EntityTests COMMAND EmeraldEntityTests)

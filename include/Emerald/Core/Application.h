@@ -14,6 +14,7 @@
 #include "Emerald/Core/Log.h"
 #include "Emerald/Core/ThreadPool.h"
 #include "Emerald/Core/Window.h"
+#include "Emerald/Entity/World.h"
 #include "Emerald/Input/Input.h"
 #include "Emerald/Memory/FrameArena.h"
 #include "Emerald/Memory/TrackingResource.h"
@@ -21,10 +22,6 @@
 #include "Emerald/Renderer/Renderer.h"
 #include "Emerald/Renderer/Renderer2D.h"
 #include "Emerald/Scene/SceneStack.h"
-
-#if EMERALD_WITH_ENTT
-#include <entt/entt.hpp>
-#endif
 
 union SDL_Event;
 struct SDL_GPURenderPass;
@@ -123,9 +120,11 @@ public:
     // Counts the heap memory both pools have taken (they get their memory in big chunks).
     [[nodiscard]] TrackingResource::Stats GetPoolStats() const { return m_PoolHeap.GetStats(); }
 
-#if EMERALD_WITH_ENTT
-    [[nodiscard]] entt::registry& GetRegistry() { return m_Registry; }
-#endif
+    // An app-wide World, for apps without scenes (a scene usually owns its own; see
+    // Entity/World.h). Its entities are destroyed before the assets are released.
+    [[nodiscard]] World& GetWorld() { return m_World; }
+    // The world's EnTT registry (kept for code written against it).
+    [[nodiscard]] entt::registry& GetRegistry() { return m_World.GetRegistry(); }
 
 protected:
     // Create GPU resources (buffers, pipelines) here; the renderer is ready.
@@ -184,10 +183,7 @@ private:
 #endif
     bool m_Running = false;
     u64 m_FrameCount = 0;
-
-#if EMERALD_WITH_ENTT
-    entt::registry m_Registry;
-#endif
+    World m_World;
 };
 
 } // namespace Emerald

@@ -17,6 +17,7 @@
 
 #include "CollisionDemo.h"
 #include "MenuDemo.h"
+#include "TilemapRoom.h"
 
 #if EMERALD_WITH_IMGUI
 #include <imgui.h>
@@ -143,6 +144,14 @@ Emerald::Image MakeSpriteSheet()
 struct SandboxOptions {
     u64 Frames = 0;
     std::string ScreenshotPath;
+    // The tilemap room (T switches): --tilemap starts in it, --map <file.tmj> loads another map,
+    // --pan / --stats / --zoom <z> / --no-cull for the benchmark, --collision / --objects turn
+    // the overlays on.
+    bool Tilemap = false;
+    TilemapRoom::Options Room;
+    bool Collision = false;
+    bool Objects = false;
+    bool NoCull = false;
 };
 
 class Sandbox final : public Emerald::Application {
@@ -211,6 +220,7 @@ protected:
         input.BindAxis("Zoom", GamepadButton::LeftTrigger, GamepadButton::RightTrigger);
         input.BindAxis("Rotate", Key::F, Key::G);
         input.BindAxis("Rotate", GamepadButton::LeftShoulder, GamepadButton::RightShoulder);
+        input.BindAction("Scene", {Key::T}); // the camera demo <-> the tilemap room
         m_Camera.SetBounds({.Min = {0.0f, 0.0f}, .Max = kWorldSize});
         m_Camera.GetFollowParams() = {.DeadZone = {160.0f, 100.0f}, .Damping = 5.0f};
         m_Camera.SetViewSize(GetViewSize());
@@ -245,6 +255,9 @@ protected:
         }
         LoadFonts();
         LoadHero();
+        m_Room.Load(assets, m_Options.Room);
+        m_Room.SetOverlays(m_Options.Collision, m_Options.Objects, !m_Options.NoCull);
+        m_InRoom = m_Options.Tilemap;
 
         // A 1 x 1 white texture: tinted and stretched, it fills the menu's rectangles.
         Emerald::Image white;
@@ -252,7 +265,8 @@ protected:
         white.Height = 1;
         white.Pixels = {255, 255, 255, 255};
         m_White = Emerald::Texture::Create(GetRenderer().GetDevice(), white);
-        m_Menu.Open();
+        if (!m_InRoom)
+            m_Menu.Open();
         // The ImGui easing preview: a dot running along the curve, over and over.
         m_Tweens.FromTo(&m_PreviewT, 0.0f, 1.0f, 1.5f,
                         {.Curve = Emerald::Easing::Linear, .Repeat = Emerald::Tweens::kForever});
@@ -273,6 +287,11 @@ protected:
         // diagonals are not faster and a half-tilted stick moves at half speed.
         if (length > 1.0f)
             direction = direction / length;
+        if (m_InRoom) { // the tilemap room has its own camera and collision
+            const bool run = input.IsActionDown("Run");
+            UpdateHero(m_Room.Update(direction, run, dt, GetViewSize()), run ? 1.8f : 1.0f, dt);
+            return;
+        }
         if (input.WasActionPressed("CameraMode"))
             m_FreeCamera = !m_FreeCamera;
         m_Camera.SetViewSize(GetViewSize());
@@ -385,6 +404,8 @@ protected:
             Quit();
         if (GetInput().WasActionPressed("Crt"))
             SetCrtEnabled(!IsCrtEnabled());
+        if (GetInput().WasActionPressed("Scene"))
+            m_InRoom = !m_InRoom;
         UpdateMenu(dt);
 
         // Capture the last frame of a --frames run (or frame 60 otherwise).
@@ -414,6 +435,10 @@ protected:
         m_Camera.SetViewSize(size); // 1 world unit = 1 window unit at zoom 1
         m_Camera.SetTargetSize({static_cast<f32>(renderer.GetFrameWidth()),
                                 static_cast<f32>(renderer.GetFrameHeight())});
+        if (m_InRoom) {
+            DrawRoom(r, size, m_Camera.GetTargetSize());
+            return;
+        }
 
         r.Begin(m_Camera);
         DrawWorld(r);
@@ -421,6 +446,24 @@ protected:
 
         r.Begin(Mat4::OrthoPixelSpace(size.x, size.y));
         DrawTextDemo(r, size);
+        if (m_PixelFont && m_SmallFont && m_SmoothFont && m_White)
+            m_Menu.Draw(r, size, *m_SmoothFont, *m_PixelFont, *m_SmallFont, *m_White);
+        r.End();
+    }
+
+    // The tilemap room, the hero in it at the map's scale, and a line of help on top.
+    void DrawRoom(Emerald::Renderer2D& r, Vec2 size, Vec2 target)
+    {
+        m_Room.Draw(r, size, target, [&](Vec2 feet, bool facingLeft) {
+            if (m_Hero)
+                r.DrawSprite(m_HeroAnimator, feet,
+                             {.Origin = {0.5f, 1.0f}, .FlipX = facingLeft, .PixelSnap = true});
+        });
+        r.Begin(Mat4::OrthoPixelSpace(size.x, size.y));
+        if (m_SmallFont)
+            r.DrawString(*m_SmallFont,
+                         "Tilemap room: WASD walks, Shift runs, T back to the camera demo",
+                         {12.0f, size.y - 20.0f}, {1.0f, 1.0f, 1.0f, 0.9f});
         if (m_PixelFont && m_SmallFont && m_SmoothFont && m_White)
             m_Menu.Draw(r, size, *m_SmoothFont, *m_PixelFont, *m_SmallFont, *m_White);
         r.End();
@@ -681,6 +724,8 @@ protected:
                     GetRenderer2D().GetLastFrameDrawCalls());
         ImGui::Text("Move the hero: WASD / arrows / left stick (Shift runs), jump: Space / %s",
                     GetInput().GetGamepads().GetButtonLabel(GamepadButton::South));
+        if (m_InRoom)
+            m_Room.ShowImGui();
         ShowAnimation();
         ShowCamera();
         ShowCollision();
@@ -1028,6 +1073,8 @@ private:
     f32 m_Flash = 0.0f; // seconds of gold tint left
     u32 m_JumpsLanded = 0;
     CollisionDemo m_Collision; // the yard right of the room
+    TilemapRoom m_Room;        // the tilemap scene (T)
+    bool m_InRoom = false;
     bool m_ShowHashGrid = true;
     f32 m_PulseAge = 1.0f;                        // seconds since Space was pressed
     std::optional<Emerald::TextureAtlas> m_Atlas; // the sprite demo's sheet
@@ -1047,15 +1094,34 @@ private:
 SandboxOptions ParseOptions(i32 argc, char** argv)
 {
     SandboxOptions options;
-    for (i32 i = 1; i + 1 < argc; ++i) {
+    for (i32 i = 1; i < argc; ++i) {
         const std::string_view arg(argv[i]);
-        const std::string_view value(argv[i + 1]);
+        const std::string_view value(i + 1 < argc ? argv[i + 1] : "");
         if (arg == "--frames") {
             std::from_chars(value.data(), value.data() + value.size(), options.Frames);
             ++i;
         } else if (arg == "--screenshot") {
             options.ScreenshotPath = value;
             ++i;
+        } else if (arg == "--map") {
+            options.Room.Map = std::filesystem::path(value);
+            options.Tilemap = true;
+            ++i;
+        } else if (arg == "--zoom") {
+            std::from_chars(value.data(), value.data() + value.size(), options.Room.Zoom);
+            ++i;
+        } else if (arg == "--tilemap") {
+            options.Tilemap = true;
+        } else if (arg == "--pan") {
+            options.Room.Pan = true;
+        } else if (arg == "--stats") {
+            options.Room.Stats = true;
+        } else if (arg == "--collision") {
+            options.Collision = true;
+        } else if (arg == "--objects") {
+            options.Objects = true;
+        } else if (arg == "--no-cull") {
+            options.NoCull = true;
         }
     }
     return options;

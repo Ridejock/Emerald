@@ -58,6 +58,8 @@ const char* GetAssetTypeName(AssetType type)
         return "font";
     case AssetType::Sound:
         return "sound";
+    case AssetType::Tilemap:
+        return "tilemap";
     }
     return "?";
 }
@@ -117,6 +119,7 @@ AssetId Assets::Acquire(AssetType type, const std::filesystem::path& path, const
 
     if (std::unique_ptr<Object> object = LoadObject(entry)) {
         entry.Value = std::move(object);
+        TrackFiles(entry);
         EM_CORE_INFO("Assets: loaded {} {}", GetAssetTypeName(type), file.string());
     } else {
         EM_CORE_ERROR("Assets: could not load {} {}; using a placeholder", GetAssetTypeName(type),
@@ -152,6 +155,10 @@ std::unique_ptr<Assets::Object> Assets::LoadObject(const Entry& entry) const
         if (auto sound = m_Loader->LoadSound(file))
             return std::make_unique<Object>(std::in_place_type<Sound>, std::move(*sound));
         break;
+    case AssetType::Tilemap:
+        if (auto map = m_Loader->LoadTilemap(file, std::get<TextureOptions>(entry.LoadOptions)))
+            return std::make_unique<Object>(std::in_place_type<Tilemap>, std::move(*map));
+        break;
     }
     return nullptr;
 }
@@ -165,6 +172,8 @@ Assets::Object Assets::MakePlaceholder(const Entry& entry) const
         return m_Loader->MakePlaceholderAtlas();
     case AssetType::Font:
         return m_Loader->MakePlaceholderFont(std::get<FontOptions>(entry.LoadOptions));
+    case AssetType::Tilemap:
+        return m_Loader->MakePlaceholderTilemap();
     case AssetType::Sound:
         break;
     }
@@ -186,10 +195,25 @@ bool Assets::Reload(Entry& entry)
     else
         current = std::move(*fresh); // same alternative: move-assigns the object in place
     entry.Placeholder = false;
+    TrackFiles(entry);
     ++entry.Reloads;
     EM_CORE_INFO("Assets: reloaded {} {} (reload #{})", GetAssetTypeName(entry.Type),
                  entry.Files[0].string(), entry.Reloads);
     return true;
+}
+
+void Assets::TrackFiles(Entry& entry)
+{
+    if (entry.Type != AssetType::Tilemap)
+        return;
+    const std::vector<std::filesystem::path>& files = std::get<Tilemap>(*entry.Value).GetFiles();
+    if (files == entry.Files)
+        return;
+    entry.Files = files;
+    entry.LoadedTimes.clear();
+    for (const std::filesystem::path& f : entry.Files)
+        entry.LoadedTimes.push_back(kHotReload ? GetFileTime(f) : std::nullopt);
+    entry.SeenTimes = entry.LoadedTimes;
 }
 
 void Assets::AddRef(AssetId id)
@@ -280,12 +304,14 @@ u32 Assets::ApplyStamps(const std::vector<FileStamp>& stamps)
         if (it == m_Entries.end())
             continue; // unloaded while the check ran
         Entry& entry = it->second;
+        if (stamp.File >= entry.Files.size() || entry.Files[stamp.File] != stamp.Path)
+            continue; // the asset's file list changed while the check ran (a tilemap)
         const bool settled = stamp.Time == entry.SeenTimes[stamp.File];
         entry.SeenTimes[stamp.File] = stamp.Time;
         if (settled && stamp.Time != entry.LoadedTimes[stamp.File] && stamp.Time)
             ready.push_back(stamp.Id);
     }
-    // An atlas can be listed twice (both its files changed).
+    // An atlas or tilemap can be listed more than once (several of its files changed).
     std::sort(ready.begin(), ready.end());
     ready.erase(std::unique(ready.begin(), ready.end()), ready.end());
 

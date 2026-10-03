@@ -1,0 +1,67 @@
+{
+ "columns": 8,
+ "image": "dungeon.png",
+ "imageheight": 32,
+ "imagewidth": 128,
+ "margin": 0,
+ "name": "dungeon",
+ "spacing": 0,
+ "tilecount": 16,
+ "tileheight": 16,
+ "tiles": [
+  {
+   "id": 8,
+   "properties": [
+    {
+     "name": "solid",
+     "type": "bool",
+     "value": true
+    }
+   ]
+  },
+  {
+   "id": 9,
+   "properties": [
+    {
+     "name": "solid",
+     "type": "bool",
+     "value": true
+    }
+   ]
+  },
+  {
+   "id": 10,
+   "properties": [
+    {
+     "name": "solid",
+     "type": "bool",
+     "value": true
+    }
+   ]
+  },
+  {
+   "id": 11,
+   "properties": [
+    {
+     "name": "oneway",
+     "type": "bool",
+     "value": true
+    }
+   ]
+  },
+  {
+   "id": 12,
+   "properties": [
+    {
+     "name": "solid",
+     "type": "bool",
+     "value": true
+    }
+   ]
+  }
+ ],
+ "tilewidth": 16,
+ "type": "tileset",
+ "version": "1.10",
+ "tiledversion": "1.11.2"
+}

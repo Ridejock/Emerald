@@ -29,4 +29,12 @@ add_custom_command(TARGET Sandbox POST_BUILD
             ${CMAKE_CURRENT_SOURCE_DIR}/assets/sprites/hero.png
             ${CMAKE_CURRENT_SOURCE_DIR}/assets/sprites/hero.json
             $<TARGET_FILE_DIR:Sandbox>/assets/sprites/
+    # The tilemap room (made by tools/tilemaps/make_tilemaps.py; open the files in Tiled).
+    COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:Sandbox>/assets/tilemaps
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${CMAKE_CURRENT_SOURCE_DIR}/assets/tilemaps/room.tmj
+            ${CMAKE_CURRENT_SOURCE_DIR}/assets/tilemaps/dungeon.tsj
+            ${CMAKE_CURRENT_SOURCE_DIR}/assets/tilemaps/dungeon.png
+            ${CMAKE_CURRENT_SOURCE_DIR}/assets/tilemaps/props.png
+            $<TARGET_FILE_DIR:Sandbox>/assets/tilemaps/
     VERBATIM)

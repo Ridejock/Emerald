@@ -24,7 +24,7 @@ namespace Emerald {
 class Assets;
 class ThreadPool;
 
-enum class AssetType : u8 { Texture, Atlas, Font, Sound };
+enum class AssetType : u8 { Texture, Atlas, Font, Sound, Tilemap };
 [[nodiscard]] const char* GetAssetTypeName(AssetType type);
 
 // What each asset type is loaded with: Load<T>(path, options).
@@ -44,6 +44,10 @@ template <> struct AssetTraits<Font> {
 template <> struct AssetTraits<Sound> {
     static constexpr AssetType Type = AssetType::Sound;
     struct Options {};
+};
+template <> struct AssetTraits<Tilemap> { // a Tiled .tmj; the options are for its images
+    static constexpr AssetType Type = AssetType::Tilemap;
+    using Options = TextureOptions;
 };
 
 using AssetId = u32;
@@ -92,12 +96,14 @@ struct AssetInfo {
     bool Placeholder = false;
 };
 
-// The asset manager: loads textures, atlases, fonts and sounds by path, each file only once.
+// The asset manager: loads textures, atlases, fonts, sounds and tilemaps by path, each file only
+// once.
 //
 //   AssetHandle<Texture> ship = GetAssets().Load<Texture>("assets/ship.png");
 //   r.DrawSprite(*ship, position);
 //   AssetHandle<Font> font = GetAssets().Load<Font>("assets/ui.ttf", {.Size = 16.0f});
 //   GetAudio().Play(*GetAssets().Load<Sound>("assets/boom.wav"));
+//   AssetHandle<Tilemap> map = GetAssets().Load<Tilemap>("assets/level1.tmj");
 //
 // - Relative paths are relative to the root, by default Paths::GetBasePath() (the folder of the
 //   executable, where the build copies the assets).
@@ -113,7 +119,10 @@ struct AssetInfo {
 //   check (so a half-written file is not read), is loaded again on the main thread (GPU uploads
 //   happen there) and replaces the old object in place: handles, and pointers like a Sprite's
 //   texture or an Animator's animation, stay valid. A placeholder whose file appears is loaded
-//   the same way. If the new version fails to load, the old one stays.
+//   the same way. If the new version fails to load, the old one stays. A tilemap is watched
+//   through all its files (the .tmj, external .tsj tilesets and their images); its contents are
+//   replaced as a whole, so look up its layers, objects and tilesets through the handle each time
+//   rather than keeping pointers into it.
 //
 // Use it from the main thread only. Application owns one (GetAssets()) and calls Update.
 class Assets {
@@ -151,7 +160,7 @@ public:
 private:
     template <typename U> friend class AssetHandle;
 
-    using Object = std::variant<Texture, TextureAtlas, Font, Sound>;
+    using Object = std::variant<Texture, TextureAtlas, Font, Sound, Tilemap>;
     using Options = std::variant<TextureOptions, FontOptions, AssetTraits<Sound>::Options>;
     using FileTime = std::optional<std::filesystem::file_time_type>; // nullopt: no such file
 
@@ -181,6 +190,8 @@ private:
     [[nodiscard]] std::unique_ptr<Object> LoadObject(const Entry& entry) const; // null on failure
     [[nodiscard]] Object MakePlaceholder(const Entry& entry) const;
     bool Reload(Entry& entry);
+    // A tilemap's files are only known once it has loaded: watch those from now on.
+    static void TrackFiles(Entry& entry);
     void AddRef(AssetId id);
     void Release(AssetId id);
     template <typename T> [[nodiscard]] const T& Get(AssetId id) const

@@ -119,6 +119,11 @@ public:
             return std::nullopt;
         return Sound(std::vector<f32>(*frames * 2, 0.5f));
     }
+    std::optional<Tilemap> LoadTilemap(const fs::path& file, const TextureOptions& options) override
+    {
+        ++Loads;
+        return Tilemap::Load(nullptr, file, options); // no device: textures without GPU
+    }
 
     Texture MakePlaceholderTexture() override { return Texture::CreateWithoutGpu(64, 64); }
     TextureAtlas MakePlaceholderAtlas() override

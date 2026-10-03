@@ -10,6 +10,7 @@
 #include "Emerald/Renderer/Font.h"
 #include "Emerald/Renderer/Texture.h"
 #include "Emerald/Renderer/TextureAtlas.h"
+#include "Emerald/Tilemap/Tilemap.h"
 
 namespace Emerald {
 
@@ -32,19 +33,23 @@ public:
     [[nodiscard]] virtual std::optional<Font> LoadFont(const std::filesystem::path& file,
                                                        const FontOptions& options) = 0;
     [[nodiscard]] virtual std::optional<Sound> LoadSound(const std::filesystem::path& file) = 0;
+    [[nodiscard]] virtual std::optional<Tilemap> LoadTilemap(const std::filesystem::path& file,
+                                                             const TextureOptions& options) = 0;
 
     [[nodiscard]] virtual Texture MakePlaceholderTexture() = 0;
     [[nodiscard]] virtual TextureAtlas MakePlaceholderAtlas() = 0;
     [[nodiscard]] virtual Font MakePlaceholderFont(const FontOptions& options) = 0;
     // A tenth of a second of silence (the same for every loader).
     [[nodiscard]] virtual Sound MakePlaceholderSound();
+    // An empty map (no layers, no size), the same for every loader.
+    [[nodiscard]] virtual Tilemap MakePlaceholderTilemap() { return {}; }
 };
 
 // The real loader: files from disk, textures uploaded to `device`.
 //
 // Placeholders: a magenta/black checkerboard texture (hard to miss, and the classic "texture
 // missing" look), an atlas made of that texture (every sprite and animation shows the whole
-// checkerboard), a font that draws every character as a hollow box, and silence.
+// checkerboard), a font that draws every character as a hollow box, silence, and an empty map.
 class GpuAssetLoader final : public AssetLoader {
 public:
     explicit GpuAssetLoader(SDL_GPUDevice* device) : m_Device(device) {}
@@ -57,6 +62,8 @@ public:
     [[nodiscard]] std::optional<Font> LoadFont(const std::filesystem::path& file,
                                                const FontOptions& options) override;
     [[nodiscard]] std::optional<Sound> LoadSound(const std::filesystem::path& file) override;
+    [[nodiscard]] std::optional<Tilemap> LoadTilemap(const std::filesystem::path& file,
+                                                     const TextureOptions& options) override;
 
     [[nodiscard]] Texture MakePlaceholderTexture() override;
     [[nodiscard]] TextureAtlas MakePlaceholderAtlas() override;

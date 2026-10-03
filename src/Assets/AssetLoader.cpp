@@ -55,6 +55,12 @@ std::optional<Sound> GpuAssetLoader::LoadSound(const std::filesystem::path& file
     return Emerald::LoadSound(file);
 }
 
+std::optional<Tilemap> GpuAssetLoader::LoadTilemap(const std::filesystem::path& file,
+                                                   const TextureOptions& options)
+{
+    return Tilemap::Load(m_Device, file, options);
+}
+
 Texture GpuAssetLoader::MakePlaceholderTexture()
 {
     // Nearest keeps the squares sharp when the placeholder is drawn large.

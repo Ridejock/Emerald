@@ -116,6 +116,7 @@ Options can also be passed directly, e.g. `cmake --preset release -DEMERALD_USE_
 ./build/debug/bin/Sandbox --frames 120                     # quit automatically after 120 frames
 ./build/debug/bin/Sandbox --frames 60 --screenshot out.png # save the last frame as a PNG (GPU readback)
 ./build/debug/bin/Sandbox --gpu vulkan                     # pick the GPU backend (see below)
+./build/debug/bin/Sandbox --tilemap                        # start in the tilemap room (see Tilemaps)
 SDL_GPU_DRIVER=vulkan ./build/debug/bin/Sandbox            # the same through SDL's environment variable
 ```
 
@@ -284,6 +285,7 @@ structure-of-arrays layout instead (all x together, all y together).
 | `ParticleTests` | particle spawning (shapes, ranges, base velocity), capacity limit, drag/gravity step, swap-remove, continuous rate, color/size fade when drawing, scalar and SSE updates agreeing over 240 steps |
 | `CollisionTests` | circle/circle, circle/AABB, AABB/AABB and SAT polygon contacts (normals, depths, touching = none, concentric circles, center inside a box, containment, winding, degenerate input); raycasts against circles, boxes and polygons (hits, misses, parallel, max distance, starting inside); `SpatialHash` insert/update/remove/query/pairs, wrap-around, brute-force equivalence on random data |
 | `AssetTests` | asset manager bookkeeping with a GPU-less loader: dedupe (same path, `..` paths, absolute paths; other options or types are other assets), handle copy/move/reset reference counts, unloading on `Update` and reviving before it, placeholders for missing and broken files (texture, atlas, font, sound), hot reload in place (textures, atlas image + JSON with sprites and animators keeping their pointers, fonts, real WAVs), broken reloads keeping the old version, placeholders replaced when the file appears, reloads through `Update` on the thread pool within a second |
+| `TilemapTests` | the sample room from Tiled JSON: layer order and kinds, external `.tsj` and embedded tilesets (GID lookup, sprite regions), objects (shapes, class, position, size, properties), the collision grid from tile properties and classes (non-colliding layer), tile ranges with touching edges, `OverlapsSolid`, `MoveAndCollide` (flush stops, no tunneling, sliding along walls, one-way from above / below / inside); all 8 flip-bit combinations against Tiled's transform; missing and broken files (JSON, sizes, infinite, isometric, missing/XML tileset, missing image, base64, bad cells) logged and failing cleanly, unknown tile ids left empty; through the asset manager: placeholder for a missing map, hot reload of the map and of its external tileset, broken edits keeping the last version |
 | `TweenTests` | every easing curve at 0, 0.5 and 1, Out mirroring In and InOut symmetry, clamping; tweens of f32 / Vec2 / Vec4 with delay, start values, repeat and yoyo, endless tweens, cancelling (chains included, no callbacks), chaining with leftover time, completion firing exactly once, callbacks starting and clearing tweens, `CancelTarget` from a destructor, `Run`, stale ids; one big step vs many uneven ones giving the same result; timers `After` / `Every` / cancel (also from their own callback), callbacks adding timers, frame-rate independence with uneven dt |
 
 ```sh
@@ -463,7 +465,7 @@ The camera has no interpolation between fixed steps: update it where the things 
 
 ## Assets (`Assets`)
 
-The asset manager loads textures, atlases, fonts and sounds by path and hands out
+The asset manager loads textures, atlases, fonts, sounds and tilemaps by path and hands out
 `AssetHandle<T>`s. Application owns one (`GetAssets()`):
 
 ```cpp
@@ -472,6 +474,7 @@ m_Ship = GetAssets().Load<Emerald::Texture>("assets/ship.png");
 m_Hero = GetAssets().Load<Emerald::TextureAtlas>("assets/hero.json"); // + hero.png next to it
 m_Font = GetAssets().Load<Emerald::Font>("assets/ui.ttf", {.Size = 16.0f});
 m_Boom = GetAssets().Load<Emerald::Sound>("assets/boom.wav");
+m_Level = GetAssets().Load<Emerald::Tilemap>("assets/level1.tmj"); // see Tilemaps
 
 // Later: use the handle like a pointer.
 r.DrawSprite(*m_Ship, position);
@@ -492,9 +495,10 @@ GetAudio().Play(*m_Boom);
   - textures: a magenta/black checkerboard;
   - atlases: every sprite and animation shows that checkerboard;
   - fonts: every character is a hollow box;
-  - sounds: a tenth of a second of silence.
-- **Hot reload (debug builds).** Edit a PNG, an atlas JSON, a WAV/MP3 or a font while the game
-  runs, and it updates within about half a second. Release builds compile this out.
+  - sounds: a tenth of a second of silence;
+  - tilemaps: an empty map (no layers, nothing collides).
+- **Hot reload (debug builds).** Edit a PNG, an atlas JSON, a WAV/MP3, a font or a Tiled map
+  (or one of its tilesets) while the game runs, and it updates within about half a second. Release builds compile this out.
 
 How hot reload works:
 
@@ -916,6 +920,133 @@ In the sandbox, walk the hero right out of the room into the **collision yard**:
 The ImGui panel shows the counts (cells, candidate pairs, contacts), the SAT result and the ray
 distance, and has a toggle for the hash cells.
 
+## Tilemaps (`Tilemap/`)
+
+`Emerald/Tilemap/Tilemap.h` loads maps made in [Tiled](https://www.mapeditor.org/) in its JSON
+format (`.tmj`). It reads tile layers, tilesets and object layers, answers tile collision queries,
+and draws only the tiles the camera sees.
+
+```cpp
+// OnStart: through the asset manager (hot reload in debug builds), or Tilemap::Load(device, path).
+m_Map = GetAssets().Load<Emerald::Tilemap>("maps/level1.tmj");
+m_Camera.SetBounds(m_Map->GetBounds()); // the camera never shows outside the map
+const Emerald::MapObject* spawn = m_Map->FindObject("spawn");
+
+// OnFixedUpdate: move a box with tile collision (x first, then y, swept: no tunneling).
+const Emerald::TileMove move = m_Map->MoveAndCollide(m_Box, m_Velocity * dt);
+m_Box.Min += move.Delta;
+m_Box.Max += move.Delta;
+if (move.HitBottom)
+    m_Velocity.y = 0.0f; // landed (floor or one-way platform)
+
+// OnRender2D: every visible tile layer in order, culled to the camera.
+r.Begin(m_Camera);
+m_Map->Draw(r, m_Camera.GetVisibleBounds());
+r.End();
+```
+
+What the loader reads:
+
+- **Maps:** orthogonal, fixed size (not "infinite"), with the tile layer format set to CSV (the
+  default). Map, layer, tileset, tile and object custom properties are all kept in a
+  `Properties` (`GetBool`, `GetInt`, `GetFloat`, `GetString`, each with a fallback).
+- **Layers** come in Tiled's order (`GetLayers()`, `FindLayer(name)`). A tile layer has
+  `Cells`, one per tile, row by row. Group layers are flattened into their children: offsets add
+  up, opacity multiplies and a hidden group hides its children. Image layers are skipped with a
+  warning.
+- **Tilesets:** embedded in the map or external `.tsj` files (a `.tsx` gives an error saying to
+  save it as JSON). One image per tileset, with margin, spacing and drawing offset. The images
+  load as textures relative to the file that names them.
+- **Objects** (`MapLayer::Objects`, `FindObject(name)`): `Name`, `Type` (Tiled's "Class"),
+  `Position` and `Size` in map pixels with the position at the top-left (Tiled puts tile objects
+  at the bottom-left, so the loader moves them), `Rotation`, `Shape` (rectangle, point, ellipse,
+  polygon, polyline, tile, text), polygon `Points`, `Gid` for tile objects, and `Props`.
+- **Flip bits:** a cell is a GID plus Tiled's flip bits (`kTileFlipX`, `kTileFlipY`,
+  `kTileFlipDiag`). `GetTileGid(cell)` strips them and `GetTileTransform(cell)` turns them into
+  `SpriteOptions` flips plus a quarter turn, which is how `DrawLayer` draws rotated tiles.
+- **Errors never crash.** A missing map, tileset or image, broken JSON, or unsupported data
+  (infinite, isometric, base64, wrong cell count) logs what is wrong with the file name and
+  returns `nullopt`. The asset manager then shows an empty map, or keeps the last good version on
+  hot reload. Cells with unknown tile ids are logged and left empty.
+
+**Collision.** Every tile layer's tiles go into one grid when the map loads, from properties on
+the tiles in the tileset:
+
+| In Tiled, on the tile (tileset editor) | Result |
+|---|---|
+| Custom property `solid` (bool, ticked), or Class `solid` | `TileCollision::Solid`: blocks from every side |
+| Custom property `oneway` (bool, ticked), or Class `oneway` | `TileCollision::OneWay`: a platform top, only blocks moving down onto it from above |
+| A bool property `collision` set to false *on a tile layer* | that layer's tiles never collide (decoration drawn over the hero, say) |
+
+Solid wins over one-way when layers overlap, and outside the map counts as empty, so put walls at
+the edges. The queries:
+
+- `GetCollision(tile)`
+- `WorldToTile` and `GetTileBounds`
+- `GetTileRange(area)` and `ForEachCollidingTile(area, fn)` for your own tests
+- `OverlapsSolid(area)`
+- `MoveAndCollide(box, delta)`, which moves an AABB and reports `HitLeft` / `HitRight` /
+  `HitTop` / `HitBottom` (on the ground)
+
+These are what the platformer physics (#10) will build on.
+
+**Drawing.** `DrawLayer(r, layer, view)` draws only the tiles that overlap `view` (use
+`Camera2D::GetVisibleBounds()`) and returns how many it drew. `Draw` does every visible tile layer
+in order, and `DrawCollision` is a debug overlay: solid tiles in red, one-way tops in yellow. To
+put characters between layers, call `DrawLayer` per layer (the sandbox draws the hero where the
+"Objects" layer is).
+
+**Hot reload.** A tilemap asset watches the `.tmj`, its external `.tsj` files and every tileset
+image. Saving any of them in Tiled (or an image editor) reloads the whole map within about half a
+second. Read layers, objects and tilesets through the handle each time instead of keeping
+pointers into them.
+
+**The sandbox's tilemap room.** Press T in the sandbox, or start it with `--tilemap`:
+
+- **The map:** `sandbox/assets/tilemaps/room.tmj` is 48 x 30 tiles of 16 px.
+  - Layers: Ground, Walls and Decor, then Objects, then Overhead (pillar tops drawn over the
+    hero).
+  - Tilesets: `dungeon.tsj` (external) and `props` (embedded in the map).
+  - Objects: a spawn point, two signs, a chest with `gold` / `contents` properties, the pond (an
+    ellipse) and the stairs.
+- **What you can do:** walk with WASD; the camera follows inside the map. The wooden railings are
+  one-way: walk up through them, but they stop you walking down.
+- **The flip row:** the arrow row near the spawn shows all eight flip combinations.
+- **The ImGui panel:**
+  - toggles for each layer, the collision overlay, object outlines and culling;
+  - the number of visible tiles drawn;
+  - a zoom slider;
+  - the object the hero is standing in, with its properties.
+- **Hot reload:** in the debug build, edit `room.tmj` or `dungeon.tsj` in Tiled while the sandbox
+  runs and the room updates.
+
+All of it comes from `tools/tilemaps/make_tilemaps.py`, which draws the art in code with a fixed
+16-color palette and the standard library only. It writes `dungeon.png`, `dungeon.tsj`,
+`props.png` and `room.tmj`. Running it again overwrites edits made in Tiled.
+
+**Benchmark: 500 x 500 tiles.** Generate the map, then let the camera sweep it:
+
+```sh
+python3 tools/tilemaps/make_tilemaps.py --bench build/bench   # build/bench/bench.tmj
+./build/release/bin/Sandbox --map build/bench/bench.tmj --pan --stats [--zoom 0.25] [--no-cull]
+```
+
+The map has three full 500 x 500 tile layers (Ground, Walls, Decor). The numbers below are from
+the release build on an 8-core Intel Xeon VM with Mesa's software Vulkan driver (lavapipe) under
+Xvfb, at 1280 x 720 with no vsync, averaged over 2 s windows:
+
+| View | Tiles drawn per frame | `DrawLayer` CPU time | Frame rate |
+|---|---:|---:|---:|
+| Zoom 1, culled | ~4,200 | 0.15 ms | ~230 fps |
+| Zoom 0.25 (16x the area), culled | ~65,800 | 2.5 ms | ~46 fps (lavapipe filling pixels) |
+| Zoom 1, no culling (the whole map) | 285,269 | 10.4 ms | ~29 fps |
+
+Culling keeps the cost at the size of the screen rather than the size of the map. The map loads
+(1.5 MB of JSON) in about 50 ms.
+
+`TilemapTests` loads the sample room, checks it in detail and breaks copies of it on purpose (see
+the table under [Tests](#tests)).
+
 ## Input (actions)
 
 Games use **actions**: name what the player can do, bind keys and gamepad inputs to it, and query
@@ -1115,15 +1246,16 @@ It is always built in Release and lives in `build/_shadercross`, which every pre
 ## Project layout
 
 ```
-include/Emerald/   Public engine headers (Core/, Input/, Audio/, Renderer/, Particles/, Physics/, Assets/, Tween/, Math/, Memory/)
+include/Emerald/   Public engine headers (Core/, Input/, Audio/, Renderer/, Particles/, Physics/, Tilemap/, Assets/, Tween/, Math/, Memory/)
 src/               Engine implementation
 shaders/           The engine's HLSL shaders (Renderer2D lines, Sprite, the CRT post-process; compiled at build time for every app)
-sandbox/           Example application (src/, its own shaders/, assets/ for the demo font and hero sheet)
+sandbox/           Example application (src/, its own shaders/, assets/ for the demo font, hero sheet and tilemap room)
 tests/             Unit tests (ctest)
 bench/             Math, particle and collision micro-benchmarks (EMERALD_BUILD_BENCH)
 cmake/             Dependency setup (FetchContent) and shader compilation (Shaders.cmake)
 tools/shadercross/ Host-tool project that builds SDL_shadercross
 tools/sprites/     Script that generates the sandbox's pixel-art hero sheet
+tools/tilemaps/    Script that generates the sandbox's tileset art, Tiled tilesets and sample room (+ the 500 x 500 benchmark map)
 ```
 
 ## Using Emerald in your own project

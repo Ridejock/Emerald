@@ -85,3 +85,11 @@ add_executable(EmeraldTweenTests TestMain.cpp TweenTests.cpp)
 target_link_libraries(EmeraldTweenTests PRIVATE Emerald::Emerald)
 emerald_set_warnings(EmeraldTweenTests)
 add_test(NAME TweenTests COMMAND EmeraldTweenTests)
+
+# Tilemaps (Tiled JSON): the sandbox's sample room, flips, collision, errors and hot reload.
+add_executable(EmeraldTilemapTests TestMain.cpp TilemapTests.cpp)
+target_link_libraries(EmeraldTilemapTests PRIVATE Emerald::Emerald)
+target_compile_definitions(EmeraldTilemapTests PRIVATE
+    EMERALD_TEST_TILEMAPS="${PROJECT_SOURCE_DIR}/sandbox/assets/tilemaps")
+emerald_set_warnings(EmeraldTilemapTests)
+add_test(NAME TilemapTests COMMAND EmeraldTilemapTests)

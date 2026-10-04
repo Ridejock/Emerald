@@ -145,6 +145,8 @@ Done when:
 - Title, gameplay, pause and game over scenes with transitions
 - Builds warning-free in CI with a downloadable zip
 
+**Status:** done as Cavern Rover (private repo), verified on Windows.
+
 ## Phase 3 - Polish & tooling
 
 Game-feel features and in-engine tools. ([milestone](https://github.com/Ridejock/Emerald/milestone/3))

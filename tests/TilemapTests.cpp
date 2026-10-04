@@ -10,6 +10,7 @@
 #include <optional>
 #include <sstream>
 #include <string>
+#include <utility>
 
 #include <Emerald/Assets/Assets.h>
 #include <Emerald/Core/Log.h>
@@ -30,9 +31,12 @@ std::optional<Tilemap> LoadRoom()
     return Tilemap::Load(nullptr, kSample / "room.tmj");
 }
 
+// Reading or writing a test file failing is reported (not just an empty string or a lost edit).
 std::string ReadText(const fs::path& path)
 {
     std::ifstream in(path, std::ios::binary);
+    if (!in)
+        ::Test::Fail(__FILE__, __LINE__, "cannot read " + path.string());
     std::stringstream text;
     text << in.rdbuf();
     return text.str();
@@ -43,9 +47,43 @@ void WriteText(const fs::path& path, const std::string& text)
 {
     const bool existed = fs::exists(path);
     const fs::file_time_type before = existed ? fs::last_write_time(path) : fs::file_time_type{};
-    std::ofstream(path, std::ios::binary) << text;
+    std::ofstream out(path, std::ios::binary);
+    out << text;
+    out.close();
+    if (!out)
+        ::Test::Fail(__FILE__, __LINE__, "cannot write " + path.string());
     if (existed)
         fs::last_write_time(path, before + std::chrono::seconds(2));
+}
+
+// Finds `pattern` in `text`, where whitespace in the pattern matches any run of whitespace (or
+// none) in the text, so the edits below work whatever the file's formatting: CRLF line ends
+// (Git's core.autocrlf on Windows) or a map saved again by Tiled ("height":30). Returns the
+// position and the length matched.
+std::optional<std::pair<usize, usize>> FindLoose(const std::string& text,
+                                                 const std::string& pattern)
+{
+    const auto space = [](char c) { return c == ' ' || c == '\t' || c == '\r' || c == '\n'; };
+    for (usize start = 0; start < text.size(); ++start) {
+        usize t = start;
+        usize p = 0;
+        while (p < pattern.size()) {
+            if (space(pattern[p])) {
+                while (p < pattern.size() && space(pattern[p]))
+                    ++p;
+                while (t < text.size() && space(text[t]))
+                    ++t;
+            } else if (t < text.size() && text[t] == pattern[p]) {
+                ++t;
+                ++p;
+            } else {
+                break;
+            }
+        }
+        if (p == pattern.size())
+            return std::pair(start, t - start);
+    }
+    return std::nullopt;
 }
 
 // A copy of the sample folder to break things in.
@@ -63,14 +101,19 @@ struct TempMaps {
     TempMaps(const TempMaps&) = delete;
     TempMaps& operator=(const TempMaps&) = delete;
 
-    // room.tmj with the first `from` replaced by `to`.
+    // room.tmj with the first `from` (see FindLoose) replaced by `to`.
     void EditRoom(const std::string& from, const std::string& to) const
     {
         std::string text = ReadText(Dir / "room.tmj");
-        const usize at = text.find(from);
-        CHECK(at != std::string::npos);
-        if (at != std::string::npos)
-            text.replace(at, from.size(), to);
+        const std::optional<std::pair<usize, usize>> at = FindLoose(text, from);
+        if (!at) {
+            // Say what the file looked like, so a failure elsewhere can be told apart.
+            ::Test::Fail(__FILE__, __LINE__,
+                         "room.tmj (" + std::to_string(text.size()) + " bytes, starting '" +
+                             text.substr(0, 24) + "') has no '" + from + "'");
+            return;
+        }
+        text.replace(at->first, at->second, to);
         WriteText(Dir / "room.tmj", text);
     }
 };
@@ -283,11 +326,13 @@ TEST(TilemapErrorsAreLoggedNotFatal)
     CHECK(Tilemap::Load(nullptr, t.Dir / "room.tmj").has_value()); // the copy works
     CHECK(!Tilemap::Load(nullptr, t.Dir / "missing.tmj"));         // no such file
 
+    // Each edit starts from the sample room (kept in memory, so one failed write cannot spoil
+    // the edits after it).
+    const std::string room = ReadText(kSample / "room.tmj");
     const auto broken = [&](const std::string& from, const std::string& to) {
-        const std::string original = ReadText(t.Dir / "room.tmj");
         t.EditRoom(from, to);
         const bool failed = !Tilemap::Load(nullptr, t.Dir / "room.tmj").has_value();
-        WriteText(t.Dir / "room.tmj", original);
+        WriteText(t.Dir / "room.tmj", room);
         return failed;
     };
     CHECK(broken("{", "["));                                    // not JSON

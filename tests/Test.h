@@ -84,12 +84,14 @@ inline std::string ToString(const Emerald::Mat4& m)
             ::Test::Fail(__FILE__, __LINE__, "CHECK(" #cond ") failed");                           \
     } while (false)
 
-// Approximate comparison using Emerald::NearlyEqual (works for f32, Vec2/3/4 and Mat4).
+// Approximate comparison using Emerald::NearlyEqual (works for f32, Vec2/3/4 and Mat4). Both sides
+// are copied, not bound to references: with a member of a temporary (body.GetFeet().y) MSVC's
+// ASan build ended the temporary's life before the comparison read it (stack-use-after-scope).
 #define CHECK_NEAR(a, b) CHECK_NEAR_EPS(a, b, ::Emerald::Epsilon)
 #define CHECK_NEAR_EPS(a, b, epsilon)                                                              \
     do {                                                                                           \
-        const auto& lhs_ = (a);                                                                    \
-        const auto& rhs_ = (b);                                                                    \
+        const auto lhs_ = (a);                                                                     \
+        const auto rhs_ = (b);                                                                     \
         if (!::Emerald::NearlyEqual(lhs_, rhs_, (epsilon)))                                        \
             ::Test::Fail(__FILE__, __LINE__,                                                       \
                          "CHECK_NEAR(" #a ", " #b "): " + ::Test::ToString(lhs_) +                 \

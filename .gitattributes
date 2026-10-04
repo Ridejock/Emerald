@@ -1,0 +1,8 @@
+# Data files that tests and tools read byte for byte stay LF on every platform, whatever
+# core.autocrlf says (Windows checkouts would otherwise get CRLF line ends).
+*.tmj  text eol=lf
+*.tsj  text eol=lf
+*.json text eol=lf
+*.gpl  text eol=lf
+*.png  binary
+*.ttf  binary

@@ -1,0 +1,61 @@
+# Windows tests: configure, build (zero MSVC warnings in Emerald's own code) and run the tests,
+# in the debug and debug-asan presets.
+name: Windows
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: windows-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        preset: [debug, debug-asan]
+    name: ${{ matrix.preset }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      # cl.exe, INCLUDE/LIB and Ninja on the PATH. x64: an x86 shell cannot link ASan builds.
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      # The shader compiler (shadercross + DirectXShaderCompiler, built with MSVC) is built on the
+      # first configure and takes a long time: keep it between runs.
+      - name: Cache shadercross
+        uses: actions/cache@v4
+        with:
+          path: build/_shadercross
+          key: shadercross-windows-${{ hashFiles('tools/shadercross/**', 'cmake/Shaders.cmake') }}
+          restore-keys: shadercross-windows-
+
+      - name: Configure
+        run: cmake --preset ${{ matrix.preset }}
+
+      - name: Build
+        run: cmake --build --preset ${{ matrix.preset }} 2>&1 | tee build-log.txt; exit ${PIPESTATUS[0]}
+
+      # Zero warnings in Emerald's code. Fetched libraries (_deps) and the shadercross tool
+      # (_shadercross, e.g. C5051 in SPIRV-Cross) are not ours to fix.
+      - name: Check for warnings
+        run: |
+          grep -E "warning C[0-9]+" build-log.txt \
+            | grep -viE "[\\/]_deps[\\/]|[\\/]_shadercross[\\/]" \
+            | sort -u > warnings.txt || true
+          if [ -s warnings.txt ]; then
+            echo "::error::MSVC warnings in Emerald:"
+            cat warnings.txt
+            exit 1
+          fi
+          echo "No MSVC warnings in Emerald."
+
+      - name: Test
+        run: ctest --test-dir build/${{ matrix.preset }} --output-on-failure

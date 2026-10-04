@@ -36,6 +36,16 @@ struct TweenOptions {
     std::function<void()> OnComplete{};
 };
 
+// One tween's value: what it writes and between which values (used inside Tweens). At namespace
+// scope rather than nested in Tweens: Clang cannot use a nested struct's default member
+// initializers in Tweens' std::variant before Tweens is complete.
+template <typename T> struct TweenTrack {
+    T* Target = nullptr;
+    T From{};
+    T To{};
+    bool HasFrom = false; // FromTo; otherwise From is read from the target at the start
+};
+
 // Animates values over time: moves a value from where it is to a target with an easing curve.
 // The game owns a Tweens and advances it with its update dt, so pausing the game pauses them:
 //
@@ -87,12 +97,7 @@ public:
     void Update(f32 dt);
 
 private:
-    template <typename T> struct Track {
-        T* Target = nullptr;
-        T From{};
-        T To{};
-        bool HasFrom = false; // FromTo; otherwise From is read from the target at the start
-    };
+    template <typename T> using Track = TweenTrack<T>;
     using RunCallback = std::function<void(f32)>;
     using AnyTrack = std::variant<Track<f32>, Track<Vec2>, Track<Vec4>, RunCallback>;
 

@@ -136,7 +136,7 @@ Done when:
 - Python helpers that turn text drawings into Tiled `.tmj` maps, with variant tile picking
 - Used by Cavern Rover (#11)
 
-**Status:** implemented (`Core/DevOptions.h`, `Input/InputRecording.h`, `tools/check_assets.py`, `tools/tilemaps/textmap.py`, `ReplayTests`, `ToolsTests`); Cavern Rover not switched over yet; to verify on Windows / MSVC.
+**Status:** implemented (`Core/DevOptions.h`, `Input/InputRecording.h`, `tools/check_assets.py`, `tools/tilemaps/textmap.py`, `ReplayTests`, `ToolsTests`); Cavern Rover switched to `ParseDevOptions` (and runs the asset checker as a test) in CavernRover e5d939d, whose Windows CI (MSVC, zero warnings, tests) passed.
 
 ### Phase 2 test game: small Blaster Master-style platformer ([#11](https://github.com/Ridejock/Emerald/issues/11))
 

@@ -47,8 +47,10 @@ What is planned next (camera, animation, collision, tilemaps, scenes, UI, shippi
 | `EMERALD_MATH_SIMD` | `ON` | Use the SSE code paths of the math library on x86/x64 (see [Math library](#math-library)) |
 | `EMERALD_BUILD_TESTS` | `ON` | Build the unit tests and register them with CTest |
 | `EMERALD_BUILD_BENCH` | `OFF` | Build the micro-benchmarks (math, particles, collision, entities) |
+| `EMERALD_PROFILE` | `OFF` | Fetch Tracy and turn the `EM_PROFILE_*` macros on (see [Profiling](#profiling-tracy)) |
+| `EMERALD_ASAN` | `OFF` | Build everything with AddressSanitizer (see [AddressSanitizer](#addresssanitizer)) |
 
-The engine exports `EMERALD_WITH_IMGUI` / `EMERALD_MATH_SIMD` (0 or 1) as public compile
+The engine exports `EMERALD_WITH_IMGUI` / `EMERALD_MATH_SIMD` / `EMERALD_PROFILE` (0 or 1) as public compile
 definitions. `EMERALD_WITH_ENTT` is still exported and is always 1: EnTT is now a regular dependency.
 
 ## Requirements
@@ -106,6 +108,8 @@ cmake --build --preset debug
 | `debug` | Debug build, default options |
 | `release` | Release build, default options |
 | `debug-full` | Debug build with `EMERALD_USE_IMGUI=ON` |
+| `profile` | Optimized with debug info (`RelWithDebInfo`) and `EMERALD_PROFILE=ON` (Tracy) |
+| `debug-asan` | Debug build with `EMERALD_ASAN=ON` (AddressSanitizer) |
 
 Options can also be passed directly, e.g. `cmake --preset release -DEMERALD_USE_IMGUI=ON`.
 
@@ -325,6 +329,71 @@ cmake --build --preset release
 ./build/release/bin/EmeraldCollisionBench
 ./build/release/bin/EmeraldEntityBench
 ```
+
+## Profiling (Tracy)
+
+The `profile` preset builds with the [Tracy](https://github.com/wolfpld/tracy) profiler client
+(v0.14.1, fetched by CMake like the other dependencies; nothing to install):
+
+```sh
+cmake --preset profile
+cmake --build --preset profile
+./build/profile/bin/Sandbox --swarm          # then connect the Tracy viewer
+```
+
+Get the **viewer** prebuilt from the same release,
+[Tracy v0.14.1](https://github.com/wolfpld/tracy/releases/tag/v0.14.1) (`windows-0.14.1.zip`:
+`tracy-profiler.exe`; there are Linux and macOS zips too). The viewer and the client must be the
+same version, so when the pin in `cmake/Dependencies.cmake` moves, download the matching viewer.
+Start the game, open the viewer and connect to `127.0.0.1` (it lists running games on the local
+network). The client is built on demand (`TRACY_ON_DEMAND`): nothing is collected until a viewer
+connects, so a profile build can run without one.
+
+Every frame is marked, and the main loop shows as zones: `Events`, `Assets`, `FixedUpdate` (each
+step), `Update` and `Render` (which includes waiting for the swapchain), plus the entity systems
+(`UpdateMovement`, `UpdateAnimation`, `CollisionSystem::Update`, `DrawSprites`), `StepPlatformer`
+and the sandbox swarm's `Swarm::Simulate`. Thread pool workers carry their names. Add zones in a
+game with `Emerald/Core/Profile.h`:
+
+```cpp
+#include <Emerald/Core/Profile.h>
+
+void UpdateEnemies(World& world)
+{
+    EM_PROFILE_FUNCTION();              // a zone named UpdateEnemies, or
+    EM_PROFILE_SCOPE("Enemies: think"); // a named zone until the end of the block
+}
+```
+
+Without `EMERALD_PROFILE` the macros compile to nothing and Tracy is not even downloaded.
+Tracy's headers are SYSTEM includes and its one source file is compiled with its own flags, so
+its warnings never count against ours.
+
+## AddressSanitizer
+
+The `debug-asan` preset builds the engine, its dependencies, the tests and the sandbox with
+AddressSanitizer, which stops a program at the first out-of-bounds access, use after free or
+double free with both call stacks (and on Linux reports leaks at exit). It runs about 2x slower.
+`EMERALD_ASAN` also puts the flags on the `Emerald` target's interface, so a game that links
+Emerald and turns the option on is instrumented too.
+
+```sh
+cmake --preset debug-asan
+cmake --build --preset debug-asan
+ctest --test-dir build/debug-asan --output-on-failure
+```
+
+- **GCC / Clang:** `-fsanitize=address -fno-omit-frame-pointer`. On Linux with Mesa's drivers the
+  sandbox reports about 50 KB of leaks from inside the unloaded GPU driver ("unknown module") at
+  exit; they are not ours, so run it with `ASAN_OPTIONS=detect_leaks=0` (the tests don't need it).
+- **MSVC:** `/fsanitize=address`, with incremental linking (`/INCREMENTAL:NO`) and the `/RTC`
+  run-time checks taken out of the Debug flags (ASan does not work with either). Needs the
+  **C++ AddressSanitizer** component: Visual Studio Installer > Modify > Individual components.
+  The programs need its runtime DLL (`clang_rt.asan_dynamic-x86_64.dll`, or the `_dbg_` one for
+  the debug runtime); configuring copies those from next to `cl.exe` into `build/debug-asan/bin`,
+  so the sandbox and `ctest` run without changing `PATH`. If configure warns that it found no DLL,
+  the component is missing. When debugging in Visual Studio, an ASan report breaks into the
+  debugger at the faulty line.
 
 ## Renderer (SDL GPU)
 
@@ -1770,7 +1839,7 @@ shaders/           The engine's HLSL shaders (Renderer2D lines, Sprite, the CRT 
 sandbox/           Example application (src/, its own shaders/, assets/ for the demo font, hero sheet and tilemap room)
 tests/             Unit tests (ctest)
 bench/             Math, particle, collision and entity micro-benchmarks (EMERALD_BUILD_BENCH)
-cmake/             Dependency setup (FetchContent) and shader compilation (Shaders.cmake)
+cmake/             Dependency setup (FetchContent), shader compilation (Shaders.cmake) and AddressSanitizer flags (Sanitizers.cmake)
 tools/shadercross/ Host-tool project that builds SDL_shadercross
 tools/sprites/     Script that generates the sandbox's pixel-art hero sheet
 tools/check_assets.py  Asset checker (palette, atlases, Tiled maps) for CI

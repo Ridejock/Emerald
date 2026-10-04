@@ -11,6 +11,7 @@
 #include "Emerald/Core/Defines.h"
 #include "Emerald/Core/Log.h"
 #include "Emerald/Core/Paths.h"
+#include "Emerald/Core/Profile.h"
 
 #if EMERALD_WITH_IMGUI
 #include <imgui.h>
@@ -162,9 +163,12 @@ int Application::Run()
         m_Keyboard.BeginFrame();
         m_Gamepads.BeginFrame();
         m_Mouse.BeginFrame();
-        SDL_Event event;
-        while (SDL_PollEvent(&event))
-            ProcessEvent(event);
+        {
+            EM_PROFILE_SCOPE("Events");
+            SDL_Event event;
+            while (SDL_PollEvent(&event))
+                ProcessEvent(event);
+        }
 
         const u64 now = SDL_GetTicksNS();
         u64 elapsedNs = now - last;
@@ -177,7 +181,10 @@ int Application::Run()
             break;
         }
         // Hot reload changed files and unload unused assets, before the game looks at them.
-        m_Assets->Update(static_cast<f32>(elapsedNs) / 1e9f);
+        {
+            EM_PROFILE_SCOPE("Assets");
+            m_Assets->Update(static_cast<f32>(elapsedNs) / 1e9f);
+        }
 
         // Fixed-rate simulation first (0..MaxFixedStepsPerFrame steps), then the per-frame update.
         const u32 steps = m_FixedTimestep.Advance(elapsedNs);
@@ -186,6 +193,7 @@ int Application::Run()
             m_Gamepads.BeginFixedStep();
             m_Mouse.BeginFixedStep();
             m_Session.BeginStep(); // records or replays this step's actions
+            EM_PROFILE_SCOPE("FixedUpdate");
             OnFixedUpdate(m_FixedTimestep.GetStepSeconds());
             m_Scenes.FixedUpdate(m_FixedTimestep.GetStepSeconds());
             m_Keyboard.EndFixedStep();
@@ -194,12 +202,19 @@ int Application::Run()
         }
         m_FrameSeconds = static_cast<f32>(elapsedNs) / 1e9f;
         m_Session.BeginUpdate();
-        OnUpdate(m_FrameSeconds);
-        m_Scenes.Update(m_FrameSeconds); // then the stack changes the scenes asked for
-        m_Audio.Update();
+        {
+            EM_PROFILE_SCOPE("Update");
+            OnUpdate(m_FrameSeconds);
+            m_Scenes.Update(m_FrameSeconds); // then the stack changes the scenes asked for
+            m_Audio.Update();
+        }
         RequestCaptures();
-        RenderFrame();
+        {
+            EM_PROFILE_SCOPE("Render"); // includes waiting for the swapchain (vsync)
+            RenderFrame();
+        }
         FinishCaptures();
+        EM_PROFILE_FRAME();
 
         ++m_FrameCount;
         if (m_Spec.MaxFrames != 0 && m_FrameCount >= m_Spec.MaxFrames) {

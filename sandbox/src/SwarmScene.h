@@ -122,6 +122,7 @@ private:
     void Simulate(f32 dt)
     {
         using namespace Emerald;
+        EM_PROFILE_SCOPE("Swarm::Simulate"); // in Tracy with the profile preset
         Time(m_MoveMs, [&] {
             UpdateMovement(m_World, dt);
             const Vec2 size = m_Shared.GetViewSize();

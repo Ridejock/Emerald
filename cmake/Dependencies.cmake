@@ -104,3 +104,18 @@ FetchContent_Declare(EnTT
 FetchContent_MakeAvailable(EnTT)
 get_target_property(EMERALD_ENTT_INCLUDES EnTT INTERFACE_INCLUDE_DIRECTORIES)
 set_target_properties(EnTT PROPERTIES INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${EMERALD_ENTT_INCLUDES}")
+
+# --- Tracy profiler (optional: EMERALD_PROFILE) --------------------------------------------
+# Only the client library (TracyClient.cpp, compiled with Tracy's own flags; its headers are
+# SYSTEM includes, so its warnings do not count against ours). The viewer must be the same
+# version: download it prebuilt from https://github.com/wolfpld/tracy/releases/tag/v0.14.1.
+if(EMERALD_PROFILE)
+    set(TRACY_ENABLE    ON CACHE BOOL "" FORCE)
+    set(TRACY_ON_DEMAND ON CACHE BOOL "" FORCE) # only collect while a viewer is connected
+    FetchContent_Declare(tracy
+        URL      https://github.com/wolfpld/tracy/archive/refs/tags/v0.14.1.tar.gz
+        URL_HASH SHA256=bf4af567e9c7524d07f3caa745fad02fb33bd5694f11910750382d1efbb251c1
+        DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+    )
+    FetchContent_MakeAvailable(tracy)
+endif()

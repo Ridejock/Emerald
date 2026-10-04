@@ -1,5 +1,6 @@
 #include "Emerald/Physics/Platformer.h"
 
+#include "Emerald/Core/Profile.h"
 #include "Emerald/Math/Common.h"
 #include "Emerald/Tilemap/Tilemap.h"
 
@@ -18,6 +19,7 @@ f32 Approach(f32 value, f32 target, f32 step)
 void StepPlatformer(PlatformerBody& body, const PlatformerInput& input,
                     const PlatformerTunables& tunables, const Tilemap& map, f32 dt)
 {
+    EM_PROFILE_FUNCTION();
     const bool wasGrounded = body.Grounded;
     body.Jumped = body.Landed = body.DroppedThrough = body.HitWall = body.HitCeiling = false;
 

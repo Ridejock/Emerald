@@ -4,12 +4,14 @@
 #include <iterator>
 #include <tuple>
 
+#include "Emerald/Core/Profile.h"
 #include "Emerald/Renderer/Renderer2D.h"
 
 namespace Emerald {
 
 void UpdateMovement(World& world, f32 dt)
 {
+    EM_PROFILE_FUNCTION();
     world.Each<Transform, Velocity>([dt](Entity, Transform& t, const Velocity& v) {
         t.Position += v.Linear * dt;
         t.Rotation += v.Angular * dt;
@@ -18,6 +20,7 @@ void UpdateMovement(World& world, f32 dt)
 
 void UpdateAnimation(World& world, f32 dt)
 {
+    EM_PROFILE_FUNCTION();
     world.Each<Animator>([dt](Entity, Animator& animator) { animator.Update(dt); });
 }
 
@@ -51,6 +54,7 @@ CollisionSystem::CollisionSystem(f32 cellSize, std::optional<Vec2> wrapSize)
 
 std::span<const CollisionEvent> CollisionSystem::Update(World& world)
 {
+    EM_PROFILE_SCOPE("CollisionSystem::Update");
     // Broadphase: insert or move every collider (unchanged cells cost a lookup).
     m_Seen.clear();
     world.Each<Transform, Collider>([&](Entity e, const Transform& t, const Collider& c) {
@@ -87,6 +91,7 @@ std::span<const CollisionEvent> CollisionSystem::Update(World& world)
 
 u32 DrawSprites(World& world, Renderer2D& r, const DrawSpritesOptions& options)
 {
+    EM_PROFILE_FUNCTION();
     struct Item {
         i32 Layer;
         f32 Y;

@@ -1,5 +1,7 @@
 #include "Emerald/Core/ThreadPool.h"
 
+#include "Emerald/Core/Profile.h"
+
 #if defined(_MSC_VER)
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -19,6 +21,7 @@ namespace {
 // Names the calling thread for debuggers/profilers; silently does nothing where unsupported.
 void SetCurrentThreadName(const std::string& name)
 {
+    EM_PROFILE_THREAD(name.c_str()); // Tracy shows the name too (it keeps a copy)
 #if defined(_MSC_VER)
     // Windows 10 1607+. The name is UTF-16; ours is ASCII so widening each char is enough.
     const std::wstring wide(name.begin(), name.end());

@@ -267,13 +267,14 @@ TEST(ScenesBlockInputWithoutFocus)
     input.BindAction("Jump", {Key::Space});
     keyboard.OnKeyDown(SDL_SCANCODE_SPACE);
 
+    // The log first: the stack's destructor exits the scenes, which still write to it.
+    Log_ log;
     SceneStack stack(&input);
     std::vector<std::string> sawJump;
     const auto watch = [&](Probe& self) {
         if (input.IsActionDown("Jump"))
             sawJump.push_back(self.GetName());
     };
-    Log_ log;
     auto world = Make("World", log);
     world->Action = watch;
     auto hud = Make("Hud", log, true, true);

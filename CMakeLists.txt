@@ -33,7 +33,12 @@ option(EMERALD_USE_IMGUI     "Enable Dear ImGui (SDL3 + SDL GPU backends)" OFF)
 option(EMERALD_MATH_SIMD     "Use the SSE code paths of the math library on x86/x64" ON)
 option(EMERALD_BUILD_TESTS   "Build the unit tests (run with ctest)" ${PROJECT_IS_TOP_LEVEL})
 option(EMERALD_BUILD_BENCH   "Build the math micro-benchmark" OFF)
+option(EMERALD_PROFILE       "Profile with Tracy (Core/Profile.h; the profile preset)" OFF)
+option(EMERALD_ASAN          "Build with AddressSanitizer (the debug-asan preset)" OFF)
 
+# AddressSanitizer: before the dependencies, so they are built with it too (MSVC refuses to link
+# instrumented and plain STL code together).
+include(cmake/Sanitizers.cmake)
 include(cmake/Dependencies.cmake)
 find_package(Threads REQUIRED) # ThreadPool (pthreads on Linux/macOS)
 include(cmake/Shaders.cmake)
@@ -127,11 +132,17 @@ target_compile_definitions(Emerald PUBLIC
     EMERALD_HOT_RELOAD=$<IF:$<CONFIG:Debug>,1,0>
     # The engine version, e.g. in input recordings' headers.
     EMERALD_VERSION="${Emerald_VERSION}"
+    # The EM_PROFILE_* macros (Core/Profile.h) call Tracy, or compile to nothing.
+    EMERALD_PROFILE=$<BOOL:${EMERALD_PROFILE}>
 )
 
 if(EMERALD_USE_IMGUI)
     target_link_libraries(Emerald PUBLIC Emerald::imgui)
 endif()
+if(EMERALD_PROFILE)
+    target_link_libraries(Emerald PUBLIC Tracy::TracyClient)
+endif()
+emerald_asan_target(Emerald) # games linking Emerald get the ASan flags too
 
 emerald_set_warnings(Emerald)
 

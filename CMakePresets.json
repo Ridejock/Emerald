@@ -30,11 +30,30 @@
       "cacheVariables": {
         "EMERALD_USE_IMGUI": "ON"
       }
+    },
+    {
+      "name": "profile",
+      "displayName": "Profile (Tracy, optimized with debug info)",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "EMERALD_PROFILE": "ON"
+      }
+    },
+    {
+      "name": "debug-asan",
+      "displayName": "Debug (AddressSanitizer)",
+      "inherits": "debug",
+      "cacheVariables": {
+        "EMERALD_ASAN": "ON"
+      }
     }
   ],
   "buildPresets": [
     { "name": "debug", "configurePreset": "debug" },
     { "name": "release", "configurePreset": "release" },
-    { "name": "debug-full", "configurePreset": "debug-full" }
+    { "name": "debug-full", "configurePreset": "debug-full" },
+    { "name": "profile", "configurePreset": "profile" },
+    { "name": "debug-asan", "configurePreset": "debug-asan" }
   ]
 }

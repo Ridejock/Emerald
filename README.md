@@ -1450,7 +1450,7 @@ Vulkan), a release build runs 6,000 entities at about 55 fps.
 | Backspace | destroy half |
 | Up / Down | target -1000 / +1000 (default 3000) |
 | M / Start | pause |
-| T | camera demo |
+| T | platformer |
 
 The HUD shows entities, target, fps, spawned and destroyed per second, contacts and pairs, and
 each system's time. With ImGui, the "Entity swarm" section shows the same, plus the broadphase

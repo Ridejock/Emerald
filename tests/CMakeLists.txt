@@ -105,3 +105,12 @@ add_executable(EmeraldEntityTests TestMain.cpp EntityTests.cpp)
 target_link_libraries(EmeraldEntityTests PRIVATE Emerald::Emerald)
 emerald_set_warnings(EmeraldEntityTests)
 add_test(NAME EntityTests COMMAND EmeraldEntityTests)
+
+# Platformer physics: slopes, one-way platforms, coyote time, jump buffer, and replaying the same
+# input twice giving the same path bit for bit.
+add_executable(EmeraldPlatformerTests TestMain.cpp PlatformerTests.cpp)
+target_link_libraries(EmeraldPlatformerTests PRIVATE Emerald::Emerald)
+target_compile_definitions(EmeraldPlatformerTests PRIVATE
+    EMERALD_TEST_TILEMAPS="${PROJECT_SOURCE_DIR}/sandbox/assets/tilemaps")
+emerald_set_warnings(EmeraldPlatformerTests)
+add_test(NAME PlatformerTests COMMAND EmeraldPlatformerTests)

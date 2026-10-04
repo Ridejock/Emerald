@@ -80,6 +80,7 @@ add_library(Emerald STATIC
     src/Renderer/Camera2D.cpp
     src/Renderer/Animation.cpp
     src/Physics/Collision.cpp
+    src/Physics/Platformer.cpp
     src/Physics/SpatialHash.cpp
     src/Tilemap/Tilemap.cpp
     src/Scene/SceneStack.cpp

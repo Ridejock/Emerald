@@ -7,7 +7,7 @@
 // spawning new ones, so thousands are spawned and destroyed every second.
 //
 // Space / South: a burst of 1,000 at the mouse (or the middle). Backspace: destroy half.
-// Up / Down: target population -/+ 1,000. M / Start pauses, T fades to the camera demo.
+// Up / Down: target population -/+ 1,000. M / Start pauses, T fades to the platformer.
 
 #include <chrono>
 #include <cmath>
@@ -45,7 +45,7 @@ public:
         if (input.WasActionPressed("Menu"))
             GetStack()->Push(m_Shared.Make(SceneId::Pause));
         else if (input.WasActionPressed("Scene"))
-            GetStack()->Replace(m_Shared.Make(SceneId::Demo), FadeBlack());
+            GetStack()->Replace(m_Shared.Make(SceneId::Platformer), FadeBlack());
         if (input.WasActionPressed("Pulse"))
             Burst(GetMouse().value_or(m_Shared.GetViewSize() * 0.5f));
         if (input.WasActionPressed("SwarmCut"))
@@ -303,7 +303,7 @@ private:
                          fmt(m_AnimateMs) + " life " + fmt(m_LifeMs) + " draw " + fmt(m_DrawMs),
                      {x, 62.0f}, grey);
         r.DrawString(font,
-                     "Space burst  Backspace destroy half  Up/Down target  M pause  T camera demo",
+                     "Space burst  Backspace destroy half  Up/Down target  M pause  T platformer",
                      {12.0f, size.y - 20.0f}, {1.0f, 1.0f, 1.0f, 0.9f});
     }
 

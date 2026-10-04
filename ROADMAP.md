@@ -123,6 +123,8 @@ Done when:
 - Deterministic at the fixed timestep (same input -> same path, tested)
 - Sandbox or test game level demonstrating each case
 
+**Status:** implemented (`Physics/Platformer.h`, slope tiles in `Tilemap`, `PlatformerTests`, the sandbox's Platformer scene); the issue stays open until it is checked on Windows / MSVC.
+
 ### Phase 2 test game: small Blaster Master-style platformer ([#11](https://github.com/Ridejock/Emerald/issues/11))
 
 A small side-scrolling platformer in the spirit of Blaster Master (a vehicle section and an on-foot section) using tilemaps, scenes, entities and the platformer physics.

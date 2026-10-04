@@ -3,9 +3,11 @@
 //
 //   Title (TitleScene.h) --Enter--> Camera demo (DemoScene.h) --T--> Tilemap room (TilemapScene.h)
 //                                        ^                                  |
-//                                        +---T--- Entity swarm (SwarmScene.h) <--T--+
+//                                        T                                  T
+//                                        |                                  v
+//                     Platformer (PlatformerScene.h) <--T-- Entity swarm (SwarmScene.h)
 //
-//   M in any of the three pushes Pause (PauseScene.h, drawn over the scene below).
+//   M in any of the four pushes Pause (PauseScene.h, drawn over the scene below).
 //
 // The app itself keeps what is global: input bindings, the shared assets (Shared.h), the
 // triangle pipeline and the app-level entity's quad drawn under every scene, Escape / C,
@@ -32,6 +34,7 @@
 
 #include "DemoScene.h"
 #include "PauseScene.h"
+#include "PlatformerScene.h"
 #include "Shared.h"
 #include "SwarmScene.h"
 #include "TilemapScene.h"
@@ -169,13 +172,15 @@ protected:
                 return std::make_unique<TilemapScene>(m_Shared);
             case SceneId::Swarm:
                 return std::make_unique<SwarmScene>(m_Shared);
+            case SceneId::Platformer:
+                return std::make_unique<PlatformerScene>(m_Shared);
             case SceneId::Pause:
                 return std::make_unique<PauseScene>(m_Shared);
             }
             return nullptr;
         };
-        // --demo / --tilemap / --swarm (screenshots, the benchmark) start there at once; otherwise
-        // the title fades in from black.
+        // --demo / --tilemap / --swarm / --platformer (screenshots, the benchmark) start there at
+        // once; otherwise the title fades in from black.
         if (m_Shared.Options.Start)
             GetScenes().Push(m_Shared.Make(*m_Shared.Options.Start));
         else
@@ -528,8 +533,12 @@ private:
         input.BindAxis("Zoom", GamepadButton::LeftTrigger, GamepadButton::RightTrigger);
         input.BindAxis("Rotate", Key::F, Key::G);
         input.BindAxis("Rotate", GamepadButton::LeftShoulder, GamepadButton::RightShoulder);
-        input.BindAction("Scene", {Key::T}); // demo -> tilemap room -> entity swarm -> demo
+        input.BindAction("Scene", {Key::T}); // demo -> tilemap -> swarm -> platformer -> demo
         input.BindAction("SwarmCut", {Key::Backspace}); // the swarm: destroy half
+        input.BindAction("Jump", {Key::Space}); // the platformer (down + jump drops through)
+        input.BindAction("Jump", {Key::Z});
+        input.BindAction("Jump", {GamepadButton::South});
+        input.BindAction("Overlay", {Key::O}); // the platformer's collision overlay
     }
 
     // Files come from the asset manager: loaded once, placeholders for missing files, and (debug
@@ -702,6 +711,8 @@ SandboxOptions ParseOptions(i32 argc, char** argv)
             options.Start = SceneId::Demo;
         } else if (arg == "--swarm") {
             options.Start = SceneId::Swarm;
+        } else if (arg == "--platformer") {
+            options.Start = SceneId::Platformer;
         } else if (arg == "--pan") {
             options.Room.Pan = true;
         } else if (arg == "--stats") {

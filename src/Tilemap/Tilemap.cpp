@@ -130,6 +130,22 @@ std::string GetClass(const Json& j)
     return type.empty() ? GetString(j, "class") : type;
 }
 
+// Which collision wins when layers overlap: solid, then slope, then one-way.
+i32 Priority(TileCollision c)
+{
+    switch (c) {
+    case TileCollision::Solid:
+        return 3;
+    case TileCollision::Slope:
+        return 2;
+    case TileCollision::OneWay:
+        return 1;
+    case TileCollision::None:
+        break;
+    }
+    return 0;
+}
+
 // The file as a JSON object, or null (logged) if it is missing or not valid JSON.
 std::optional<Json> ReadJson(const fs::path& file)
 {
@@ -250,10 +266,20 @@ struct TilemapLoader {
                 TileInfo& info = set.Tiles[static_cast<usize>(id)];
                 info.Type = GetClass(t);
                 ReadProperties(t, info.Props);
+                const bool slope = info.Props.Has("slopeLeft") || info.Props.Has("slopeRight") ||
+                                   info.Type == "slope";
                 if (info.Props.GetBool("solid") || info.Type == "solid")
                     info.Collision = TileCollision::Solid;
+                else if (slope)
+                    info.Collision = TileCollision::Slope;
                 else if (info.Props.GetBool("oneway") || info.Type == "oneway")
                     info.Collision = TileCollision::OneWay;
+                // Heights clamped to the tile, so a typo cannot make a floor outside it.
+                const f64 height = static_cast<f64>(set.TileSize.y);
+                info.Slope = {
+                    .Left = static_cast<f32>(Clamp(info.Props.GetFloat("slopeLeft"), 0.0, height)),
+                    .Right =
+                        static_cast<f32>(Clamp(info.Props.GetFloat("slopeRight"), 0.0, height))};
             }
         }
         return true;
@@ -424,9 +450,18 @@ struct TilemapLoader {
                     ++unknown;
                     continue;
                 }
-                // Solid wins over one-way, one-way over nothing.
-                if (layer.Collides && tile->Collision > Map.m_Collision[i])
-                    Map.m_Collision[i] = tile->Collision;
+                if (!layer.Collides || Priority(tile->Collision) <= Priority(Map.m_Collision[i]))
+                    continue;
+                Map.m_Collision[i] = tile->Collision;
+                if (tile->Collision != TileCollision::Slope)
+                    continue;
+                // Slopes keep their heights per cell: a flipped cell mirrors them.
+                if (Map.m_Slopes.empty())
+                    Map.m_Slopes.assign(Map.m_Collision.size(), {});
+                const bool flip = (layer.Cells[i] & kTileFlipX) != 0;
+                Map.m_Slopes[i] =
+                    flip ? TileSlope{.Left = tile->Slope.Right, .Right = tile->Slope.Left}
+                         : tile->Slope;
             }
             if (unknown > 0)
                 EM_CORE_WARN("Tilemap: {}: layer '{}' has {} cell(s) with unknown tile ids; they "
@@ -561,19 +596,59 @@ bool Tilemap::OverlapsSolid(const Aabb& area) const
     return hit;
 }
 
-TileMove Tilemap::MoveAndCollide(const Aabb& box, Vec2 delta) const
+TileSlope Tilemap::GetSlope(Vec2i tile) const
+{
+    if (m_Slopes.empty() || GetCollision(tile) != TileCollision::Slope)
+        return {};
+    return m_Slopes[static_cast<usize>(tile.y * m_Size.x + tile.x)];
+}
+
+f32 Tilemap::GetSlopeFloorY(Vec2i tile, f32 x) const
+{
+    const Aabb t = GetTileBounds(tile);
+    if (GetCollision(tile) != TileCollision::Slope)
+        return t.Min.y;
+    const TileSlope slope = GetSlope(tile);
+    const f32 along = Clamp((x - t.Min.x) / (t.Max.x - t.Min.x), 0.0f, 1.0f);
+    return t.Max.y - (slope.Left + (slope.Right - slope.Left) * along);
+}
+
+std::optional<f32> Tilemap::FindSlopeFloor(f32 x, f32 from, f32 to) const
+{
+    if (m_Slopes.empty())
+        return std::nullopt;
+    const TileRange rows = GetTileRange({{x, from}, {x, to}});
+    const i32 column = WorldToTile({x, from}).x;
+    for (i32 y = rows.Min.y; y < rows.Max.y; ++y) { // top to bottom: the first one is the highest
+        if (GetCollision({column, y}) != TileCollision::Slope)
+            continue;
+        const f32 floor = GetSlopeFloorY({column, y}, x);
+        if (floor >= from && floor <= to)
+            return floor;
+    }
+    return std::nullopt;
+}
+
+TileMove Tilemap::MoveAndCollide(const Aabb& box, Vec2 delta, const TileMoveOptions& options) const
 {
     // A hair of slack: a box resting exactly on a floor (after float rounding) is not stopped
     // by that floor when it walks sideways, and a box touching a wall counts as touching it.
     constexpr f32 kSkin = 0.01f;
     TileMove move;
     Aabb b = box;
+    const auto centerX = [&b] { return (b.Min.x + b.Max.x) * 0.5f; };
+    // Standing on a slope (bottom center on its surface) at the start of the move.
+    const bool onSlope = FindSlopeFloor(centerX(), b.Max.y - 0.05f, b.Max.y + 0.05f).has_value();
 
     // Along x: every solid tile in the swept area that is ahead of the box limits the move.
     if (delta.x != 0.0f) {
         f32 dx = delta.x;
+        // Standing on a slope, the box's lower corner may dip into the ground at the slope's top
+        // (slopes are at most 45 degrees: up to half the box's width), so tiles that low are
+        // not walls.
+        const f32 lift = onSlope ? (b.Max.x - b.Min.x) * 0.5f + std::abs(dx) : kSkin;
         const Aabb sweep{{Min(b.Min.x, b.Min.x + dx), b.Min.y + kSkin},
-                         {Max(b.Max.x, b.Max.x + dx), b.Max.y - kSkin}};
+                         {Max(b.Max.x, b.Max.x + dx), b.Max.y - lift}};
         ForEachCollidingTile(sweep, [&](Vec2i tile, TileCollision c) {
             if (c != TileCollision::Solid)
                 return;
@@ -591,23 +666,71 @@ TileMove Tilemap::MoveAndCollide(const Aabb& box, Vec2 delta) const
         move.Delta.x = dx;
     }
 
-    // Then along y, from the new x. One-way tiles only stop a fall that starts above them.
-    if (delta.y != 0.0f) {
+    // Up: solid ceilings only (one-way tiles and slopes let the box through from below).
+    if (delta.y < 0.0f) {
         f32 dy = delta.y;
-        const Aabb sweep{{b.Min.x + kSkin, Min(b.Min.y, b.Min.y + dy)},
-                         {b.Max.x - kSkin, Max(b.Max.y, b.Max.y + dy)}};
+        const Aabb sweep{{b.Min.x + kSkin, b.Min.y + dy}, {b.Max.x - kSkin, b.Max.y}};
         ForEachCollidingTile(sweep, [&](Vec2i tile, TileCollision c) {
             const Aabb t = GetTileBounds(tile);
-            if (delta.y > 0.0f && t.Min.y >= b.Max.y - kSkin && t.Min.y - b.Max.y <= dy) {
-                dy = Max(t.Min.y - b.Max.y, 0.0f); // solid or one-way: both are floors
-                move.HitBottom = true;
-            } else if (c == TileCollision::Solid && delta.y < 0.0f && t.Max.y <= b.Min.y + kSkin &&
-                       t.Max.y - b.Min.y >= dy) {
+            if (c == TileCollision::Solid && t.Max.y <= b.Min.y + kSkin &&
+                t.Max.y - b.Min.y >= dy) {
                 dy = Min(t.Max.y - b.Min.y, 0.0f);
                 move.HitTop = true;
             }
         });
+        // Jumping up along a slope, the floor can rise faster than the box: keep its bottom
+        // center on the surface (so it lands on the slope, not inside it).
+        const f32 bottom = b.Max.y + dy;
+        const f32 climb = std::abs(move.Delta.x) + kSkin;
+        if (const std::optional<f32> floor = FindSlopeFloor(centerX(), bottom - climb, bottom))
+            dy += *floor - bottom;
         move.Delta.y = dy;
+        return move;
+    }
+    if (delta.y == 0.0f && options.SnapDown <= 0.0f)
+        return move;
+
+    // Down (or snapping): floors up to `reach` below the box's bottom.
+    const f32 bottom = b.Max.y;
+    const f32 reach = delta.y + options.SnapDown;
+    // 1. A slope under the bottom center is the floor, even a little above the bottom: walking
+    //    up a 45 degree slope raises the floor by at most the distance walked.
+    const f32 climb = std::abs(move.Delta.x) + kSkin;
+    if (const std::optional<f32> floor =
+            FindSlopeFloor(centerX(), bottom - climb, bottom + reach)) {
+        move.Delta.y = *floor - bottom;
+        move.HitBottom = move.OnSlope = true;
+        return move;
+    }
+    // 2. The nearest tile top below the box: one-way tiles the box starts above, and solid
+    //    tiles; coming off a slope, those may also be up to `climb` above the bottom (stepping
+    //    off the top of the slope onto the flat ground next to it).
+    f32 best = reach;
+    bool found = false;
+    bool solid = false;
+    const Aabb sweep{{b.Min.x + kSkin, b.Min.y}, {b.Max.x - kSkin, bottom + reach}};
+    ForEachCollidingTile(sweep, [&](Vec2i tile, TileCollision c) {
+        if (c == TileCollision::Slope || (c == TileCollision::OneWay && options.IgnoreOneWay))
+            return;
+        const f32 top = GetTileBounds(tile).Min.y;
+        const f32 above = c == TileCollision::Solid && onSlope ? climb : kSkin;
+        if (top < bottom - above || top - bottom > reach) // overlapping it already, or too far
+            return;
+        const f32 distance = c == TileCollision::Solid ? top - bottom : Max(top - bottom, 0.0f);
+        if (!found || distance < best) {
+            best = distance;
+            solid = c == TileCollision::Solid;
+        } else if (distance == best) {
+            solid |= c == TileCollision::Solid; // one-way and solid side by side: not droppable
+        }
+        found = true;
+    });
+    if (found) {
+        move.Delta.y = best;
+        move.HitBottom = true;
+        move.OnOneWay = !solid;
+    } else {
+        move.Delta.y = delta.y; // nothing within the snap distance: fall freely
     }
     return move;
 }
@@ -676,8 +799,12 @@ u32 Tilemap::DrawCollision(Renderer2D& r, const Rect2D& view) const
         const Vec2 at = Vec2(tile) * size;
         if (c == TileCollision::Solid)
             r.FillRect(at, size, {1.0f, 0.15f, 0.15f, 0.35f});
-        else
+        else if (c == TileCollision::OneWay)
             r.FillRect(at, {size.x, 3.0f}, {1.0f, 0.85f, 0.1f, 0.8f});
+        else
+            r.DrawLine({at.x, GetSlopeFloorY(tile, at.x)},
+                       {at.x + size.x, GetSlopeFloorY(tile, at.x + size.x)},
+                       {0.2f, 0.9f, 1.0f, 1.0f});
         ++drawn;
     });
     return drawn;

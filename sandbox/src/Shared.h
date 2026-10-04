@@ -3,8 +3,8 @@
 // What the sandbox's scenes share: the app, the command-line options, the assets loaded once at
 // startup (fonts, sprite sheets, the blip), a factory for the other scenes, the transitions and
 // the hero's animation logic. The scenes: TitleScene.h, DemoScene.h, TilemapScene.h,
-// SwarmScene.h and PauseScene.h; main.cpp creates them (SandboxShared::Make) and runs the global
-// parts.
+// SwarmScene.h, PlatformerScene.h and PauseScene.h; main.cpp creates them (SandboxShared::Make) and
+// runs the global parts.
 
 #include <filesystem>
 #include <functional>
@@ -17,13 +17,14 @@
 
 #include "TilemapRoom.h"
 
-enum class SceneId : u8 { Title, Demo, Tilemap, Swarm, Pause };
+enum class SceneId : u8 { Title, Demo, Tilemap, Swarm, Platformer, Pause };
 
 struct SandboxOptions {
     u64 Frames = 0;
     std::string ScreenshotPath;
-    // --demo / --tilemap / --swarm start in that scene (no title, no fade); --map <file.tmj> loads
-    // another map; --pan / --stats / --zoom <z> / --no-cull for the benchmark; --collision /
+    // --demo / --tilemap / --swarm / --platformer start in that scene (no title, no fade); --map
+    // <file.tmj> loads another map; --pan / --stats / --zoom <z> / --no-cull for the benchmark;
+    // --collision /
     // --objects turn the room's overlays on.
     std::optional<SceneId> Start;
     TilemapRoom::Options Room;

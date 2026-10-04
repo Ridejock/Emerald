@@ -4,7 +4,7 @@ Emerald is a small, modern C++20 game engine built on [SDL3](https://github.com/
 It is split into:
 
 - **`Emerald::Emerald`** – the engine library (logging, window, SDL GPU renderer, batched 2D renderer for lines and
-  textured sprites, sprite animation, a 2D camera, textures and texture atlases, keyboard input, application loop with a fixed-timestep update, a scene stack with transitions, entities and components (EnTT), image loading, thread pool, `std::pmr`
+  textured sprites, sprite animation, a 2D camera, textures and texture atlases, keyboard input, application loop with a fixed-timestep update, a scene stack with transitions, entities and components (EnTT), platformer character physics, image loading, thread pool, `std::pmr`
   memory helpers).
 - **`Emerald::Math`** – a header-only math library (vectors, `Mat4`, optional SSE), included by the engine.
 - **`sandbox/`** – a minimal example app that links the engine and draws a rotating vertex-colored triangle
@@ -13,7 +13,7 @@ It is split into:
   an animated pixel-art hero (walk / idle / jump, from `tools/sprites/make_hero.py`) driven by
   keyboard or gamepad that a `Camera2D` follows around a larger world (pan, zoom, rotate, shake;
   with ImGui on, the panel shows the camera and lists connected pads and their live stick values).
-  It is organised as scenes (title, camera demo, tilemap room, entity swarm, pause) on the scene stack.
+  It is organised as scenes (title, camera demo, tilemap room, entity swarm, platformer, pause) on the scene stack.
 - **`tests/`** – small unit-test executables run with `ctest`.
 
 All dependencies are fetched automatically with CMake `FetchContent` and pinned to specific versions.
@@ -119,6 +119,7 @@ Options can also be passed directly, e.g. `cmake --preset release -DEMERALD_USE_
 ./build/debug/bin/Sandbox --demo                           # skip the title: start in the camera demo
 ./build/debug/bin/Sandbox --tilemap                        # start in the tilemap room (see Tilemaps)
 ./build/debug/bin/Sandbox --swarm                          # start in the entity swarm (see Entities)
+./build/debug/bin/Sandbox --platformer                     # start in the platformer level (see Platformer physics)
 SDL_GPU_DRIVER=vulkan ./build/debug/bin/Sandbox            # the same through SDL's environment variable
 ```
 
@@ -290,6 +291,7 @@ structure-of-arrays layout instead (all x together, all y together).
 | `TilemapTests` | the sample room from Tiled JSON: layer order and kinds, external `.tsj` and embedded tilesets (GID lookup, sprite regions), objects (shapes, class, position, size, properties), the collision grid from tile properties and classes (non-colliding layer), tile ranges with touching edges, `OverlapsSolid`, `MoveAndCollide` (flush stops, no tunneling, sliding along walls, one-way from above / below / inside); all 8 flip-bit combinations against Tiled's transform; missing and broken files (JSON, sizes, infinite, isometric, missing/XML tileset, missing image, base64, bad cells) logged and failing cleanly, unknown tile ids left empty; through the asset manager: placeholder for a missing map, hot reload of the map and of its external tileset, broken edits keeping the last version |
 | `SceneTests` | the scene stack without a GPU: requests applied only at the end of `Update`, hook order for push / pop / replace / clear / `ReplaceAll` (pause, resume, exit, destruction), requests from inside a scene's own hooks, `DrawBelow` / `UpdateBelow` chains (which scenes draw and update, in which order), fade timing (change at full cover, then uncover, requests queued meanwhile), fading into an empty stack, custom transition `Draw`, input blocked below the top and during transitions (and the app's own block kept), empty-stack pops, exiting every scene on destruction |
 | `EntityTests` | add / get / has / remove and replacing components, deferred destroy (skipped by `Each`, invalid at once, destructors at `Flush`, stale handles after slot reuse), `Clear`; spawning, adding and destroying inside `Each`; churn of 400,000 spawns without leaks (destructor counts, bounded storage); movement, animation (an `OnFinished` that destroys); collisions (circle / circle normal and depth, circle / box, layer masks, destroyed and collider-less entities leaving the broadphase); `DrawSprites` order by layer and y, culling |
+| `PlatformerTests` | slope tiles from the tileset (heights, flipped cells mirrored, floor heights, never blocking sideways); walking right and left over 45 and 22.5 degree hills grounded every step with the feet on the floor and always moving (no bounce, no sticking); landing on a slope and jumping along it; jumping up through a one-way platform and landing on it, down + jump dropping through to the ground, down + jump on solid ground being a jump; coyote time (in time, too late, off, longer) and the jump buffer (pressed early enough, too early, off, longer); variable jump height; walls and ceilings; a scripted 50 s run on the sandbox level replayed twice with the same positions bit for bit |
 | `TweenTests` | every easing curve at 0, 0.5 and 1, Out mirroring In and InOut symmetry, clamping; tweens of f32 / Vec2 / Vec4 with delay, start values, repeat and yoyo, endless tweens, cancelling (chains included, no callbacks), chaining with leftover time, completion firing exactly once, callbacks starting and clearing tweens, `CancelTarget` from a destructor, `Run`, stale ids; one big step vs many uneven ones giving the same result; timers `After` / `Every` / cancel (also from their own callback), callbacks adding timers, frame-rate independence with uneven dt |
 
 ```sh
@@ -981,23 +983,24 @@ the tiles in the tileset:
 |---|---|
 | Custom property `solid` (bool, ticked), or Class `solid` | `TileCollision::Solid`: blocks from every side |
 | Custom property `oneway` (bool, ticked), or Class `oneway` | `TileCollision::OneWay`: a platform top, only blocks moving down onto it from above |
+| Float properties `slopeLeft` / `slopeRight`, or Class `slope` | `TileCollision::Slope`: a sloped floor (see [Platformer physics](#platformer-physics-physicsplatformerh)) |
 | A bool property `collision` set to false *on a tile layer* | that layer's tiles never collide (decoration drawn over the hero, say) |
 
-Solid wins over one-way when layers overlap, and outside the map counts as empty, so put walls at
+Solid wins over slope and slope over one-way when layers overlap, and outside the map counts as empty, so put walls at
 the edges. The queries:
 
 - `GetCollision(tile)`
 - `WorldToTile` and `GetTileBounds`
 - `GetTileRange(area)` and `ForEachCollidingTile(area, fn)` for your own tests
 - `OverlapsSolid(area)`
-- `MoveAndCollide(box, delta)`, which moves an AABB and reports `HitLeft` / `HitRight` /
-  `HitTop` / `HitBottom` (on the ground)
+- `MoveAndCollide(box, delta, options)`, which moves an AABB and reports `HitLeft` / `HitRight` /
+  `HitTop` / `HitBottom` (on the ground), plus `OnSlope` / `OnOneWay`
 
-These are what the platformer physics (#10) will build on.
+The platformer physics builds on these (see [Platformer physics](#platformer-physics-physicsplatformerh)).
 
 **Drawing.** `DrawLayer(r, layer, view)` draws only the tiles that overlap `view` (use
 `Camera2D::GetVisibleBounds()`) and returns how many it drew. `Draw` does every visible tile layer
-in order, and `DrawCollision` is a debug overlay: solid tiles in red, one-way tops in yellow. To
+in order, and `DrawCollision` is a debug overlay: solid tiles in red, one-way tops in yellow, slopes in cyan. To
 put characters between layers, call `DrawLayer` per layer (the sandbox draws the hero where the
 "Objects" layer is).
 
@@ -1052,6 +1055,142 @@ Culling keeps the cost at the size of the screen rather than the size of the map
 
 `TilemapTests` loads the sample room, checks it in detail and breaks copies of it on purpose (see
 the table under [Tests](#tests)).
+
+## Platformer physics (`Physics/Platformer.h`)
+
+A kinematic character for side-view games. A box runs, jumps and falls against a tilemap's
+collision. There are no forces and no rigid bodies, only the body's own velocity, moved with
+`Tilemap::MoveAndCollide` every fixed step.
+
+```cpp
+#include <Emerald/Physics/Platformer.h>
+
+Emerald::PlatformerBody hero{.Position = spawn, .HalfSize = {5.0f, 7.0f}}; // the box's center
+Emerald::PlatformerTunables tunables;                                       // the feel (below)
+
+void OnFixedUpdate(f32 dt) override
+{
+    const Emerald::Input& input = GetInput();
+    const Emerald::PlatformerInput in{.Move = input.GetAxis("MoveX"),
+                                      .JumpPressed = input.WasActionPressed("Jump"),
+                                      .JumpHeld = input.IsActionDown("Jump"),
+                                      .Down = input.GetAxis("MoveY") > 0.5f};
+    Emerald::StepPlatformer(hero, in, tunables, *map, dt);
+    if (hero.Jumped)
+        PlayJumpSound();
+}
+```
+
+`PlatformerTunables` holds every number, in map pixels and seconds:
+
+| Field | Default | What it does |
+|---|---|---|
+| `Gravity` | 1400 px/s² | pulls the body down |
+| `MaxFallSpeed` | 420 px/s | terminal velocity |
+| `RunSpeed` | 140 px/s | speed at full stick or key |
+| `GroundAccel` / `GroundDecel` | 1600 / 2000 px/s² | towards the run speed on the ground, and back to 0 with no input |
+| `AirAccel` | 1000 px/s² | control in the air, both ways |
+| `JumpVelocity` | 400 px/s | upward speed when a jump starts (height v² / 2g, about 57 px) |
+| `JumpCut` | 0.45 | releasing jump while rising multiplies the upward speed by this (variable jump height) |
+| `CoyoteTime` | 0.10 s | after walking off a ledge, a jump still works for this long |
+| `JumpBuffer` | 0.12 s | a jump pressed this long before landing happens on landing |
+| `SnapDown` | 4 px | how far below a walking body still counts as ground (walking down slopes) |
+| `DropThroughTime` | 0.2 s | how long one-way platforms are ignored after down + jump |
+
+`PlatformerBody` holds the state:
+- `Velocity`.
+- The flags `Grounded`, `OnSlope`, `OnOneWay` and `Rising` (going up from a jump that can still
+  be cut short).
+- The timers `CoyoteTimer`, `BufferTimer` and `DropTimer`.
+- What happened in the last step: `Jumped`, `Landed`, `DroppedThrough`, `HitWall` and
+  `HitCeiling`, for sounds, animation and HUDs.
+- `GetBox()` and `GetFeet()`.
+
+**One step**, in order:
+1. **Timers.** A jump press sets `BufferTimer` to `JumpBuffer`; otherwise it counts down.
+2. **Run.** The horizontal speed accelerates towards `Move * RunSpeed`.
+3. **Jump.** It happens if a jump is buffered (`BufferTimer > 0`) and the body is grounded or
+   within coyote time. If the body stands on one-way tiles only and down is held, it drops
+   through instead: `DropTimer` starts and no jump happens. Either way the buffer and coyote
+   timers are cleared, so one press gives one jump.
+4. **Jump cut.** Releasing jump while rising multiplies the upward speed by `JumpCut` once.
+5. **Gravity,** capped at `MaxFallSpeed`.
+6. **Move** with `MoveAndCollide`. One-way tiles are ignored while `DropTimer` runs.
+   `SnapDown` applies only if the body was grounded, so jumps and drops never snap.
+7. **Results.** Walls stop the horizontal speed and ceilings the upward speed. The body is
+   grounded when it hit a floor while not moving up. `CoyoteTimer` is full while grounded and
+   counts down in the air.
+
+**How the cases work:**
+- **Ground detection.** The move reports `HitBottom` when a floor stops the fall. Grounded
+  bodies get a little gravity every step, so they stay in contact with the floor.
+- **Slopes.** Slope tiles are floors under the box's **bottom center**, and they never block
+  sideways or from below. The center decides, not the corners, so the box sinks into the slope
+  by up to half its width. That's the usual look, and it means no jitter at tile edges.
+  - **Up.** Walking up raises the floor by at most the distance walked (slopes are 45° at most),
+    so the move lifts the box onto the surface.
+  - **Down.** Walking down, `SnapDown` keeps the body on the surface instead of letting it fall
+    in small hops.
+  - **Top of a slope.** The box's front corner dips into the flat ground there. Walls that low
+    don't stop a body standing on a slope, and the ground beside it can be stepped onto from a
+    little below.
+  - **Jumping along a slope.** The body's bottom is kept on the surface, so it lands on the
+    slope rather than inside it.
+- **One-way platforms.** They only stop a fall that starts above their top, so you jump up
+  through them and land on them. `OnOneWay` is true only when nothing solid is under the box as
+  well, and down + jump then drops through. If you don't press down, the jump is a normal one.
+- **Coyote time.** The jump check uses "grounded, or `CoyoteTimer > 0`". The timer only counts
+  down after the body has left the ground, so a late press just off a ledge still jumps.
+- **Jump buffer.** The press is stored in `BufferTimer`, and the first step that is grounded
+  with the timer still running jumps.
+- **Determinism.** A step reads only the body, the input, the tunables and the map, and it is
+  plain float math. Replaying the same inputs at the same fixed step gives the same path bit for
+  bit. `PlatformerTests` replays a scripted 50 s run twice and compares every position's bits.
+  Different builds and compilers may still round differently.
+
+**Slopes in Tiled.** On a tile in the tileset, add float properties `slopeLeft` and `slopeRight`,
+in pixels up from the tile's bottom, or set its Class to `slope`. Examples on 16 px tiles:
+- `0` → `16`: 45°, rising to the right.
+- `0` → `8` followed by `8` → `16`: 22.5° over two tiles.
+
+Flip a cell horizontally (X in Tiled) to get the slope going down. The engine mirrors the
+heights, so one tile serves both directions. Vertical and diagonal flips are ignored for
+slopes: they are floors only, with no slopes on ceilings. `GetCollision` returns
+`TileCollision::Slope` for them, `GetSlope(tile)` gives the heights after the flip, and
+`GetSlopeFloorY(tile, x)` gives the surface. `DrawCollision` draws slopes as cyan lines. If
+layers overlap, solid wins over slope and slope wins over one-way.
+
+**`MoveAndCollide` options.** `TileMoveOptions{.IgnoreOneWay, .SnapDown}` are what the character
+uses. The result's `OnSlope` and `OnOneWay` say what the floor is. Without options, moves behave
+as before for maps without slopes.
+
+**Entities.** `PlatformerBody` is a plain struct, so it can be a component as it is
+(`entity.Add<PlatformerBody>(...)`). A system would also need each entity's input, so it is left
+to the game. The phase 2 test game will add one if it needs several bodies.
+
+**The sandbox's platformer scene.** It's in the title menu, after the entity swarm in the T
+cycle, and behind `--platformer`. The level, `sandbox/assets/tilemaps/platformer.tmj` (96 x 22
+tiles, from `tools/tilemaps/make_platformer.py`), has flat ground, 45° and 22.5° hills, three
+one-way platforms stacked above the ground plus one more, a 4-tile gap for coyote time, and a
+2-tile step for the jump buffer. Falling into the gap respawns you at the last checkpoint.
+
+| Keyboard | PS4 / gamepad | Action |
+|---|---|---|
+| A / D, ← / → | d-pad, left stick | run |
+| Space or Z (hold: higher) | Cross (South) | jump |
+| S / ↓ + jump | d-pad down / stick down + Cross | drop through a one-way platform |
+| R | Share (Back) | respawn at the checkpoint |
+| O | | collision overlay |
+| M | Options (Start) | pause |
+| T | | next scene (camera demo) |
+
+The scene shows:
+- **HUD:** the grounded / slope / one-way / rising flags, the coyote, buffer and drop timers as
+  bars, and counts of jumps, coyote jumps, buffered jumps and drops.
+- **Popups** over the hero: "coyote jump!", "buffered jump!" and "drop through!", also logged.
+- **Trail** of the feet over the last 3 s: green on the ground, yellow in coyote time, white in
+  the air.
+- **ImGui** (debug-full): sliders for every tunable, a reset, and the position and velocity.
 
 ## Scenes (`Scene/`)
 
@@ -1156,14 +1295,15 @@ popping it always returns to whatever opened it.
 
 - **Title** (`TitleScene.h`): the tweened menu over drifting gems. "Camera demo" fades to black.
   "Tilemap room" uses a custom transition, horizontal blinds closing from alternate sides
-  (`Blinds` in `Shared.h`). "Entity swarm" fades to white. "Quit" quits.
+  (`Blinds` in `Shared.h`). "Entity swarm" fades to white, "Platformer" to black. "Quit" quits.
 - **Camera demo** (`DemoScene.h`): the shapes, sprites, text, camera, hero and collision yard.
 - **Tilemap room** (`TilemapScene.h`): the Tiled map (see Tilemaps).
 - **Entity swarm** (`SwarmScene.h`): thousands of entities in the scene's own `World` (see Entities).
+- **Platformer** (`PlatformerScene.h`): the platformer level (see Platformer physics).
 - **Pause** (`PauseScene.h`): M / Start in any game scene. It has `DrawBelow` and plays its
   menu intro over the frozen scene. Choices: Resume (the outro plays, then the scene pops), CRT
   effect, Replay intro, Title screen (`ReplaceAll` with a fade), Quit.
-- T cycles camera demo → tilemap room → entity swarm → camera demo (`Replace` with a fade).
+- T cycles camera demo → tilemap room → entity swarm → platformer → camera demo (`Replace` with a fade).
 - `main.cpp` keeps what is global: input bindings, the shared assets (`Shared.h`), the triangle
   and the bouncing quads (entities in the app's `GetWorld()`) under every scene, Escape / C, and screenshots. It also builds the scenes
   (`SandboxShared::Make`), so they never include each other.
@@ -1524,7 +1664,7 @@ bench/             Math, particle, collision and entity micro-benchmarks (EMERAL
 cmake/             Dependency setup (FetchContent) and shader compilation (Shaders.cmake)
 tools/shadercross/ Host-tool project that builds SDL_shadercross
 tools/sprites/     Script that generates the sandbox's pixel-art hero sheet
-tools/tilemaps/    Script that generates the sandbox's tileset art, Tiled tilesets and sample room (+ the 500 x 500 benchmark map)
+tools/tilemaps/    Scripts that generate the sandbox's tileset art, Tiled tilesets, sample room (+ the 500 x 500 benchmark map) and platformer level
 ```
 
 ## Using Emerald in your own project

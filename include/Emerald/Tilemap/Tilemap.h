@@ -72,11 +72,22 @@ struct TileTransform {
 [[nodiscard]] TileTransform GetTileTransform(u32 cell);
 
 // How a tile collides, from its tileset's custom properties (see README "Tilemaps"): a bool
-// property "solid" or "oneway", or a tile class (type) of "solid" or "oneway". Solid wins.
+// property "solid" or "oneway", a tile class (type) of "solid", "oneway" or "slope", or the
+// slope heights below. Solid wins over slope, slope over one-way.
 enum class TileCollision : u8 {
     None,
     Solid,  // blocks from every side
     OneWay, // a platform top: only blocks things moving down onto it from above
+    Slope,  // a sloped floor (TileSlope): only the bottom center of a box stands on it
+};
+
+// A slope's floor height at the tile's left and right edge, in pixels up from the tile's bottom
+// (Tiled float or int properties "slopeLeft" and "slopeRight"). 0 -> 16 on a 16 px tile is a 45
+// degree slope rising to the right; 0 -> 8 and 8 -> 16 on two tiles make a 22.5 degree one. A
+// horizontally flipped cell swaps the two (vertical and diagonal flips are ignored).
+struct TileSlope {
+    f32 Left = 0.0f;
+    f32 Right = 0.0f;
 };
 
 // What a tileset knows about one of its tiles (Tiled lists only tiles with data; the rest are
@@ -85,6 +96,7 @@ struct TileInfo {
     std::string Type; // Tiled's "Class" field
     Properties Props;
     TileCollision Collision = TileCollision::None;
+    TileSlope Slope{}; // Collision == Slope
 };
 
 // A grid of same-size tiles in one image, embedded in the map or from an external .tsj file.
@@ -154,6 +166,16 @@ struct TileMove {
     bool HitRight = false;
     bool HitTop = false;    // moving up into a ceiling
     bool HitBottom = false; // moving down onto a floor or one-way platform: "on the ground"
+    bool OnSlope = false;   // HitBottom, and the floor is a slope under the box's bottom center
+    bool OnOneWay = false;  // HitBottom, and the floor is only one-way tiles (can drop through)
+};
+
+// Extras for MoveAndCollide, for platformer characters (Physics/Platformer.h).
+struct TileMoveOptions {
+    bool IgnoreOneWay = false; // fall through one-way platforms (dropping down)
+    // A box not moving up keeps to a floor up to this far below the end of its move (walking
+    // down a slope stays on it instead of falling down in small steps). 0: off.
+    f32 SnapDown = 0.0f;
 };
 
 // --- The map ----------------------------------------------------------------------------------
@@ -215,11 +237,20 @@ public:
     template <typename Fn> void ForEachCollidingTile(const Aabb& area, Fn&& fn) const;
     // Whether the area overlaps a solid tile (one-way tiles never count as overlapping).
     [[nodiscard]] bool OverlapsSolid(const Aabb& area) const;
+    // A slope cell's heights (flip applied); zeros for other cells.
+    [[nodiscard]] TileSlope GetSlope(Vec2i tile) const;
+    // The y of a slope cell's floor at world x (clamped to the tile); for other cells, its top.
+    [[nodiscard]] f32 GetSlopeFloorY(Vec2i tile, f32 x) const;
     // Moves `box` by `delta`, stopping at tiles: first along x, then along y, each as a sweep,
     // so fast moves do not tunnel. Solid tiles block every side; one-way tiles only block a
     // downward move whose bottom starts at or above the tile's top. A box that already overlaps
     // a tile is not pushed out, only kept from going further in.
-    [[nodiscard]] TileMove MoveAndCollide(const Aabb& box, Vec2 delta) const;
+    // Slopes (see README "Slopes"): a box moving down (or snapping) whose bottom center is over
+    // a slope stands on the slope's surface, also when that means moving up a little (walking
+    // up it); slopes never block sideways or from below. A box standing on a slope may overlap
+    // the solid tile at the slope's top a little, so it can walk up onto it.
+    [[nodiscard]] TileMove MoveAndCollide(const Aabb& box, Vec2 delta,
+                                          const TileMoveOptions& options = {}) const;
 
     // --- Drawing (between Renderer2D::Begin and End) ---
     // Draws one tile layer's tiles that overlap `view` (e.g. Camera2D::GetVisibleBounds()),
@@ -229,7 +260,8 @@ public:
                   const Vec4& tint = {1.0f, 1.0f, 1.0f, 1.0f}) const;
     // Every visible tile layer in order; returns the tile count.
     u32 Draw(Renderer2D& r, const Rect2D& view) const;
-    // Debug view: solid tiles filled red, one-way tiles as a yellow bar along their top.
+    // Debug view: solid tiles filled red, one-way tiles as a yellow bar along their top, slopes
+    // as a cyan line along their surface.
     u32 DrawCollision(Renderer2D& r, const Rect2D& view) const;
 
 private:
@@ -241,9 +273,13 @@ private:
     std::vector<Tileset> m_Tilesets; // by FirstGid
     std::vector<MapLayer> m_Layers;
     std::vector<TileCollision> m_Collision; // m_Size.x * m_Size.y
+    std::vector<TileSlope> m_Slopes;        // like m_Collision; empty if the map has no slopes
     std::vector<u16> m_GidToTileset;        // GID -> index into m_Tilesets + 1 (0: none)
     std::vector<std::filesystem::path> m_Files;
     Vec2i m_MaxTileSize{}; // the largest tileset tile (for culling)
+
+    // The y of the highest slope surface under world x between y `from` and `to` (from < to).
+    [[nodiscard]] std::optional<f32> FindSlopeFloor(f32 x, f32 from, f32 to) const;
 };
 
 template <typename Fn> void Tilemap::ForEachCollidingTile(const Aabb& area, Fn&& fn) const

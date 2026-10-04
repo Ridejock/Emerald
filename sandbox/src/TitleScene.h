@@ -43,6 +43,9 @@ public:
                 GetStack()->Replace(m_Shared.Make(SceneId::Swarm),
                                     Emerald::Transition::Fade(0.4f, {1.0f, 1.0f, 1.0f}));
                 break;
+            case 3:
+                GetStack()->Replace(m_Shared.Make(SceneId::Platformer), FadeBlack());
+                break;
             default:
                 m_Shared.App.Quit();
                 break;
@@ -98,8 +101,9 @@ public:
 
 private:
     SandboxShared& m_Shared;
-    MenuDemo m_Menu{
-        "EMERALD", {"Camera demo", "Tilemap room", "Entity swarm", "Quit"}, "Up/Down + Enter"};
+    MenuDemo m_Menu{"EMERALD",
+                    {"Camera demo", "Tilemap room", "Entity swarm", "Platformer", "Quit"},
+                    "Up/Down + Enter"};
     HeroSprite m_Hero{m_Shared.Hero};
     f32 m_Time = 0.0f;
 };

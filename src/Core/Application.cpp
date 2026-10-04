@@ -1,6 +1,10 @@
 #include "Emerald/Core/Application.h"
 
+#include <cstdio>
+#include <filesystem>
+#include <random>
 #include <string>
+#include <system_error>
 
 #include <SDL3/SDL.h>
 
@@ -16,12 +20,37 @@
 
 namespace Emerald {
 
+namespace {
+
+// --capture's file for a frame (1 = the first): dir/frame_000001.png.
+std::filesystem::path CaptureFile(const std::filesystem::path& dir, u64 frame)
+{
+    char name[32];
+    std::snprintf(name, sizeof(name), "frame_%06llu.png", static_cast<unsigned long long>(frame));
+    return dir / name;
+}
+
+} // namespace
+
 Application::Application(const ApplicationSpec& spec)
     : m_Spec(spec), m_FixedTimestep(spec.FixedUpdateRate, spec.MaxFixedStepsPerFrame)
 {
     Log::Init(spec.LogFile);
     EM_CORE_INFO("Emerald starting (SDL {}.{}.{})", SDL_MAJOR_VERSION, SDL_MINOR_VERSION,
                  SDL_MICRO_VERSION);
+
+    // Development options (--frames, --replay, ...). A replay is loaded now, so its seed is
+    // known before the game's OnStart.
+    m_Dev = ParseDevOptions(spec.Args);
+    if (m_Dev.Frames != 0)
+        m_Spec.MaxFrames = m_Dev.Frames;
+    m_Seed = std::random_device{}();
+    if (!m_Dev.Replay.empty()) {
+        m_Replay = InputRecording::Load(m_Dev.Replay);
+        m_DevFailed = !m_Replay;
+        if (m_Replay)
+            m_Seed = m_Replay->Seed;
+    }
 
     m_FrameArena = std::make_unique<FrameArena>(spec.FrameArenaSize);
     m_ThreadPool = std::make_unique<ThreadPool>(spec.WorkerThreads);
@@ -116,9 +145,14 @@ int Application::Run()
         EM_CORE_ERROR("Cannot run: window/GPU initialization failed");
         return 1;
     }
+    if (m_DevFailed) {
+        EM_CORE_ERROR("Cannot run: the --replay file could not be loaded");
+        return 1;
+    }
 
     m_Running = true;
     OnStart();
+    StartInputSession(); // after OnStart: the game has bound its actions
 
     u64 last = SDL_GetTicksNS();
     while (m_Running) {
@@ -133,8 +167,15 @@ int Application::Run()
             ProcessEvent(event);
 
         const u64 now = SDL_GetTicksNS();
-        const u64 elapsedNs = now - last;
+        u64 elapsedNs = now - last;
         last = now;
+        // A capture runs at a fixed frame time; a replay uses the recorded one (and ends).
+        if (m_CaptureFrameNs != 0)
+            elapsedNs = m_CaptureFrameNs;
+        if (!m_Session.BeginFrame(elapsedNs)) {
+            EM_CORE_INFO("Replay finished after {} frames", m_FrameCount);
+            break;
+        }
         // Hot reload changed files and unload unused assets, before the game looks at them.
         m_Assets->Update(static_cast<f32>(elapsedNs) / 1e9f);
 
@@ -144,6 +185,7 @@ int Application::Run()
             m_Keyboard.BeginFixedStep();
             m_Gamepads.BeginFixedStep();
             m_Mouse.BeginFixedStep();
+            m_Session.BeginStep(); // records or replays this step's actions
             OnFixedUpdate(m_FixedTimestep.GetStepSeconds());
             m_Scenes.FixedUpdate(m_FixedTimestep.GetStepSeconds());
             m_Keyboard.EndFixedStep();
@@ -151,10 +193,13 @@ int Application::Run()
             m_Mouse.EndFixedStep();
         }
         m_FrameSeconds = static_cast<f32>(elapsedNs) / 1e9f;
+        m_Session.BeginUpdate();
         OnUpdate(m_FrameSeconds);
         m_Scenes.Update(m_FrameSeconds); // then the stack changes the scenes asked for
         m_Audio.Update();
+        RequestCaptures();
         RenderFrame();
+        FinishCaptures();
 
         ++m_FrameCount;
         if (m_Spec.MaxFrames != 0 && m_FrameCount >= m_Spec.MaxFrames) {
@@ -165,6 +210,9 @@ int Application::Run()
 
     // Let background tasks finish before the app releases the resources they may use.
     m_ThreadPool->WaitIdle();
+    if (m_Session.IsRecording())
+        m_Session.GetRecording().Save(m_Dev.Record);
+    m_Session.Stop();
     m_Scenes.ExitAll(); // the scenes go first: they may use what OnShutdown releases
     OnShutdown();
     const FrameArena::Stats arena = m_FrameArena->GetStats();
@@ -292,6 +340,67 @@ void Application::RenderFrame()
     if (pass)
         m_Renderer->EndRenderPass();
     m_Renderer->EndFrame();
+}
+
+void Application::StartInputSession()
+{
+    const f64 rate = m_Spec.FixedUpdateRate;
+    if (m_Replay) {
+        if (!m_Dev.Record.empty())
+            EM_CORE_WARN("--record is ignored while replaying");
+        if (m_Replay->EngineVersion != EMERALD_VERSION)
+            EM_CORE_WARN("Replay: recorded with Emerald {}, this is {}", m_Replay->EngineVersion,
+                         EMERALD_VERSION);
+        const usize frames = m_Replay->Frames.size();
+        if (m_Session.StartReplay(m_Input, std::move(*m_Replay), rate))
+            EM_CORE_INFO("Replaying {} ({} frames)", m_Dev.Replay.string(), frames);
+        else
+            m_Running = false;
+        m_Replay.reset();
+    } else if (!m_Dev.Record.empty()) {
+        m_Session.StartRecording(m_Input, EMERALD_VERSION, m_Seed, rate);
+        EM_CORE_INFO("Recording input to {}", m_Dev.Record.string());
+    }
+
+    // The screenshot frame: the last one of a --frames run or a replay, otherwise frame 60.
+    const u64 replayFrames = m_Session.IsReplaying() ? m_Session.GetRecording().Frames.size() : 0;
+    m_ShotFrame = m_Spec.MaxFrames != 0 ? m_Spec.MaxFrames : 60;
+    if (replayFrames != 0 && (m_Spec.MaxFrames == 0 || replayFrames < m_Spec.MaxFrames))
+        m_ShotFrame = replayFrames;
+
+    if (!m_Dev.CaptureDir.empty()) {
+        std::error_code error;
+        std::filesystem::create_directories(m_Dev.CaptureDir, error);
+        if (error)
+            EM_CORE_ERROR("--capture: cannot create {}: {}", m_Dev.CaptureDir.string(),
+                          error.message());
+        if (!m_Session.IsReplaying())
+            m_CaptureFrameNs = static_cast<u64>(1e9 / m_Dev.CaptureFps + 0.5);
+        EM_CORE_INFO("Capturing every frame to {}", m_Dev.CaptureDir.string());
+    }
+}
+
+void Application::RequestCaptures()
+{
+    // One screenshot per frame at most: a capture frame that is also the --screenshot frame
+    // is copied to the screenshot path afterwards (FinishCaptures).
+    const u64 frame = m_FrameCount + 1;
+    if (!m_Dev.CaptureDir.empty())
+        m_Renderer->RequestScreenshot(CaptureFile(m_Dev.CaptureDir, frame));
+    else if (!m_Dev.Screenshot.empty() && frame == m_ShotFrame)
+        m_Renderer->RequestScreenshot(m_Dev.Screenshot);
+}
+
+void Application::FinishCaptures()
+{
+    const u64 frame = m_FrameCount + 1;
+    if (m_Dev.CaptureDir.empty() || m_Dev.Screenshot.empty() || frame != m_ShotFrame)
+        return;
+    std::error_code error;
+    std::filesystem::copy_file(CaptureFile(m_Dev.CaptureDir, frame), m_Dev.Screenshot,
+                               std::filesystem::copy_options::overwrite_existing, error);
+    if (error)
+        EM_CORE_ERROR("Screenshot {}: {}", m_Dev.Screenshot.string(), error.message());
 }
 
 bool Application::SetCrtEnabled(bool enabled)

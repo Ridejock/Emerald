@@ -19,9 +19,8 @@
 
 enum class SceneId : u8 { Title, Demo, Tilemap, Swarm, Platformer, Pause };
 
+// (--frames, --screenshot, --capture, --record and --replay are the engine's: DevOptions.h.)
 struct SandboxOptions {
-    u64 Frames = 0;
-    std::string ScreenshotPath;
     // --demo / --tilemap / --swarm / --platformer start in that scene (no title, no fade); --map
     // <file.tmj> loads another map; --pan / --stats / --zoom <z> / --no-cull for the benchmark;
     // --collision /

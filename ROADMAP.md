@@ -136,6 +136,8 @@ Done when:
 - Python helpers that turn text drawings into Tiled `.tmj` maps, with variant tile picking
 - Used by Cavern Rover (#11)
 
+**Status:** implemented (`Core/DevOptions.h`, `Input/InputRecording.h`, `tools/check_assets.py`, `tools/tilemaps/textmap.py`, `ReplayTests`, `ToolsTests`); Cavern Rover not switched over yet; to verify on Windows / MSVC.
+
 ### Phase 2 test game: small Blaster Master-style platformer ([#11](https://github.com/Ridejock/Emerald/issues/11))
 
 A small side-scrolling platformer in the spirit of Blaster Master (a vehicle section and an on-foot section) using tilemaps, scenes, entities and the platformer physics.

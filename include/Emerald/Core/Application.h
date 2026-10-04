@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <memory>
 #include <memory_resource>
+#include <optional>
 #include <span>
 
 #include <SDL3/SDL_pixels.h>
@@ -10,12 +11,14 @@
 #include "Emerald/Assets/Assets.h"
 #include "Emerald/Audio/Audio.h"
 #include "Emerald/Core/Defines.h"
+#include "Emerald/Core/DevOptions.h"
 #include "Emerald/Core/FixedTimestep.h"
 #include "Emerald/Core/Log.h"
 #include "Emerald/Core/ThreadPool.h"
 #include "Emerald/Core/Window.h"
 #include "Emerald/Entity/World.h"
 #include "Emerald/Input/Input.h"
+#include "Emerald/Input/InputRecording.h"
 #include "Emerald/Memory/FrameArena.h"
 #include "Emerald/Memory/TrackingResource.h"
 #include "Emerald/Renderer/CrtEffect.h"
@@ -39,10 +42,11 @@ struct ApplicationSpec {
         SDL_GPU_SHADERFORMAT_SPIRV | SDL_GPU_SHADERFORMAT_DXIL | SDL_GPU_SHADERFORMAT_MSL;
     // The command line (main's argv), for engine options; other arguments are ignored:
     //   --gpu vulkan|d3d12|direct3d12|metal|auto   GPU backend (wins over SDL_GPU_DRIVER)
+    //   --frames, --screenshot, --capture, --record, --replay: see DevOptions.h
     // Set it with `spec.Args = {argv, static_cast<usize>(argc)};`. It must outlive the constructor.
     std::span<char* const> Args;
     // Stop after this many frames (0 = run until the window is closed). Useful for CI/headless
-    // runs.
+    // runs. --frames N on the command line wins over it.
     u64 MaxFrames = 0;
     // OnFixedUpdate runs this many times per second, independent of the frame rate.
     f64 FixedUpdateRate = 120.0;
@@ -83,6 +87,13 @@ public:
     // Textures, atlases, fonts and sounds by path, loaded once and hot reloaded in debug builds.
     [[nodiscard]] Assets& GetAssets() { return *m_Assets; }
     [[nodiscard]] u64 GetFrameCount() const { return m_FrameCount; }
+    // The development options from the command line (--frames, --replay, ...; DevOptions.h).
+    [[nodiscard]] const DevOptions& GetDevOptions() const { return m_Dev; }
+    // A seed for the game's random numbers: new each run, and the recorded one in a replay (it
+    // is saved in the recording). Seed generators from it so replays with randomness match.
+    [[nodiscard]] u64 GetSeed() const { return m_Seed; }
+    // Playing back a --replay file: the Input answers from the recording, not the devices.
+    [[nodiscard]] bool IsReplaying() const { return m_Session.IsReplaying(); }
     // Title, gameplay, pause...: scenes pushed here get their hooks called after the app's own
     // (see SceneStack.h). An app that never pushes a scene works as before.
     [[nodiscard]] SceneStack& GetScenes() { return m_Scenes; }
@@ -150,6 +161,11 @@ private:
     void ShutdownImGui();
     void ProcessEvent(const SDL_Event& event);
     void RenderFrame();
+    // The dev options' parts of the loop: start recording / replaying (after OnStart), screenshot
+    // and capture requests for the coming frame, and what is left after it was drawn.
+    void StartInputSession();
+    void RequestCaptures();
+    void FinishCaptures();
 
     ApplicationSpec m_Spec;
 
@@ -183,6 +199,13 @@ private:
 #endif
     bool m_Running = false;
     u64 m_FrameCount = 0;
+    DevOptions m_Dev;
+    bool m_DevFailed = false;               // e.g. the --replay file could not be read
+    std::optional<InputRecording> m_Replay; // loaded early (for its seed), played from Run
+    InputSession m_Session;
+    u64 m_Seed = 0;
+    u64 m_ShotFrame = 0;      // the frame (1 = first) --screenshot saves
+    u64 m_CaptureFrameNs = 0; // --capture: the fixed frame time (0 = real time)
     World m_World;
 };
 

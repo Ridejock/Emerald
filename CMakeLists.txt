@@ -68,9 +68,11 @@ add_library(Emerald STATIC
     src/Core/Paths.cpp
     src/Core/Window.cpp
     src/Core/Application.cpp
+    src/Core/DevOptions.cpp
     src/Core/ThreadPool.cpp
     src/Input/Gamepads.cpp
     src/Input/Input.cpp
+    src/Input/InputRecording.cpp
     src/Memory/FrameArena.cpp
     src/Memory/TrackingResource.cpp
     src/Renderer/Renderer.cpp
@@ -123,6 +125,8 @@ target_compile_definitions(Emerald PUBLIC
     EMERALD_WITH_ENTT=1 # always on now (entities); kept for code that tests it
     # Asset hot reload (Assets.h) in debug builds only.
     EMERALD_HOT_RELOAD=$<IF:$<CONFIG:Debug>,1,0>
+    # The engine version, e.g. in input recordings' headers.
+    EMERALD_VERSION="${Emerald_VERSION}"
 )
 
 if(EMERALD_USE_IMGUI)

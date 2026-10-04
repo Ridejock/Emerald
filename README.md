@@ -115,6 +115,8 @@ Options can also be passed directly, e.g. `cmake --preset release -DEMERALD_USE_
 ./build/debug/bin/Sandbox                                  # run until the window is closed or Esc is pressed
 ./build/debug/bin/Sandbox --frames 120                     # quit automatically after 120 frames
 ./build/debug/bin/Sandbox --frames 60 --screenshot out.png # save the last frame as a PNG (GPU readback)
+./build/debug/bin/Sandbox --record run.txt                 # record the input actions (see Dev tools)
+./build/debug/bin/Sandbox --replay run.txt --capture shots # replay them, saving every frame
 ./build/debug/bin/Sandbox --gpu vulkan                     # pick the GPU backend (see below)
 ./build/debug/bin/Sandbox --demo                           # skip the title: start in the camera demo
 ./build/debug/bin/Sandbox --tilemap                        # start in the tilemap room (see Tilemaps)
@@ -292,6 +294,9 @@ structure-of-arrays layout instead (all x together, all y together).
 | `SceneTests` | the scene stack without a GPU: requests applied only at the end of `Update`, hook order for push / pop / replace / clear / `ReplaceAll` (pause, resume, exit, destruction), requests from inside a scene's own hooks, `DrawBelow` / `UpdateBelow` chains (which scenes draw and update, in which order), fade timing (change at full cover, then uncover, requests queued meanwhile), fading into an empty stack, custom transition `Draw`, input blocked below the top and during transitions (and the app's own block kept), empty-stack pops, exiting every scene on destruction |
 | `EntityTests` | add / get / has / remove and replacing components, deferred destroy (skipped by `Each`, invalid at once, destructors at `Flush`, stale handles after slot reuse), `Clear`; spawning, adding and destroying inside `Each`; churn of 400,000 spawns without leaks (destructor counts, bounded storage); movement, animation (an `OnFinished` that destroys); collisions (circle / circle normal and depth, circle / box, layer masks, destroyed and collider-less entities leaving the broadphase); `DrawSprites` order by layer and y, culling |
 | `PlatformerTests` | slope tiles from the tileset (heights, flipped cells mirrored, floor heights, never blocking sideways); walking right and left over 45 and 22.5 degree hills grounded every step with the feet on the floor and always moving (no bounce, no sticking); landing on a slope and jumping along it; jumping up through a one-way platform and landing on it, down + jump dropping through to the ground, down + jump on solid ground being a jump; coyote time (in time, too late, off, longer) and the jump buffer (pressed early enough, too early, off, longer); variable jump height; walls and ceilings; a scripted 50 s run on the sandbox level replayed twice with the same positions bit for bit |
+| `ReplayTests` | `--frames` / `--screenshot` / `--capture` / `--record` / `--replay` parsing (both spellings, bad numbers); recording text round trip (floats exact) and broken files; `Input` answering from a replayed sample (other bindings, blocking still wins); a scripted platformer run on the sandbox level with uneven frame times, recorded and replayed twice with bit-identical positions, no divergence; a replay at another fixed rate refused |
+| `ToolsTests` | the Python tools: `check_assets.py` (good assets pass; palette, atlas and map problems found; PNG filters) and `textmap.py` (neighbours, variants, legends, the written JSON); needs Python 3 |
+| `SandboxAssets` | `check_assets.py` on `sandbox/assets` |
 | `TweenTests` | every easing curve at 0, 0.5 and 1, Out mirroring In and InOut symmetry, clamping; tweens of f32 / Vec2 / Vec4 with delay, start values, repeat and yoyo, endless tweens, cancelling (chains included, no callbacks), chaining with leftover time, completion firing exactly once, callbacks starting and clearing tweens, `CancelTarget` from a destructor, `Run`, stale ids; one big step vs many uneven ones giving the same result; timers `After` / `Every` / cancel (also from their own callback), callbacks adding timers, frame-rate independence with uneven dt |
 
 ```sh
@@ -1590,6 +1595,110 @@ runs once per frame with the real frame time. `GetFixedDeltaSeconds()` and `GetF
 (0..1, for interpolating when drawing) are available too, and `GetWindowSize()` /
 `GetWindowSizeInPixels()` return the client area in window coordinates / pixels (`Vec2i`).
 
+## Dev tools
+
+Tools for developing and testing games, shared so each project doesn't grow its own one-offs.
+
+### Command line options (`Core/DevOptions.h`)
+
+`Application` reads these from `ApplicationSpec::Args`, so every game that passes its command line
+(`spec.Args = {argv, static_cast<usize>(argc)};`) and the sandbox has them without code of its own.
+Values can also be written as `--frames=120`; unknown arguments are left to the game, which can
+read the parsed options with `GetDevOptions()` (or call `Emerald::ParseDevOptions(args)` itself,
+e.g. to pick a windowed mode before the `Application` exists).
+
+| Option | Does |
+|---|---|
+| `--frames N` | quit after N frames (wins over `ApplicationSpec::MaxFrames`) |
+| `--screenshot out.png` | save one frame as a PNG: the last one of a `--frames` run or a replay, otherwise frame 60 |
+| `--capture dir` | save every frame as `dir/frame_000001.png`, `frame_000002.png`, ... |
+| `--capture-fps N` | the capture's frame rate (default 60) |
+| `--record run.txt` | record the input actions, saved when the app quits |
+| `--replay run.txt` | play a recording instead of the devices, frame-exact; quits at its end |
+
+While capturing, every frame gets a fixed frame time of 1 / `--capture-fps` seconds whatever the
+real time was (saving PNGs is slow), so the sequence plays at that rate; turn it into a video with
+e.g. `ffmpeg -framerate 60 -i shots/frame_%06d.png -pix_fmt yuv420p run.mp4`. A replay keeps its
+recorded frame times instead. With `--capture` and `--screenshot` together, the screenshot is a
+copy of its frame from the capture.
+
+### Input recording and replay (`Input/InputRecording.h`)
+
+`--record` saves what the game asked `Input` for in every frame's `OnUpdate` and in every fixed
+step: each bound action's down / pressed / released state and each axis's value, plus each frame's
+elapsed time. `--replay` feeds that back instead of the keyboard, gamepads and mouse buttons, so
+the fixed timestep runs the same steps with the same input and the game takes exactly the same
+path. Because it is recorded at the action level, a recording still plays after rebinding keys or
+on a machine with other devices.
+
+The file is plain text, one line per sample:
+
+```
+emerald-input 1
+engine 0.1.0                 <- the engine version that recorded it (a mismatch is only a warning)
+seed 3492330105              <- GetSeed() of the session
+fixed-rate 120               <- a replay needs the same FixedUpdateRate
+actions Jump Quit
+axes MoveX MoveY
+frame 16666667 00 1 0        <- elapsed ns, a flags digit per action (1 down, 2 pressed, 4 released), the axes
+step 30 1 0                  <- one fixed step of that frame
+step 10 1 0
+```
+
+To make a whole game replayable, seed its random numbers from `GetSeed()` (random per run; the
+recorded seed when replaying). Not recorded: mouse position and wheel, keys read straight from
+`Keyboard` instead of actions, text input and ImGui, and actions bound after `OnStart` (the
+recording covers what is bound when the session starts). If a replayed frame runs a different
+number of fixed steps than recorded (only if the fixed rate or step cap changed), a warning is
+logged once. `ReplayTests` records a scripted run through the sandbox's platformer level with
+uneven frame times and replays it twice: the positions after every step are bit-identical to each
+other and to the live run.
+
+```sh
+./build/debug/bin/Sandbox --platformer --record run.txt       # play, then quit
+./build/debug/bin/Sandbox --platformer --replay run.txt --screenshot end.png
+```
+
+### Asset checker (`tools/check_assets.py`)
+
+Checks a game's assets before the engine sees them; prints one line per problem and exits with 1
+if there was any, so CI can run it (standard library only; Python 3.8+):
+
+```sh
+python3 tools/check_assets.py assets/                            # atlases and Tiled maps
+python3 tools/check_assets.py assets/ --palette art/palette.gpl  # and the colors of every PNG
+python3 tools/check_assets.py assets/ --exclude "fonts/*"        # skip some files
+```
+
+- **Palette** (with `--palette file.gpl`, a GIMP palette as Aseprite / GIMP / Lospec export it):
+  every pixel of every PNG is fully transparent or opaque in a palette color.
+- **Atlases** (`*.json` in the engine's plain or TexturePacker's format; other JSON is skipped):
+  the PNG of the same name exists, every region lies inside it, and every animation's frames or
+  pattern name existing regions.
+- **Tiled maps** (`*.tmj`): orthogonal, finite, CSV / array tile data; external tilesets exist and
+  are `.tsj`; tileset images exist, match their stated size and hold the stated columns and tile
+  count; tile sizes match the map; every tile id in tile layers and tile objects (group layers
+  included) belongs to a tileset. Tilesets on their own (`*.tsj`) get the image checks.
+
+### Text maps (`tools/tilemaps/textmap.py`)
+
+Helpers for drawing levels as text and writing Tiled maps (standard library only), generalized
+from the sandbox's map scripts (`make_platformer.py` uses them):
+
+- `TextMap(rows, outside="#")`: `at(x, y)` (with `outside` off the map), `find("@")`,
+  `is_open`, `mask(x, y, "#")` (which neighbours are solid: 1 up, 2 right, 4 down, 8 left, for
+  autotiling), `feet` / `center` pixel positions of a cell.
+- `cells(legend)`: tile layer data from a legend of character → GID, a list of GIDs (variants,
+  picked by a repeatable hash of the cell; `(gid, weight)` pairs make some rarer) or a function
+  `(map, x, y) -> gid` (edges from the neighbours, say). `FLIP_X` / `FLIP_Y` / `FLIP_D` mirror.
+- `tile_layer`, `point_object`, `rect_object`, `object_layer`, `tileset`, `make_map` and `prop`
+  build the JSON; `dump_map` writes it with one row of tiles per line so diffs stay readable.
+
+The module's docstring has a complete small example. From another project, add Emerald's
+`tools/tilemaps` to `sys.path` and import it. `ToolsTests` (CTest, when Python 3 is found) runs
+the tools' unit tests (`python3 -m unittest discover -s tools/tests`), and `SandboxAssets` runs the
+checker on the sandbox's assets.
+
 ## Shaders
 
 Shaders are written in HLSL (`*.vert.hlsl`, `*.frag.hlsl`, `*.comp.hlsl`; entry point `main`) and
@@ -1664,7 +1773,9 @@ bench/             Math, particle, collision and entity micro-benchmarks (EMERAL
 cmake/             Dependency setup (FetchContent) and shader compilation (Shaders.cmake)
 tools/shadercross/ Host-tool project that builds SDL_shadercross
 tools/sprites/     Script that generates the sandbox's pixel-art hero sheet
-tools/tilemaps/    Scripts that generate the sandbox's tileset art, Tiled tilesets, sample room (+ the 500 x 500 benchmark map) and platformer level
+tools/check_assets.py  Asset checker (palette, atlases, Tiled maps) for CI
+tools/tests/       Unit tests of the Python tools
+tools/tilemaps/    textmap.py (text drawings to Tiled maps), and scripts that generate the sandbox's tileset art, Tiled tilesets, sample room (+ the 500 x 500 benchmark map) and platformer level
 ```
 
 ## Using Emerald in your own project

@@ -12,11 +12,15 @@ Outputs (all open in Tiled):
                                      coyote time and a step for the jump buffer
 
 Down slopes are the up-slope tiles flipped horizontally (Tiled's X flip bit), which the engine
-mirrors. Uses the palette and PNG writer of make_tilemaps.py; only the standard library.
+mirrors. Uses the palette and PNG writer of make_tilemaps.py and the text map helpers of textmap.py;
+only the standard library.
 """
 
-from make_tilemaps import OUT, PALETTE, T, dump_map, noise, stone, write_sheet
 import json
+
+from make_tilemaps import OUT, T, stone, write_sheet
+from textmap import (FLIP_X, TextMap, dump_map, make_map, noise, object_layer, point_object,
+                     prop, tile_layer, tileset)
 
 # --- Tiles: (x, y) -> palette key or None; y = 0 is the top row of the tile ---------------------
 
@@ -136,112 +140,60 @@ LABELS = [
     (72, 11, "step: press jump early (buffer)"),
 ]
 
-FLIP_X = 0x80000000
+def ground(m, x, y):
+    """'#': grass where the cell above is open, plain ground below."""
+    return 1 + (0 if m.at(x, y - 1) in ".@k=" else 1)
+
+
+def decor(m, x, y):
+    """Open cells: a bush or flower on some grass below, a sign at the checkpoint."""
+    if m.at(x, y) == "k":
+        return 1 + 9
+    n = noise(x, y + 1, 14)
+    if m.at(x, y + 1) == "#" and n > 0.8:
+        return 1 + (7 if n > 0.9 else 8)
+    return 0
+
+
+# GIDs (firstgid 1 + tile index); down slopes are the up tiles mirrored.
+GROUND = {"#": ground, "X": 1 + 6, "/": 1 + 2, "a": 1 + 3, "b": 1 + 4, "=": 1 + 5,
+          "\\": (1 + 2) | FLIP_X, "A": (1 + 3) | FLIP_X, "B": (1 + 4) | FLIP_X}
+DECOR = {".": decor, "k": decor}
 
 
 def make_level():
-    width, height = len(LEVEL[0]), len(LEVEL)
-    assert all(len(row) == width for row in LEVEL), [len(r) for r in LEVEL]
-    tiles = {"X": 6, "/": 2, "a": 3, "b": 4, "=": 5}
-    flipped = {"\\": 2, "A": 3, "B": 4}  # down slopes: the up tiles mirrored
-    ground, decor = [0] * (width * height), [0] * (width * height)
-
-    def at(x, y):
-        return LEVEL[y][x] if 0 <= x < width and 0 <= y < height else "X"
-
+    level = TextMap(LEVEL, outside="X")
     objects = []
-    for y in range(height):
-        for x in range(width):
-            ch, i = at(x, y), y * width + x
-            if ch == "#":
-                ground[i] = 1 + (0 if at(x, y - 1) in ".@k=" else 1)
-                # A bush or flower on some open grass.
-                n = noise(x, y, 14)
-                if at(x, y - 1) == "." and n > 0.8:
-                    decor[i - width] = 1 + (7 if n > 0.9 else 8)
-            elif ch in tiles:
-                ground[i] = 1 + tiles[ch]
-            elif ch in flipped:
-                ground[i] = (1 + flipped[ch]) | FLIP_X
-            elif ch in "@k":
-                name = "spawn" if ch == "@" else "checkpoint"
-                objects.append((name, name, x * T + T / 2, (y + 1) * T, []))
-                decor[i] = 1 + 9 if ch == "k" else 0
+    for y in range(level.height):
+        for x in range(level.width):
+            if level.at(x, y) in "@k":
+                name = "spawn" if level.at(x, y) == "@" else "checkpoint"
+                objects.append((name, *level.feet(x, y, T), []))
     for x, y, text in LABELS:
-        objects.append(("label", "label", x * T, y * T, [("text", "string", text)]))
+        objects.append(("label", x * T, y * T, [prop("text", text)]))
 
-    def obj(oid, name, kind, x, y, props):
-        o = {"height": 0, "id": oid, "name": name, "point": True, "rotation": 0, "type": kind,
-             "visible": True, "width": 0, "x": x, "y": y}
-        if props:
-            o["properties"] = [{"name": n, "type": t, "value": v} for n, t, v in props]
-        return o
-
-    def tilelayer(lid, name, data, props=()):
-        layer = {"data": data, "height": height, "id": lid, "name": name, "opacity": 1,
-                 "type": "tilelayer", "visible": True, "width": width, "x": 0, "y": 0}
-        if props:
-            layer["properties"] = list(props)
-        return layer
-
-    return {
-        "compressionlevel": -1,
-        "height": height,
-        "infinite": False,
-        "layers": [
-            tilelayer(1, "Ground", ground),
-            # Bushes and flowers: drawn, never collide.
-            tilelayer(2, "Decor", decor, [{"name": "collision", "type": "bool", "value": False}]),
-            {"draworder": "topdown", "id": 3, "name": "Objects", "opacity": 1,
-             "type": "objectgroup", "visible": True, "x": 0, "y": 0,
-             "objects": [obj(i + 1, *o) for i, o in enumerate(objects)]},
-        ],
-        "nextlayerid": 4,
-        "nextobjectid": len(objects) + 1,
-        "orientation": "orthogonal",
-        "properties": [{"name": "title", "type": "string", "value": "Platformer test level"}],
-        "renderorder": "right-down",
-        "tiledversion": "1.11.2",
-        "tileheight": T,
-        "tilesets": [{"firstgid": 1, "source": "platformer.tsj"}],
-        "tilewidth": T,
-        "type": "map",
-        "version": "1.10",
-        "width": width,
-    }
+    w, h = level.width, level.height
+    layers = [
+        tile_layer(1, "Ground", level.cells(GROUND), w, h),
+        # Bushes and flowers: drawn, never collide.
+        tile_layer(2, "Decor", level.cells(DECOR), w, h, [prop("collision", False)]),
+        object_layer(3, "Objects", [point_object(i + 1, name, x, y, properties=props)
+                                    for i, (name, x, y, props) in enumerate(objects)]),
+    ]
+    return make_map(w, h, T, layers, [{"firstgid": 1, "source": "platformer.tsj"}],
+                    [prop("title", "Platformer test level")])
 
 
-def tileset():
-    def prop(name, value):
-        kind = "bool" if isinstance(value, bool) else "float"
-        return {"name": name, "type": kind, "value": value}
-
+def platformer_tileset():
     size = write_sheet(OUT / "platformer.png", [paint for paint, _ in TILES], 8)
-    return {
-        "columns": 8,
-        "image": "platformer.png",
-        "imageheight": size[1],
-        "imagewidth": size[0],
-        "margin": 0,
-        "name": "platformer",
-        "spacing": 0,
-        "tilecount": len(TILES),
-        "tiledversion": "1.11.2",
-        "tileheight": T,
-        "tiles": [
-            {"id": i, "properties": [prop(n, v) for n, v in props.items()]}
-            for i, (_, props) in enumerate(TILES)
-            if props
-        ],
-        "tilewidth": T,
-        "type": "tileset",
-        "version": "1.10",
-    }
+    tiles = [{"id": i, "properties": [prop(n, v) for n, v in props.items()]}
+             for i, (_, props) in enumerate(TILES) if props]
+    return tileset("platformer", "platformer.png", size, T, len(TILES), 8, tiles)
 
 
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
-    (OUT / "platformer.tsj").write_text(json.dumps(tileset(), indent=1) + "\n")
+    (OUT / "platformer.tsj").write_text(json.dumps(platformer_tileset(), indent=1) + "\n")
     dump_map(OUT / "platformer.tmj", make_level())
     print("wrote", OUT / "platformer.tmj")
 

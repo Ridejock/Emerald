@@ -8,6 +8,7 @@
 
 #include "Emerald/Core/Defines.h"
 #include "Emerald/Input/Gamepads.h"
+#include "Emerald/Input/InputRecording.h"
 #include "Emerald/Input/Keyboard.h"
 #include "Emerald/Input/Mouse.h"
 
@@ -90,6 +91,18 @@ public:
     void SetBlocked(bool blocked) { m_Blocked = blocked; }
     [[nodiscard]] bool IsBlocked() const { return m_Blocked; }
 
+    // --- Recording and replay (InputRecording.h; Application's --record / --replay) ---
+    // Every bound action and axis, in binding order.
+    [[nodiscard]] InputNames GetNames() const;
+    // The named actions and axes as the devices have them now (SetBlocked does not matter: a
+    // recording keeps the real state, and the replay blocks the same way the session did).
+    [[nodiscard]] InputSample Capture(const InputNames& names) const;
+    // From now on every query answers from `sample` (actions and axes looked up in `names`;
+    // others are up / 0) instead of the devices; null goes back to the devices. Both must stay
+    // alive while set.
+    void SetReplay(const InputSample* sample, const InputNames* names);
+    [[nodiscard]] bool IsReplaying() const { return m_ReplaySample != nullptr; }
+
     // Rumbles the gamepads; 0..1 per motor (low = heavy, high = light).
     void Rumble(f32 low, f32 high, u32 milliseconds) { m_Gamepads.Rumble(low, high, milliseconds); }
 
@@ -128,6 +141,14 @@ private:
     [[nodiscard]] const Axis* FindAxis(std::string_view name) const;
     Action& GetOrAddAction(std::string_view name);
     Axis& GetOrAddAxis(std::string_view name);
+    // The device state of one action / axis (no blocking, no replay).
+    [[nodiscard]] bool DevicesDown(const Action& a) const;
+    [[nodiscard]] bool DevicesPressed(const Action& a) const;
+    [[nodiscard]] bool DevicesReleased(const Action& a) const;
+    [[nodiscard]] f32 DevicesAxis(const Axis& a) const;
+    // Replay: the action's flags (InputSample::kDown...) and the axis value in the sample.
+    [[nodiscard]] u8 ReplayFlags(std::string_view action) const;
+    [[nodiscard]] f32 ReplayAxis(std::string_view axis) const;
 
     const Keyboard& m_Keyboard;
     Gamepads& m_Gamepads;
@@ -136,6 +157,8 @@ private:
     std::vector<Action> m_Actions;
     std::vector<Axis> m_Axes;
     bool m_Blocked = false;
+    const InputSample* m_ReplaySample = nullptr; // set while replaying
+    const InputNames* m_ReplayNames = nullptr;
 };
 
 } // namespace Emerald

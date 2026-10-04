@@ -114,3 +114,23 @@ target_compile_definitions(EmeraldPlatformerTests PRIVATE
     EMERALD_TEST_TILEMAPS="${PROJECT_SOURCE_DIR}/sandbox/assets/tilemaps")
 emerald_set_warnings(EmeraldPlatformerTests)
 add_test(NAME PlatformerTests COMMAND EmeraldPlatformerTests)
+
+# Dev tools: command line options, input recordings, and a recorded platformer session replayed
+# twice with bit-identical positions.
+add_executable(EmeraldReplayTests TestMain.cpp ReplayTests.cpp)
+target_link_libraries(EmeraldReplayTests PRIVATE Emerald::Emerald)
+target_compile_definitions(EmeraldReplayTests PRIVATE
+    EMERALD_TEST_TILEMAPS="${PROJECT_SOURCE_DIR}/sandbox/assets/tilemaps")
+emerald_set_warnings(EmeraldReplayTests)
+add_test(NAME ReplayTests COMMAND EmeraldReplayTests)
+
+# The Python tools (tools/): their unit tests, and the asset checker on the sandbox's assets.
+# Skipped if no Python 3 is found.
+find_package(Python3 COMPONENTS Interpreter)
+if(Python3_Interpreter_FOUND)
+    add_test(NAME ToolsTests
+        COMMAND ${Python3_EXECUTABLE} -m unittest discover -s ${PROJECT_SOURCE_DIR}/tools/tests)
+    add_test(NAME SandboxAssets
+        COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tools/check_assets.py
+            ${PROJECT_SOURCE_DIR}/sandbox/assets)
+endif()

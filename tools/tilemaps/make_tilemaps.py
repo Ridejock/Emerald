@@ -22,6 +22,8 @@ import sys
 import zlib
 from pathlib import Path
 
+from textmap import dump_map, noise
+
 ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / "sandbox" / "assets" / "tilemaps"
 T = 16  # tile size in pixels
@@ -45,13 +47,6 @@ PALETTE = {
     "r": (177, 62, 83),  # red
     "W": (244, 244, 244),  # white
 }
-
-
-def noise(x, y, seed):
-    """A repeatable 0..1 value per pixel."""
-    h = (x * 73856093) ^ (y * 19349663) ^ (seed * 83492791)
-    h = (h ^ (h >> 13)) * 1274126177
-    return ((h ^ (h >> 16)) & 0xFFFF) / 65535.0
 
 
 # --- Tiles: each a function (x, y) -> palette key, or None for transparent ---------------------
@@ -346,21 +341,6 @@ def props_tiles():
         if len(tile) > 1:
             tiles.append(tile)
     return tiles
-
-
-def dump_map(path, m):
-    """Like Tiled's output, but with one row of tiles per line so diffs stay readable."""
-    rows = {}
-    for layer in m["layers"]:
-        if layer["type"] == "tilelayer":
-            w, data = m["width"], layer["data"]
-            lines = (", ".join(map(str, data[r * w : (r + 1) * w])) for r in range(m["height"]))
-            rows[layer["id"]] = "[\n" + ",\n".join("    " + line for line in lines) + "]"
-            layer["data"] = "@data%d@" % layer["id"]
-    text = json.dumps(m, indent=1)
-    for lid, nice in rows.items():
-        text = text.replace('"@data%d@"' % lid, nice)
-    path.write_text(text + "\n")
 
 
 # --- The room ----------------------------------------------------------------------------------

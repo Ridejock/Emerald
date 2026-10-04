@@ -28,3 +28,6 @@ Thumbs.db
 imgui.ini
 *.log
 logs/
+
+# Python
+__pycache__/

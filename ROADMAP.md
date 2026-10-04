@@ -123,7 +123,18 @@ Done when:
 - Deterministic at the fixed timestep (same input -> same path, tested)
 - Sandbox or test game level demonstrating each case
 
-**Status:** implemented (`Physics/Platformer.h`, slope tiles in `Tilemap`, `PlatformerTests`, the sandbox's Platformer scene); the issue stays open until it is checked on Windows / MSVC.
+**Status:** done (`Physics/Platformer.h`, slope tiles in `Tilemap`, `PlatformerTests`, the sandbox's Platformer scene); verified on Windows / MSVC.
+
+### Dev tools: input replay, headless capture, asset checker, map helpers ([#24](https://github.com/Ridejock/Emerald/issues/24))
+
+Shared tools for developing and testing games, so each project stops growing its own one-off scripts.
+
+Done when:
+- Record a play session's actions to a file and replay it frame-exact at the fixed timestep (`--record` / `--replay`), tested
+- Engine-level `--frames N`, `--screenshot` and frame-sequence capture usable by any game and the Sandbox
+- Asset checker command (palette, atlas frames, map references, tile sizes) that CI can run
+- Python helpers that turn text drawings into Tiled `.tmj` maps, with variant tile picking
+- Used by Cavern Rover (#11)
 
 ### Phase 2 test game: small Blaster Master-style platformer ([#11](https://github.com/Ridejock/Emerald/issues/11))
 

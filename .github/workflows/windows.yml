@@ -28,10 +28,12 @@ jobs:
         with:
           arch: x64
 
-      # The shader compiler (shadercross + DirectXShaderCompiler, built with MSVC) is built on the
-      # first configure and takes a long time: keep it between runs.
-      - name: Cache shadercross
-        uses: actions/cache@v4
+      # The shader compiler (shadercross + DirectXShaderCompiler, built with MSVC) is built by the
+      # first build and takes a long time: keep it between runs. Saved after a successful build
+      # (below), so a later failing step (warnings, tests) does not throw it away.
+      - name: Restore shadercross
+        id: shadercross
+        uses: actions/cache/restore@v4
         with:
           path: build/_shadercross
           key: shadercross-windows-${{ hashFiles('tools/shadercross/**', 'cmake/Shaders.cmake') }}
@@ -41,7 +43,16 @@ jobs:
         run: cmake --preset ${{ matrix.preset }}
 
       - name: Build
+        id: build
         run: cmake --build --preset ${{ matrix.preset }} 2>&1 | tee build-log.txt; exit ${PIPESTATUS[0]}
+
+      - name: Save shadercross
+        if: steps.build.outcome == 'success' && steps.shadercross.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        continue-on-error: true # the other preset may save the same key first
+        with:
+          path: build/_shadercross
+          key: ${{ steps.shadercross.outputs.cache-primary-key }}
 
       # Zero warnings in Emerald's code. Fetched libraries (_deps) and the shadercross tool
       # (_shadercross, e.g. C5051 in SPIRV-Cross) are not ours to fix.

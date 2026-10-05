@@ -163,6 +163,8 @@ Done when:
 - Focus/navigation logic unit-tested without a GPU
 - Rock Blaster's menus could be rebuilt on it
 
+**Status:** implemented, in review (`UI/UI.h`: immediate-mode widgets, layout, focus navigation and `UiStyle`; `UiTests`; the sandbox's options screen, `OptionsScene.h`).
+
 ### 2D lighting, normal maps and a post-effect chain ([#13](https://github.com/Ridejock/Emerald/issues/13))
 
 Point/spot lights with normal-mapped sprites and an ambient term, plus a configurable chain of fullscreen post effects; the existing CRT effect becomes one effect in the chain.

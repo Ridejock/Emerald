@@ -3,8 +3,8 @@
 // What the sandbox's scenes share: the app, the command-line options, the assets loaded once at
 // startup (fonts, sprite sheets, the blip), a factory for the other scenes, the transitions and
 // the hero's animation logic. The scenes: TitleScene.h, DemoScene.h, TilemapScene.h,
-// SwarmScene.h, PlatformerScene.h and PauseScene.h; main.cpp creates them (SandboxShared::Make) and
-// runs the global parts.
+// SwarmScene.h, PlatformerScene.h, PauseScene.h and OptionsScene.h; main.cpp creates them
+// (SandboxShared::Make) and runs the global parts.
 
 #include <filesystem>
 #include <functional>
@@ -17,7 +17,7 @@
 
 #include "TilemapRoom.h"
 
-enum class SceneId : u8 { Title, Demo, Tilemap, Swarm, Platformer, Pause };
+enum class SceneId : u8 { Title, Demo, Tilemap, Swarm, Platformer, Pause, Options };
 
 // (--frames, --screenshot, --capture, --record and --replay are the engine's: DevOptions.h.)
 struct SandboxOptions {
@@ -49,6 +49,8 @@ struct SandboxShared {
     std::optional<Emerald::Texture> White;                        // 1 x 1 white, for filled rects
     Emerald::Sound Blip;                                          // the jump's sound
     std::function<std::unique_ptr<Emerald::Scene>(SceneId)> Make; // set by main.cpp
+    // The options screen's "Effects volume": scales the blips.
+    f32 EffectsVolume = 1.0f;
 
     [[nodiscard]] bool HasFonts() const { return PixelFont && SmallFont && SmoothFont; }
     // Window size in window coordinates as floats: the pixel-space projections use it.

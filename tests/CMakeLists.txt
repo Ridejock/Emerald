@@ -134,3 +134,9 @@ if(Python3_Interpreter_FOUND)
         COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tools/check_assets.py
             ${PROJECT_SOURCE_DIR}/sandbox/assets)
 endif()
+
+# UI widgets: ids, layout, focus navigation, values from keys / mouse, repeat; no GPU needed.
+add_executable(EmeraldUiTests TestMain.cpp UiTests.cpp)
+target_link_libraries(EmeraldUiTests PRIVATE Emerald::Emerald)
+emerald_set_warnings(EmeraldUiTests)
+add_test(NAME UiTests COMMAND EmeraldUiTests)

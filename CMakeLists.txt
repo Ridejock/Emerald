@@ -101,6 +101,7 @@ add_library(Emerald STATIC
     src/Tween/Easing.cpp
     src/Tween/Timers.cpp
     src/Tween/Tween.cpp
+    src/UI/UI.cpp
     src/Assets/AssetLoader.cpp
     src/Assets/Assets.cpp
     src/Assets/Image.cpp

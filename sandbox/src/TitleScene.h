@@ -3,7 +3,7 @@
 // The title screen: the tweened menu (MenuDemo.h) over drifting gems and the idle hero. Up / Down
 // + Enter (d-pad + South) picks: the camera demo (a fade to black), the tilemap room (a custom
 // "blinds" transition, see Shared.h), the entity swarm (a white fade) or quit. Each choice replaces
-// the title with the new scene.
+// the title with the new scene; Options opens the options screen over it (OptionsScene.h).
 
 #include <cmath>
 
@@ -45,6 +45,9 @@ public:
                 break;
             case 3:
                 GetStack()->Replace(m_Shared.Make(SceneId::Platformer), FadeBlack());
+                break;
+            case 4: // an overlay: the title stays below, paused
+                GetStack()->Push(m_Shared.Make(SceneId::Options));
                 break;
             default:
                 m_Shared.App.Quit();
@@ -101,9 +104,10 @@ public:
 
 private:
     SandboxShared& m_Shared;
-    MenuDemo m_Menu{"EMERALD",
-                    {"Camera demo", "Tilemap room", "Entity swarm", "Platformer", "Quit"},
-                    "Up/Down + Enter"};
+    MenuDemo m_Menu{
+        "EMERALD",
+        {"Camera demo", "Tilemap room", "Entity swarm", "Platformer", "Options", "Quit"},
+        "Up/Down + Enter"};
     HeroSprite m_Hero{m_Shared.Hero};
     f32 m_Time = 0.0f;
 };

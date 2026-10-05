@@ -158,7 +158,8 @@ private:
         // Panned towards the side of the screen the hero is on.
         const f32 x = m_Camera.WorldToScreen(m_HeroPosition).x / m_Camera.GetTargetSize().x;
         const f32 pan = Emerald::Clamp(x * 2.0f - 1.0f, -1.0f, 1.0f);
-        m_Shared.App.GetAudio().Play(m_Shared.Blip, {.Volume = 0.7f, .Pan = pan * 0.8f});
+        m_Shared.App.GetAudio().Play(m_Shared.Blip,
+                                     {.Volume = 0.7f * m_Shared.EffectsVolume, .Pan = pan * 0.8f});
     }
 
     void DrawWorld(Emerald::Renderer2D& r)

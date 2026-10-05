@@ -33,6 +33,7 @@
 #include <Emerald/Emerald.h>
 
 #include "DemoScene.h"
+#include "OptionsScene.h"
 #include "PauseScene.h"
 #include "PlatformerScene.h"
 #include "Shared.h"
@@ -176,11 +177,15 @@ protected:
                 return std::make_unique<PlatformerScene>(m_Shared);
             case SceneId::Pause:
                 return std::make_unique<PauseScene>(m_Shared);
+            case SceneId::Options:
+                return std::make_unique<OptionsScene>(m_Shared);
             }
             return nullptr;
         };
         // --demo / --tilemap / --swarm / --platformer (screenshots, the benchmark) start there at
-        // once; otherwise the title fades in from black.
+        // once (--options over the title); otherwise the title fades in from black.
+        if (m_Shared.Options.Start == SceneId::Options)
+            GetScenes().Push(m_Shared.Make(SceneId::Title));
         if (m_Shared.Options.Start)
             GetScenes().Push(m_Shared.Make(*m_Shared.Options.Start));
         else
@@ -534,6 +539,10 @@ private:
         input.BindAction("Jump", {Key::Z});
         input.BindAction("Jump", {GamepadButton::South});
         input.BindAction("Overlay", {Key::O}); // the platformer's collision overlay
+        // The UI widgets (OptionsScene.h): the default UI actions, but Escape quits the sandbox,
+        // so back is Backspace or M (rebinding replaces only the keys; East stays).
+        Emerald::BindDefaultUiActions(input);
+        input.RebindAction(Emerald::kUiBack, {Key::Backspace, Key::M});
     }
 
     // Files come from the asset manager: loaded once, placeholders for missing files, and (debug
@@ -702,6 +711,8 @@ SandboxOptions ParseOptions(i32 argc, char** argv)
             options.Start = SceneId::Swarm;
         } else if (arg == "--platformer") {
             options.Start = SceneId::Platformer;
+        } else if (arg == "--options") { // the options screen over the title
+            options.Start = SceneId::Options;
         } else if (arg == "--pan") {
             options.Room.Pan = true;
         } else if (arg == "--stats") {

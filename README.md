@@ -6,7 +6,7 @@ Emerald is a small, modern C++20 game engine built on [SDL3](https://github.com/
 It is split into:
 
 - **`Emerald::Emerald`** – the engine library (logging, window, SDL GPU renderer, batched 2D renderer for lines and
-  textured sprites, sprite animation, a 2D camera, textures and texture atlases, keyboard input, application loop with a fixed-timestep update, a scene stack with transitions, entities and components (EnTT), platformer character physics, image loading, thread pool, `std::pmr`
+  textured sprites, sprite animation, a 2D camera, textures and texture atlases, keyboard input, application loop with a fixed-timestep update, a scene stack with transitions, entities and components (EnTT), platformer character physics, UI widgets, image loading, thread pool, `std::pmr`
   memory helpers).
 - **`Emerald::Math`** – a header-only math library (vectors, `Mat4`, optional SSE), included by the engine.
 - **`sandbox/`** – a minimal example app that links the engine and draws a rotating vertex-colored triangle
@@ -15,7 +15,7 @@ It is split into:
   an animated pixel-art hero (walk / idle / jump, from `tools/sprites/make_hero.py`) driven by
   keyboard or gamepad that a `Camera2D` follows around a larger world (pan, zoom, rotate, shake;
   with ImGui on, the panel shows the camera and lists connected pads and their live stick values).
-  It is organised as scenes (title, camera demo, tilemap room, entity swarm, platformer, pause) on the scene stack.
+  It is organised as scenes (title, camera demo, tilemap room, entity swarm, platformer, pause, options) on the scene stack.
 - **`tests/`** – small unit-test executables run with `ctest`.
 
 All dependencies are fetched automatically with CMake `FetchContent` and pinned to specific versions.
@@ -303,6 +303,7 @@ structure-of-arrays layout instead (all x together, all y together).
 | `ReplayTests` | `--frames` / `--screenshot` / `--capture` / `--record` / `--replay` parsing (both spellings, bad numbers); recording text round trip (floats exact) and broken files; `Input` answering from a replayed sample (other bindings, blocking still wins); a scripted platformer run on the sandbox level with uneven frame times, recorded and replayed twice with bit-identical positions, no divergence; a replay at another fixed rate refused |
 | `ToolsTests` | the Python tools: `check_assets.py` (good assets pass; palette, atlas and map problems found; PNG filters) and `textmap.py` (neighbours, variants, legends, the written JSON); needs Python 3 |
 | `SandboxAssets` | `check_assets.py` on `sandbox/assets` |
+| `UiTests` | UI widgets without a GPU: ids (`##` suffixes, `PushId` scopes), panel layout in whole units (rows, columns tiling exactly, title row, pivot with last frame's height), focus starting on the first widget, Up / Down wrapping, Left / Right between columns and wrapping in a row, Down from a wide button into columns and back, buttons activating once per press, toggle / slider / choice values from Left / Right / Accept (steps snapped, clamped, choices wrapping), held-direction repeat and stick holds, mouse hover focus, click = press + release over the widget, slider dragging, focus moving off a removed widget, the focus highlight easing, `ReadUiInput` from actions (rebinding, blocked input), drawing and 9-slice sprite counts |
 | `TweenTests` | every easing curve at 0, 0.5 and 1, Out mirroring In and InOut symmetry, clamping; tweens of f32 / Vec2 / Vec4 with delay, start values, repeat and yoyo, endless tweens, cancelling (chains included, no callbacks), chaining with leftover time, completion firing exactly once, callbacks starting and clearing tweens, `CancelTarget` from a destructor, `Run`, stale ids; one big step vs many uneven ones giving the same result; timers `After` / `Every` / cancel (also from their own callback), callbacks adding timers, frame-rate independence with uneven dt |
 
 ```sh
@@ -1610,6 +1611,63 @@ step* in `OnFixedUpdate`, so a tap in a frame that runs no fixed step (which hap
 repeats are ignored, held keys and pad buttons are released when the window loses focus, and with ImGui on, key presses are withheld from the game while an ImGui
 text field is active.
 
+## UI widgets (`UI/UI.h`)
+
+Immediate-mode game UI for menus and options screens, in the style of Dear ImGui: every frame you
+describe the widgets, and each one returns whether it was used. Mouse, keyboard and gamepad all
+drive it (through named actions, so they can be rebound), and the focus moves between widgets by
+their rectangles.
+
+```cpp
+// Once: the UI actions (UiUp/Down/Left/Right, UiAccept, UiBack, and the UiMoveX/Y stick axes).
+Emerald::BindDefaultUiActions(GetInput());
+input.RebindAction(Emerald::kUiBack, {Key::Backspace}); // like any other action
+
+// Every frame (OnUpdate): the mouse in the UI's units (here window units, as drawn below).
+ui.Begin(Emerald::ReadUiInput(input, input.GetMouse().GetPosition()), dt);
+ui.BeginPanel("OPTIONS", {.Position = size * 0.5f, .Width = 400.0f, .Pivot = {0.5f, 0.5f}});
+if (ui.Slider("Music", &settings.Music, 0.0f, 1.0f)) ApplyVolumes();
+ui.Toggle("Fullscreen", &settings.Fullscreen);
+ui.Choice("Scale", &settings.Scale, {"x1", "x2", "x3"});
+ui.Columns(2); // the next two share a row
+if (ui.Button("Defaults")) settings = {};
+if (ui.Button("Back") || ui.WasBackPressed()) Close();
+ui.EndPanel();
+ui.End();
+
+// OnRender2D, in a pixel-space projection of the same units:
+ui.Draw(r, font);
+```
+
+- **Widgets**: `Label` (left / center / right), `Button`, `Toggle`, `Slider` (Left / Right step,
+  snapped to whole steps; the mouse drags it), `Choice` (a list of options, Left / Right / Accept
+  / click step through it, wrapping). `Space` adds a gap.
+- **Layout**: a panel stacks its widgets downwards in rows of `UiStyle::RowHeight`, with padding,
+  spacing and an optional title row; `Columns(n)` puts the next n widgets side by side. The panel
+  is placed by a pivot (centered, top-left...) using its last frame's height. Every rectangle is
+  rounded to whole units, so pixel fonts and pixel-art frames stay crisp at a virtual
+  resolution.
+- **Focus**: one widget always has it (the first, unless `SetFocus`). Up / Down / Left / Right go
+  to the nearest widget entirely in that direction, preferring ones in the same column / row;
+  with nothing there it wraps around to the other side. Sliders, toggles and choices use Left /
+  Right for their value. Held directions repeat after `RepeatDelay`, every `RepeatRate`. The
+  mouse focuses what it moves over; a click is a press and release over the same widget.
+- **Ids**: a widget's id is its label hashed; `"Volume##music"` shows "Volume" but hashes the
+  whole string, and `PushId` / `PopId` scope labels (e.g. per save slot). The small per-widget
+  state (the focus highlight's fade, a panel's height) is kept by id and dropped when a widget is
+  no longer described.
+- **Look**: `UiStyle` (colors, sizes, text scale, timing; `ui.GetStyle()` changes it live) and an
+  optional 9-slice panel sprite (`PanelSprite`; `DrawNineSlice` is public for other frames).
+  Drawing uses `Renderer2D` and a `Font`, and is separate from the logic: the description makes a
+  list of items with their rectangles (`GetItems`), which `Draw` renders and `UiTests` checks
+  without a GPU.
+
+The sandbox's options screen (`sandbox/src/OptionsScene.h`, from the title or pause menu, or
+`--options`) uses all of them: volume sliders, fullscreen and CRT toggles, a highlight color choice,
+the controls, Defaults / Back. Rock Blaster's options menu would be the same few lines: one
+`Slider` per volume (step 0.1), `Toggle`s for fullscreen, vsync, shake, particles, CRT and rock
+bounce, and `Back`; its auto-repeating Left / Right is `UiStyle::RepeatDelay` / `RepeatRate`.
+
 ## Audio
 
 `include/Emerald/Audio/`: load or generate sounds, then play them through `Application::GetAudio()`.
@@ -1835,7 +1893,7 @@ It is always built in Release and lives in `build/_shadercross`, which every pre
 ## Project layout
 
 ```
-include/Emerald/   Public engine headers (Core/, Input/, Audio/, Renderer/, Particles/, Physics/, Tilemap/, Scene/, Entity/, Assets/, Tween/, Math/, Memory/)
+include/Emerald/   Public engine headers (Core/, Input/, Audio/, Renderer/, Particles/, Physics/, Tilemap/, Scene/, Entity/, Assets/, Tween/, UI/, Math/, Memory/)
 src/               Engine implementation
 shaders/           The engine's HLSL shaders (Renderer2D lines, Sprite, the CRT post-process; compiled at build time for every app)
 sandbox/           Example application (src/, its own shaders/, assets/ for the demo font, hero sheet and tilemap room)

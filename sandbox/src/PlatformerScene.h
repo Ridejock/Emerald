@@ -55,7 +55,7 @@ public:
         // air), or from the buffer (pressed before landing).
         if (m_Body.Jumped) {
             ++m_Jumps;
-            m_Shared.App.GetAudio().Play(m_Shared.Blip, {.Volume = 0.4f});
+            m_Shared.App.GetAudio().Play(m_Shared.Blip, {.Volume = 0.4f * m_Shared.EffectsVolume});
             if (!wasGrounded)
                 Popup("coyote jump!", m_CoyoteJumps);
             else if (!in.JumpPressed)

@@ -74,13 +74,16 @@ private:
         case 0: // Resume
             m_Menu.Close();
             break;
-        case 1:
+        case 1: // over this menu (OptionsScene.h)
+            GetStack()->Push(m_Shared.Make(SceneId::Options));
+            break;
+        case 2:
             app.SetCrtEnabled(!app.IsCrtEnabled());
             break;
-        case 2: // Replay intro
+        case 3: // Replay intro
             m_Menu.Open();
             break;
-        case 3:
+        case 4:
             m_Leaving = true;
             GetStack()->ReplaceAll(m_Shared.Make(SceneId::Title), FadeBlack());
             break;
@@ -92,7 +95,7 @@ private:
 
     SandboxShared& m_Shared;
     MenuDemo m_Menu{"PAUSED",
-                    {"Resume", "CRT effect", "Replay intro", "Title screen", "Quit"},
+                    {"Resume", "Options", "CRT effect", "Replay intro", "Title screen", "Quit"},
                     "Up/Down + Enter, M resumes"};
     bool m_Leaving = false; // a pop or the way to the title is on its way
 };

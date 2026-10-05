@@ -46,3 +46,4 @@
 #include "Emerald/Tween/Easing.h"
 #include "Emerald/Tween/Timers.h"
 #include "Emerald/Tween/Tween.h"
+#include "Emerald/UI/UI.h"

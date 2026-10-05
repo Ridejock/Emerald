@@ -49,6 +49,9 @@ public:
             case 4: // an overlay: the title stays below, paused
                 GetStack()->Push(m_Shared.Make(SceneId::Options));
                 break;
+            case 5:
+                GetStack()->Replace(m_Shared.Make(SceneId::Lighting), FadeBlack());
+                break;
             default:
                 m_Shared.App.Quit();
                 break;
@@ -104,10 +107,10 @@ public:
 
 private:
     SandboxShared& m_Shared;
-    MenuDemo m_Menu{
-        "EMERALD",
-        {"Camera demo", "Tilemap room", "Entity swarm", "Platformer", "Options", "Quit"},
-        "Up/Down + Enter"};
+    MenuDemo m_Menu{"EMERALD",
+                    {"Camera demo", "Tilemap room", "Entity swarm", "Platformer", "Options",
+                     "Lighting", "Quit"},
+                    "Up/Down + Enter"};
     HeroSprite m_Hero{m_Shared.Hero};
     f32 m_Time = 0.0f;
 };

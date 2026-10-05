@@ -59,6 +59,9 @@ struct SpriteOptions {
     // pixel-space projection, a whole pixel - so unrotated pixel art stays crisp. The pixel grid
     // only matches if the size is whole pixels too.
     bool PixelSnap = false;
+    // Optional normal map for Renderer2D lighting (ignored when lighting is off). XY is the
+    // surface tilt, Z toward the camera; a missing map uses a flat (0, 0, 1) stand-in.
+    const Texture* NormalMap = nullptr;
 };
 #if defined(_MSC_VER)
 #pragma warning(pop)

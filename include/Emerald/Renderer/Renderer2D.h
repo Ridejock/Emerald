@@ -14,6 +14,7 @@
 #include "Emerald/Renderer/Animation.h"
 #include "Emerald/Renderer/Camera2D.h"
 #include "Emerald/Renderer/Font.h"
+#include "Emerald/Renderer/Light.h"
 #include "Emerald/Renderer/Sprite.h"
 #include "Emerald/Renderer/Texture.h"
 
@@ -79,6 +80,7 @@ public:
         Vec2 Position; // TEXCOORD0
         Vec2 TexCoord; // TEXCOORD1: 0..1 across the texture
         u32 Color;     // TEXCOORD2: tint, packed like Vertex::Color
+        Vec2 CosSin;   // TEXCOORD3: (cos, sin) of rotation; lit shader rotates the normal
     };
     enum class CommandType : u8 { Lines, Sprites };
     // A run of consecutive draws of one kind: one draw call.
@@ -87,10 +89,13 @@ public:
         BlendMode Blend = BlendMode::Alpha;
         u32 FirstVertex = 0; // into GetVertices() (lines) or GetSpriteVertices() (sprites)
         u32 VertexCount = 0;
-        // Sprites only: the texture they all use.
+        // Sprites only: the albedo (and optional normal map when lighting is on).
         u32 TextureId = 0;
         SDL_GPUTexture* GpuTexture = nullptr;
         SDL_GPUSampler* Sampler = nullptr;
+        u32 NormalId = 0;
+        SDL_GPUTexture* NormalTexture = nullptr;
+        SDL_GPUSampler* NormalSampler = nullptr;
     };
     // One Begin/End pair: its commands, drawn with one view-projection matrix and clip rectangle.
     // (Size is a multiple of Mat4's 16-byte alignment; implicit padding caused by an alignas
@@ -169,6 +174,18 @@ public:
     // Drops everything recorded so far (Render does this too).
     void Clear();
 
+    // --- Lighting (Light.h; off by default, costs nothing then) ---
+    // When enabled, sprites use the lit shader (Lambert + attenuation, optional normal maps).
+    // Lines are unaffected. ClearLights / SetAmbient / AddLight configure the next frames.
+    void SetLightingEnabled(bool enabled) { m_LightingEnabled = enabled; }
+    [[nodiscard]] bool IsLightingEnabled() const { return m_LightingEnabled; }
+    void SetAmbient(const Vec3& rgb) { m_Ambient = rgb; }
+    [[nodiscard]] const Vec3& GetAmbient() const { return m_Ambient; }
+    void ClearLights() { m_Lights.clear(); }
+    // False when already at kMaxLights (the extra light is ignored).
+    bool AddLight(const Light& light);
+    [[nodiscard]] std::span<const Light> GetLights() const { return m_Lights; }
+
     [[nodiscard]] std::span<const Vertex> GetVertices() const { return m_Vertices; }
     [[nodiscard]] std::span<const Batch> GetBatches() const { return m_Batches; }
     [[nodiscard]] std::span<const SpriteVertex> GetSpriteVertices() const
@@ -207,7 +224,8 @@ private:
     [[nodiscard]] bool CanDraw() const;
     // Makes the current batch's last command one of `type` (and `texture`), starting a new one
     // if needed, so draws are recorded in call order.
-    void UseCommand(CommandType type, const Texture* texture = nullptr);
+    void UseCommand(CommandType type, const Texture* texture = nullptr,
+                    const Texture* normal = nullptr);
     void CloseCommand();
 
     std::vector<Vertex> m_Vertices;
@@ -233,6 +251,12 @@ private:
     // For FillRect: made by Init, or without GPU resources on first use when there is no device
     // (tests).
     std::unique_ptr<Texture> m_White;
+    bool m_LightingEnabled = false;
+    Vec3 m_Ambient{0.15f, 0.15f, 0.2f};
+    std::vector<Light> m_Lights;
+    std::unique_ptr<Texture> m_FlatNormal; // 1x1 (128,128,255) when a sprite has no normal map
+    SDL_GPUGraphicsPipeline* m_LitSpritePipeline = nullptr;
+    SDL_GPUGraphicsPipeline* m_AdditiveLitSpritePipeline = nullptr;
 };
 
 } // namespace Emerald

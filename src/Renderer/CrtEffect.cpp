@@ -126,8 +126,8 @@ void CrtEffect::Shutdown()
 
 void CrtEffect::ReleaseTargets()
 {
-    Target* targets[] = {&m_Scene,    &m_History[0], &m_History[1], &m_Bloom[0],
-                         &m_Bloom[1], &m_Bloom[2],   &m_Bloom[3]};
+    Target* targets[] = {&m_History[0], &m_History[1], &m_Bloom[0],
+                         &m_Bloom[1],   &m_Bloom[2],   &m_Bloom[3]};
     for (Target* target : targets) {
         if (target->Texture)
             SDL_ReleaseGPUTexture(m_Device, target->Texture);
@@ -145,8 +145,7 @@ bool CrtEffect::CreateTargets(u32 width, u32 height)
                   .Height = std::max(h, 1u)};
         return target.Texture != nullptr;
     };
-    bool ok = make(m_Scene, m_OutputFormat, width, height);
-    ok = make(m_History[0], m_WorkFormat, width, height) && ok;
+    bool ok = make(m_History[0], m_WorkFormat, width, height);
     ok = make(m_History[1], m_WorkFormat, width, height) && ok;
     ok = make(m_Bloom[0], m_WorkFormat, width / 2, height / 2) && ok;
     ok = make(m_Bloom[1], m_WorkFormat, width / 2, height / 2) && ok;
@@ -158,15 +157,6 @@ bool CrtEffect::CreateTargets(u32 width, u32 height)
         ReleaseTargets();
     }
     return ok;
-}
-
-SDL_GPUTexture* CrtEffect::GetSceneTarget(u32 width, u32 height)
-{
-    if (!m_Device)
-        return nullptr;
-    if (!m_Scene.Texture || m_Scene.Width != width || m_Scene.Height != height)
-        CreateTargets(width, height);
-    return m_Scene.Texture;
 }
 
 void CrtEffect::RunPass(SDL_GPUCommandBuffer* commandBuffer, SDL_GPUGraphicsPipeline* pipeline,
@@ -189,12 +179,15 @@ void CrtEffect::RunPass(SDL_GPUCommandBuffer* commandBuffer, SDL_GPUGraphicsPipe
     SDL_EndGPURenderPass(pass);
 }
 
-void CrtEffect::Apply(SDL_GPUCommandBuffer* commandBuffer, SDL_GPUTexture* target, f32 deltaSeconds)
+void CrtEffect::Apply(SDL_GPUCommandBuffer* commandBuffer, SDL_GPUTexture* source,
+                      SDL_GPUTexture* target, u32 width, u32 height, f32 deltaSeconds)
 {
-    if (!m_Device || !m_Scene.Texture)
+    if (!m_Device || !source || !target)
         return;
-    const u32 width = m_Scene.Width;
-    const u32 height = m_Scene.Height;
+    if (!m_History[0].Texture || m_History[0].Width != width || m_History[0].Height != height)
+        CreateTargets(width, height);
+    if (!m_History[0].Texture)
+        return;
 
     // 1. Phosphor: this frame over the faded previous one.
     const Target& history = m_History[m_Current];
@@ -203,8 +196,7 @@ void CrtEffect::Apply(SDL_GPUCommandBuffer* commandBuffer, SDL_GPUTexture* targe
     const PhosphorUniforms phosphor{
         .Decay = afterglow ? AfterglowDecay(m_Params.Afterglow, deltaSeconds) : 0.0f,
         .Padding = {}};
-    SDL_GPUTexture* const phosphorSources[] = {m_Scene.Texture,
-                                               afterglow ? previous.Texture : m_Scene.Texture};
+    SDL_GPUTexture* const phosphorSources[] = {source, afterglow ? previous.Texture : source};
     RunPass(commandBuffer, m_PhosphorPipeline, history, phosphorSources, &phosphor,
             sizeof(phosphor));
     m_HistoryValid = m_Params.Afterglow > 0.0f;

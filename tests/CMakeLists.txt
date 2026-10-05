@@ -140,3 +140,9 @@ add_executable(EmeraldUiTests TestMain.cpp UiTests.cpp)
 target_link_libraries(EmeraldUiTests PRIVATE Emerald::Emerald)
 emerald_set_warnings(EmeraldUiTests)
 add_test(NAME UiTests COMMAND EmeraldUiTests)
+
+# Lighting math and the post-effect chain's order (no GPU).
+add_executable(EmeraldLightingTests TestMain.cpp LightingTests.cpp)
+target_link_libraries(EmeraldLightingTests PRIVATE Emerald::Emerald)
+emerald_set_warnings(EmeraldLightingTests)
+add_test(NAME LightingTests COMMAND EmeraldLightingTests)

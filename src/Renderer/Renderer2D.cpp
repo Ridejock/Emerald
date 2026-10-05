@@ -126,10 +126,57 @@ bool Renderer2D::Init(SDL_GPUDevice* device, SDL_GPUTextureFormat colorFormat)
         return false;
     }
 
+    // Lit sprites: same vertex layout plus CosSin; fragment samples albedo + normal and applies
+    // the light uniforms. Only used while SetLightingEnabled(true).
+    SDL_GPUShader* litVertex = LoadShader(device, {.Name = "SpriteLit.vert"});
+    SDL_GPUShader* litFragment = LoadShader(device, {.Name = "SpriteLit.frag"});
+    const SDL_GPUVertexAttribute litAttributes[] = {
+        {.location = 0,
+         .buffer_slot = 0,
+         .format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2,
+         .offset = offsetof(SpriteVertex, Position)},
+        {.location = 1,
+         .buffer_slot = 0,
+         .format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2,
+         .offset = offsetof(SpriteVertex, TexCoord)},
+        {.location = 2,
+         .buffer_slot = 0,
+         .format = SDL_GPU_VERTEXELEMENTFORMAT_UBYTE4_NORM,
+         .offset = offsetof(SpriteVertex, Color)},
+        {.location = 3,
+         .buffer_slot = 0,
+         .format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2,
+         .offset = offsetof(SpriteVertex, CosSin)},
+    };
+    if (litVertex && litFragment) {
+        GraphicsPipelineDesc desc{.VertexShader = litVertex,
+                                  .FragmentShader = litFragment,
+                                  .VertexBuffers = spriteBuffers,
+                                  .VertexAttributes = litAttributes,
+                                  .ColorFormat = colorFormat,
+                                  .Primitive = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST,
+                                  .AlphaBlend = true};
+        m_LitSpritePipeline = CreateGraphicsPipeline(device, desc);
+        desc.AdditiveBlend = true;
+        m_AdditiveLitSpritePipeline = CreateGraphicsPipeline(device, desc);
+    }
+    if (litVertex)
+        SDL_ReleaseGPUShader(device, litVertex);
+    if (litFragment)
+        SDL_ReleaseGPUShader(device, litFragment);
+    if (!m_LitSpritePipeline || !m_AdditiveLitSpritePipeline) {
+        EM_CORE_ERROR("Renderer2D: could not create the lit sprite pipeline; lighting will not "
+                      "work (unlit sprites still do)");
+    }
+
     // One white pixel, tinted by FillRect.
     const Image white{.Width = 1, .Height = 1, .Pixels = {255, 255, 255, 255}};
     if (std::optional<Texture> texture = Texture::Create(device, white))
         m_White = std::make_unique<Texture>(std::move(*texture));
+    // Flat normal: +Z toward the camera (DirectX-style normal map encoding).
+    const Image flat{.Width = 1, .Height = 1, .Pixels = {128, 128, 255, 255}};
+    if (std::optional<Texture> texture = Texture::Create(device, flat))
+        m_FlatNormal = std::make_unique<Texture>(std::move(*texture));
     return true;
 }
 
@@ -139,16 +186,20 @@ void Renderer2D::Shutdown()
         return;
     // The caller (Application) waits for the GPU to be idle before shutting renderers down.
     for (SDL_GPUGraphicsPipeline* pipeline :
-         {m_Pipeline, m_SpritePipeline, m_AdditivePipeline, m_AdditiveSpritePipeline})
+         {m_Pipeline, m_SpritePipeline, m_AdditivePipeline, m_AdditiveSpritePipeline,
+          m_LitSpritePipeline, m_AdditiveLitSpritePipeline})
         if (pipeline)
             SDL_ReleaseGPUGraphicsPipeline(m_Device, pipeline);
     m_LineStream.Release(m_Device);
     m_SpriteStream.Release(m_Device);
     m_White.reset();
+    m_FlatNormal.reset();
     m_Pipeline = nullptr;
     m_SpritePipeline = nullptr;
     m_AdditivePipeline = nullptr;
     m_AdditiveSpritePipeline = nullptr;
+    m_LitSpritePipeline = nullptr;
+    m_AdditiveLitSpritePipeline = nullptr;
     m_Device = nullptr;
 }
 
@@ -175,12 +226,14 @@ void Renderer2D::End()
     m_InBatch = false;
 }
 
-void Renderer2D::UseCommand(CommandType type, const Texture* texture)
+void Renderer2D::UseCommand(CommandType type, const Texture* texture, const Texture* normal)
 {
     Batch& batch = m_Batches.back();
     if (batch.CommandCount > 0) {
         const DrawCommand& last = m_Commands.back();
-        const bool sameTexture = type == CommandType::Lines || last.TextureId == texture->GetId();
+        const u32 normalId = normal ? normal->GetId() : 0;
+        const bool sameTexture = type == CommandType::Lines ||
+                                 (last.TextureId == texture->GetId() && last.NormalId == normalId);
         if (last.Type == type && sameTexture && last.Blend == m_BlendMode)
             return; // keep adding to the current run
         CloseCommand();
@@ -195,6 +248,11 @@ void Renderer2D::UseCommand(CommandType type, const Texture* texture)
         command.TextureId = texture->GetId();
         command.GpuTexture = texture->GetGpuTexture();
         command.Sampler = texture->GetSampler();
+        if (normal) {
+            command.NormalId = normal->GetId();
+            command.NormalTexture = normal->GetGpuTexture();
+            command.NormalSampler = normal->GetSampler();
+        }
     }
     m_Commands.push_back(command);
     ++batch.CommandCount;
@@ -302,7 +360,16 @@ void Renderer2D::DrawSprite(const Sprite& sprite, const Vec2& position,
     if (!CanDraw() || !sprite.Source || sprite.Source->GetWidth() == 0 ||
         sprite.Source->GetHeight() == 0)
         return;
-    UseCommand(CommandType::Sprites, sprite.Source);
+    const Texture* normal = nullptr;
+    if (m_LightingEnabled) {
+        normal = options.NormalMap;
+        if (!normal) {
+            if (!m_FlatNormal)
+                m_FlatNormal = std::make_unique<Texture>(Texture::CreateWithoutGpu(1, 1));
+            normal = m_FlatNormal.get();
+        }
+    }
+    UseCommand(CommandType::Sprites, sprite.Source, normal);
 
     const Vec2 size = options.Size.x != 0.0f || options.Size.y != 0.0f
                           ? options.Size
@@ -332,10 +399,11 @@ void Renderer2D::DrawSprite(const Sprite& sprite, const Vec2& position,
         return at + Vec2(local.x * c - local.y * s, local.x * s + local.y * c);
     };
     const u32 color = PackColor(options.Tint);
-    const SpriteVertex topLeft{corner(0.0f, 0.0f), {uv0.x, uv0.y}, color};
-    const SpriteVertex topRight{corner(1.0f, 0.0f), {uv1.x, uv0.y}, color};
-    const SpriteVertex bottomRight{corner(1.0f, 1.0f), {uv1.x, uv1.y}, color};
-    const SpriteVertex bottomLeft{corner(0.0f, 1.0f), {uv0.x, uv1.y}, color};
+    const Vec2 cosSin{c, s}; // the rotation already computed for the corners
+    const SpriteVertex topLeft{corner(0.0f, 0.0f), {uv0.x, uv0.y}, color, cosSin};
+    const SpriteVertex topRight{corner(1.0f, 0.0f), {uv1.x, uv0.y}, color, cosSin};
+    const SpriteVertex bottomRight{corner(1.0f, 1.0f), {uv1.x, uv1.y}, color, cosSin};
+    const SpriteVertex bottomLeft{corner(0.0f, 1.0f), {uv0.x, uv1.y}, color, cosSin};
     // Two triangles; no index buffer, so shared corners are repeated.
     m_SpriteVertices.insert(m_SpriteVertices.end(),
                             {topLeft, topRight, bottomRight, topLeft, bottomRight, bottomLeft});
@@ -488,10 +556,13 @@ void Renderer2D::Render(SDL_GPUCommandBuffer* commandBuffer, SDL_GPURenderPass* 
                 (!isLines && (!m_SpritesUploaded || !command.GpuTexture)))
                 continue; // nothing to draw, or no GPU texture (e.g. CreateWithoutGpu)
 
-            // Switch pipelines (and their vertex buffer) only when the kind or blend changes.
+            // Switch pipelines (and their vertex buffer) only when the kind, blend or lighting
+            // changes.
             const bool additive = command.Blend == BlendMode::Additive;
+            const bool lit = !isLines && m_LightingEnabled && m_LitSpritePipeline;
             SDL_GPUGraphicsPipeline* pipeline =
                 isLines ? (additive ? m_AdditivePipeline : m_Pipeline)
+                : lit   ? (additive ? m_AdditiveLitSpritePipeline : m_LitSpritePipeline)
                         : (additive ? m_AdditiveSpritePipeline : m_SpritePipeline);
             if (pipeline != bound) {
                 SDL_BindGPUGraphicsPipeline(renderPass, pipeline);
@@ -501,9 +572,20 @@ void Renderer2D::Render(SDL_GPUCommandBuffer* commandBuffer, SDL_GPURenderPass* 
                 bound = pipeline;
             }
             if (!isLines) {
-                // Sampler slot 0 = register(t0/s0, space2) in Sprite.frag.hlsl.
-                const SDL_GPUTextureSamplerBinding texture{command.GpuTexture, command.Sampler};
-                SDL_BindGPUFragmentSamplers(renderPass, 0, &texture, 1);
+                if (lit) {
+                    // t0 = albedo, t1 = normal (SpriteLit.frag.hlsl).
+                    const SDL_GPUTextureSamplerBinding textures[2] = {
+                        {command.GpuTexture, command.Sampler},
+                        {command.NormalTexture ? command.NormalTexture : command.GpuTexture,
+                         command.NormalSampler ? command.NormalSampler : command.Sampler}};
+                    SDL_BindGPUFragmentSamplers(renderPass, 0, textures, 2);
+                    const LightingUniforms lights = LightingUniforms::Make(m_Ambient, m_Lights);
+                    SDL_PushGPUFragmentUniformData(commandBuffer, 0, &lights, sizeof(lights));
+                } else {
+                    // Sampler slot 0 = register(t0/s0, space2) in Sprite.frag.hlsl.
+                    const SDL_GPUTextureSamplerBinding texture{command.GpuTexture, command.Sampler};
+                    SDL_BindGPUFragmentSamplers(renderPass, 0, &texture, 1);
+                }
             }
             // Uniform slot 0 = register(b0, space1) in both vertex shaders.
             SDL_PushGPUVertexUniformData(commandBuffer, 0, &batch.ViewProjection, sizeof(Mat4));
@@ -524,6 +606,14 @@ void Renderer2D::Clear()
     m_InBatch = false;
     m_LinesUploaded = false;
     m_SpritesUploaded = false;
+}
+
+bool Renderer2D::AddLight(const Light& light)
+{
+    if (m_Lights.size() >= kMaxLights)
+        return false;
+    m_Lights.push_back(light);
+    return true;
 }
 
 } // namespace Emerald

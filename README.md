@@ -6,7 +6,7 @@ Emerald is a small, modern C++20 game engine built on [SDL3](https://github.com/
 It is split into:
 
 - **`Emerald::Emerald`** – the engine library (logging, window, SDL GPU renderer, batched 2D renderer for lines and
-  textured sprites, sprite animation, a 2D camera, textures and texture atlases, keyboard input, application loop with a fixed-timestep update, a scene stack with transitions, entities and components (EnTT), platformer character physics, UI widgets, image loading, thread pool, `std::pmr`
+  textured sprites, sprite animation, a 2D camera, textures and texture atlases, keyboard input, application loop with a fixed-timestep update, a scene stack with transitions, entities and components (EnTT), platformer character physics, UI widgets, 2D lighting and a post-effect chain, image loading, thread pool, `std::pmr`
   memory helpers).
 - **`Emerald::Math`** – a header-only math library (vectors, `Mat4`, optional SSE), included by the engine.
 - **`sandbox/`** – a minimal example app that links the engine and draws a rotating vertex-colored triangle
@@ -15,7 +15,7 @@ It is split into:
   an animated pixel-art hero (walk / idle / jump, from `tools/sprites/make_hero.py`) driven by
   keyboard or gamepad that a `Camera2D` follows around a larger world (pan, zoom, rotate, shake;
   with ImGui on, the panel shows the camera and lists connected pads and their live stick values).
-  It is organised as scenes (title, camera demo, tilemap room, entity swarm, platformer, pause, options) on the scene stack.
+  It is organised as scenes (title, camera demo, tilemap room, entity swarm, platformer, pause, options, lighting) on the scene stack.
 - **`tests/`** – small unit-test executables run with `ctest`.
 
 All dependencies are fetched automatically with CMake `FetchContent` and pinned to specific versions.
@@ -303,6 +303,7 @@ structure-of-arrays layout instead (all x together, all y together).
 | `ReplayTests` | `--frames` / `--screenshot` / `--capture` / `--record` / `--replay` parsing (both spellings, bad numbers); recording text round trip (floats exact) and broken files; `Input` answering from a replayed sample (other bindings, blocking still wins); a scripted platformer run on the sandbox level with uneven frame times, recorded and replayed twice with bit-identical positions, no divergence; a replay at another fixed rate refused |
 | `ToolsTests` | the Python tools: `check_assets.py` (good assets pass; palette, atlas and map problems found; PNG filters) and `textmap.py` (neighbours, variants, legends, the written JSON); needs Python 3 |
 | `SandboxAssets` | `check_assets.py` on `sandbox/assets` |
+| `LightingTests` | light attenuation and spot-cone factor, point/spot shade with ambient, `LightingUniforms` packing (extras dropped), post-effect chain Add/Move/Remove/Find order (fake effects, no GPU) |
 | `UiTests` | UI widgets without a GPU: ids (`##` suffixes, `PushId` scopes), panel layout in whole units (rows, columns tiling exactly, title row, pivot with last frame's height), focus starting on the first widget, Up / Down wrapping, Left / Right between columns and wrapping in a row, Down from a wide button into columns and back, buttons activating once per press, toggle / slider / choice values from Left / Right / Accept (steps snapped, clamped, choices wrapping), held-direction repeat and stick holds, mouse hover focus, click = press + release over the widget, slider dragging, focus moving off a removed widget, the focus highlight easing, `ReadUiInput` from actions (rebinding, blocked input), drawing and 9-slice sprite counts |
 | `TweenTests` | every easing curve at 0, 0.5 and 1, Out mirroring In and InOut symmetry, clamping; tweens of f32 / Vec2 / Vec4 with delay, start values, repeat and yoyo, endless tweens, cancelling (chains included, no callbacks), chaining with leftover time, completion firing exactly once, callbacks starting and clearing tweens, `CancelTarget` from a destructor, `Run`, stale ids; one big step vs many uneven ones giving the same result; timers `After` / `Every` / cancel (also from their own callback), callbacks adding timers, frame-rate independence with uneven dt |
 
@@ -1667,6 +1668,32 @@ The sandbox's options screen (`sandbox/src/OptionsScene.h`, from the title or pa
 the controls, Defaults / Back. Rock Blaster's options menu would be the same few lines: one
 `Slider` per volume (step 0.1), `Toggle`s for fullscreen, vsync, shake, particles, CRT and rock
 bounce, and `Back`; its auto-repeating Left / Right is `UiStyle::RepeatDelay` / `RepeatRate`.
+
+## Lighting and post effects (`Light.h`, `PostEffect.h`)
+
+2D point and spot lights with an ambient term, optional normal maps on sprites, and a runtime
+post-effect chain. Lighting is **off by default** and then costs nothing (the unlit sprite
+pipeline is used); turn it on per frame with `Renderer2D::SetLightingEnabled(true)`.
+
+```cpp
+r.SetLightingEnabled(true);
+r.SetAmbient({0.1f, 0.1f, 0.15f});
+r.ClearLights();
+r.AddLight({.Position = lamp, .Z = 40.0f, .Color = {1.0f, 0.8f, 0.5f},
+            .Intensity = 1.2f, .Radius = 250.0f}); // point
+r.AddLight({.Kind = LightKind::Spot, .Position = torch, .Direction = {0, 1},
+            .InnerAngle = 0.3f, .OuterAngle = 0.7f, .Radius = 300.0f});
+r.DrawSprite(wall, at, {.NormalMap = &wallNormal}); // optional; flat stand-in otherwise
+
+// Post chain (empty = draw straight to the swapchain):
+GetPostChain().Add(std::make_unique<TintEffect>());
+SetCrtEnabled(true); // CRT is one effect in the same chain; reorder with Move
+```
+
+Up to `kMaxLights` (8) lights are packed as fragment uniforms (Lambert + distance falloff; spot =
+point + cone). The sandbox's Lighting scene (`--lighting`, or the title menu) shows a brick floor
+and props with procedural normals, a warm point light, a spot that follows the mouse, and Tint +
+CRT in the chain.
 
 ## Audio
 

@@ -33,6 +33,7 @@
 #include <Emerald/Emerald.h>
 
 #include "DemoScene.h"
+#include "LightingScene.h"
 #include "OptionsScene.h"
 #include "PauseScene.h"
 #include "PlatformerScene.h"
@@ -179,6 +180,8 @@ protected:
                 return std::make_unique<PauseScene>(m_Shared);
             case SceneId::Options:
                 return std::make_unique<OptionsScene>(m_Shared);
+            case SceneId::Lighting:
+                return std::make_unique<LightingScene>(m_Shared);
             }
             return nullptr;
         };
@@ -713,6 +716,8 @@ SandboxOptions ParseOptions(i32 argc, char** argv)
             options.Start = SceneId::Platformer;
         } else if (arg == "--options") { // the options screen over the title
             options.Start = SceneId::Options;
+        } else if (arg == "--lighting") {
+            options.Start = SceneId::Lighting;
         } else if (arg == "--pan") {
             options.Room.Pan = true;
         } else if (arg == "--stats") {

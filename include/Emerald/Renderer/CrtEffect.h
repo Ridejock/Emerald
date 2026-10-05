@@ -1,10 +1,12 @@
 #pragma once
 
 #include <span>
+#include <string_view>
 
 #include <SDL3/SDL_gpu.h>
 
 #include "Emerald/Core/Defines.h"
+#include "Emerald/Renderer/PostEffect.h"
 
 namespace Emerald {
 
@@ -38,13 +40,12 @@ struct CrtUniforms {
     f32 EdgeSoftness;
 };
 
-// Optional fullscreen CRT monitor post-process. The scene is rendered into an offscreen texture
-// (GetSceneTarget), then Apply runs the passes into the real target:
-//   1. phosphor: the scene over the fading previous frame (afterglow, 16-bit float history)
+// Optional fullscreen CRT monitor post-process (one entry in Application's PostChain):
+//   1. phosphor: the source over the fading previous frame (afterglow, 16-bit float history)
 //   2. bloom: separable Gaussian blurs at 1/2 and 1/4 size (a near and a wide glow)
 //   3. composite: curvature, bloom, chromatic offset, vignette, scanlines and mask
-// Application owns one; turn it on with Application::SetCrtEnabled.
-class CrtEffect {
+// Turn it on with Application::SetCrtEnabled (adds/removes this effect from the chain).
+class CrtEffect final : public PostEffect {
 public:
     CrtEffect() = default;
     ~CrtEffect();
@@ -52,17 +53,13 @@ public:
     CrtEffect(const CrtEffect&) = delete;
     CrtEffect& operator=(const CrtEffect&) = delete;
 
-    // Loads the shaders and creates the pipelines; `outputFormat` is the target's format (and
-    // the scene texture's). Returns false on failure (logged).
-    bool Init(SDL_GPUDevice* device, SDL_GPUTextureFormat outputFormat);
-    void Shutdown();
+    bool Init(SDL_GPUDevice* device, SDL_GPUTextureFormat outputFormat) override;
+    void Shutdown() override;
+    // Reads `source` (the previous chain step or the scene), writes `target`.
+    void Apply(SDL_GPUCommandBuffer* commandBuffer, SDL_GPUTexture* source, SDL_GPUTexture* target,
+               u32 width, u32 height, f32 deltaSeconds) override;
+    [[nodiscard]] std::string_view GetName() const override { return "CRT"; }
 
-    // The texture to render this frame's scene into, (re)created at `width` x `height`.
-    // Returns nullptr if it could not be created (logged); render straight to the target then.
-    [[nodiscard]] SDL_GPUTexture* GetSceneTarget(u32 width, u32 height);
-    // Runs the effect from the scene texture into `target` (outside any render pass).
-    // `deltaSeconds` is the frame time, for the afterglow.
-    void Apply(SDL_GPUCommandBuffer* commandBuffer, SDL_GPUTexture* target, f32 deltaSeconds);
     // Forgets the afterglow, e.g. after the effect was off for a while.
     void ResetAfterglow() { m_HistoryValid = false; }
 
@@ -86,6 +83,7 @@ private:
     };
     bool CreateTargets(u32 width, u32 height);
     void ReleaseTargets();
+    // Work targets only (history + bloom); the chain owns the scene / ping textures.
     void RunPass(SDL_GPUCommandBuffer* commandBuffer, SDL_GPUGraphicsPipeline* pipeline,
                  const Target& target, std::span<SDL_GPUTexture* const> sources,
                  const void* uniforms, u32 uniformSize);
@@ -98,7 +96,6 @@ private:
     SDL_GPUGraphicsPipeline* m_CompositePipeline = nullptr;
     SDL_GPUSampler* m_Sampler = nullptr; // linear, clamp to edge
 
-    Target m_Scene;
     Target m_History[2]; // phosphor ping-pong: this frame's and last frame's
     Target m_Bloom[4];   // near: [0] horizontal, [1] vertical at 1/2; wide: [2], [3] at 1/4
     u32 m_Current = 0;   // index of this frame's history target

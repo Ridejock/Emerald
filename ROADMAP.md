@@ -175,6 +175,8 @@ Done when:
 - Lighting off costs nothing (no extra passes)
 - Sandbox scene showing lighting + chain
 
+**Status:** implemented, in review (`Renderer/Light.h`, lit sprite shaders, `PostEffect`/`PostChain` with CRT as one effect and a Tint grade; `LightingTests`; sandbox `LightingScene.h` / `--lighting`).
+
 ### Audio extras ([#14](https://github.com/Ridejock/Emerald/issues/14))
 
 Music streaming from disk (no full decode up front) with crossfades, mixer groups (music/sfx/ui) with their own volumes, and positional panning/attenuation relative to the camera.

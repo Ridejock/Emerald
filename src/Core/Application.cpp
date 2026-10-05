@@ -116,6 +116,7 @@ Application::Application(const ApplicationSpec& spec)
     // Not fatal if it fails (logged): the app still runs, only 2D shapes are not drawn.
     m_Renderer2D = std::make_unique<Renderer2D>();
     m_Renderer2D->Init(m_Renderer->GetDevice(), m_Renderer->GetSwapchainFormat());
+    m_Post.Init(m_Renderer->GetDevice(), m_Renderer->GetSwapchainFormat());
     m_Assets = std::make_unique<Assets>(std::make_unique<GpuAssetLoader>(m_Renderer->GetDevice()),
                                         Paths::GetBasePath(), m_ThreadPool.get());
     InitImGui();
@@ -128,7 +129,7 @@ Application::~Application()
     m_World.Clear();      // so may components
     m_Assets.reset();     // textures before the GPU device
     ShutdownImGui();
-    m_Crt.reset();
+    m_Post.Shutdown();
     m_Renderer2D.reset();
     m_Renderer.reset(); // GPU device must go before the window it renders into
     m_Window.reset();
@@ -331,12 +332,12 @@ void Application::RenderFrame()
 #endif
 
     // Draw order: the app's own draw calls, then the 2D shapes, then the ImGui overlay on top.
-    // With the CRT effect the scene goes to its offscreen texture first; the effect then draws
-    // it into the frame's target, and ImGui is drawn over that (unaffected).
+    // With a post-effect chain the scene goes to an offscreen texture first; the chain then
+    // draws it into the frame's target, and ImGui is drawn over that (unaffected).
     const u32 width = m_Renderer->GetFrameWidth();
     const u32 height = m_Renderer->GetFrameHeight();
     SDL_GPUTexture* output = m_Renderer->GetRenderTarget();
-    SDL_GPUTexture* scene = m_CrtEnabled ? m_Crt->GetSceneTarget(width, height) : nullptr;
+    SDL_GPUTexture* scene = m_Post.GetSceneTarget(width, height);
     SDL_GPURenderPass* pass =
         m_Renderer->BeginRenderPass(scene ? scene : output, m_Spec.ClearColor);
     OnRender(pass);
@@ -344,7 +345,7 @@ void Application::RenderFrame()
     m_Renderer2D->Render(cmd, pass, width, height);
     if (scene) {
         m_Renderer->EndRenderPass();
-        m_Crt->Apply(cmd, output, m_FrameSeconds);
+        m_Post.Apply(cmd, output, m_FrameSeconds);
         pass = nullptr;
     }
 #if EMERALD_WITH_IMGUI
@@ -420,18 +421,34 @@ void Application::FinishCaptures()
 
 bool Application::SetCrtEnabled(bool enabled)
 {
-    if (enabled && !m_CrtInitialized) {
-        if (!m_RendererInitialized ||
-            !m_Crt->Init(m_Renderer->GetDevice(), m_Renderer->GetSwapchainFormat())) {
-            m_CrtEnabled = false;
-            return false;
+    if (enabled == IsCrtEnabled())
+        return true;
+    if (!enabled) {
+        for (usize i = 0; i < m_Post.GetCount(); ++i) {
+            if (m_Post.Get(i)->GetName() == "CRT") {
+                m_CrtParams = static_cast<CrtEffect*>(m_Post.Get(i))->GetParams();
+                m_Post.Remove(i);
+                break;
+            }
         }
-        m_CrtInitialized = true;
+        return true;
     }
-    if (enabled && !m_CrtEnabled)
-        m_Crt->ResetAfterglow(); // no stale trails from before it was switched off
-    m_CrtEnabled = enabled;
+    if (!m_RendererInitialized)
+        return false;
+    auto crt = std::make_unique<CrtEffect>();
+    crt->SetParams(m_CrtParams);
+    CrtEffect* raw = crt.get();
+    if (m_Post.Add(std::move(crt)) == PostChain::npos)
+        return false;
+    raw->ResetAfterglow(); // no stale trails from before it was switched off
     return true;
+}
+
+CrtParams& Application::GetCrtParams()
+{
+    if (auto* crt = static_cast<CrtEffect*>(m_Post.Find("CRT")))
+        return crt->GetParams();
+    return m_CrtParams;
 }
 
 void Application::InitImGui()

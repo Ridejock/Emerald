@@ -22,6 +22,7 @@
 #include "Emerald/Memory/FrameArena.h"
 #include "Emerald/Memory/TrackingResource.h"
 #include "Emerald/Renderer/CrtEffect.h"
+#include "Emerald/Renderer/PostEffect.h"
 #include "Emerald/Renderer/Renderer.h"
 #include "Emerald/Renderer/Renderer2D.h"
 #include "Emerald/Scene/SceneStack.h"
@@ -98,12 +99,14 @@ public:
     // (see SceneStack.h). An app that never pushes a scene works as before.
     [[nodiscard]] SceneStack& GetScenes() { return m_Scenes; }
 
-    // Optional CRT monitor post-process over the whole frame (below the ImGui overlay), off by
-    // default. Enabling it the first time creates its pipelines; returns false if that failed
-    // (logged), and the frame is then drawn without it. Tune it with GetCrtParams (CrtEffect.h).
+    // Optional post-effect chain over the whole frame (below the ImGui overlay). Empty by
+    // default (no extra passes). Effects can be added/removed/reordered at runtime (PostEffect.h).
+    [[nodiscard]] PostChain& GetPostChain() { return m_Post; }
+    // CRT is one effect in the chain: enabling adds it (creating its pipelines the first time),
+    // disabling removes it. Returns false if init failed (logged). Tune with GetCrtParams.
     bool SetCrtEnabled(bool enabled);
-    [[nodiscard]] bool IsCrtEnabled() const { return m_CrtEnabled; }
-    [[nodiscard]] CrtParams& GetCrtParams() { return m_Crt->GetParams(); }
+    [[nodiscard]] bool IsCrtEnabled() const { return m_Post.Find("CRT") != nullptr; }
+    [[nodiscard]] CrtParams& GetCrtParams();
 
     // Client-area size in window coordinates / in pixels (see Window.h).
     [[nodiscard]] Vec2i GetWindowSize() const { return m_Window->GetSize(); }
@@ -180,14 +183,13 @@ private:
     std::unique_ptr<Window> m_Window;
     std::unique_ptr<Renderer> m_Renderer;
     std::unique_ptr<Renderer2D> m_Renderer2D;
-    std::unique_ptr<CrtEffect> m_Crt = std::make_unique<CrtEffect>();
+    PostChain m_Post;
+    CrtParams m_CrtParams;            // kept while CRT is off; live params while it is on
     std::unique_ptr<Assets> m_Assets; // after the renderer: its textures need the GPU device
-    bool m_CrtEnabled = false;
-    bool m_CrtInitialized = false;
-    f32 m_FrameSeconds = 0.0f; // last frame's time, for the CRT afterglow
-    Keyboard m_Keyboard;       // raw key state, fed from SDL events
-    Gamepads m_Gamepads;       // raw gamepad state, fed from SDL events
-    Mouse m_Mouse;             // raw mouse state, fed from SDL events
+    f32 m_FrameSeconds = 0.0f;        // last frame's time, for post effects (e.g. CRT afterglow)
+    Keyboard m_Keyboard;              // raw key state, fed from SDL events
+    Gamepads m_Gamepads;              // raw gamepad state, fed from SDL events
+    Mouse m_Mouse;                    // raw mouse state, fed from SDL events
     Audio m_Audio;
     Input m_Input{m_Keyboard, m_Gamepads, &m_Mouse}; // actions on top of all three
     SceneStack m_Scenes{&m_Input};                   // empties itself before the assets go

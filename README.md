@@ -1,5 +1,7 @@
 # Emerald
 
+[![Windows](https://github.com/Ridejock/Emerald/actions/workflows/windows.yml/badge.svg)](https://github.com/Ridejock/Emerald/actions/workflows/windows.yml)
+
 Emerald is a small, modern C++20 game engine built on [SDL3](https://github.com/libsdl-org/SDL).
 It is split into:
 

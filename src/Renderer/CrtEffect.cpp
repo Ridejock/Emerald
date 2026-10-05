@@ -205,13 +205,13 @@ void CrtEffect::Apply(SDL_GPUCommandBuffer* commandBuffer, SDL_GPUTexture* sourc
     // 2. Bloom: horizontal then vertical blur, near glow at 1/2 size, wide glow at 1/4.
     for (u32 level = 0; level < 2; ++level) {
         const f32 step = BlurStepPixels(m_Params, height, level == 1);
-        SDL_GPUTexture* const source = level == 0 ? history.Texture : m_Bloom[1].Texture;
+        SDL_GPUTexture* const blurSource = level == 0 ? history.Texture : m_Bloom[1].Texture;
         const BlurUniforms horizontal{.Step = {step / static_cast<f32>(width), 0.0f},
                                       .Padding = {}};
         const BlurUniforms vertical{.Step = {0.0f, step / static_cast<f32>(height)}, .Padding = {}};
         Target& across = m_Bloom[level * 2];
         Target& down = m_Bloom[level * 2 + 1];
-        RunPass(commandBuffer, m_BlurPipeline, across, {&source, 1}, &horizontal,
+        RunPass(commandBuffer, m_BlurPipeline, across, {&blurSource, 1}, &horizontal,
                 sizeof(horizontal));
         RunPass(commandBuffer, m_BlurPipeline, down, {&across.Texture, 1}, &vertical,
                 sizeof(vertical));

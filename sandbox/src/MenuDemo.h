@@ -12,6 +12,12 @@
 
 #include <Emerald/Emerald.h>
 
+// m_HighlightColor (a Vec4, tweened through a pointer) is 16-byte aligned, so the compiler pads
+// this class; MSVC reports that at /W4 as warning C4324 (see SpriteOptions in Sprite.h).
+#if defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable : 4324)
+#endif
 class MenuDemo {
 public:
     using Vec2 = Emerald::Vec2;
@@ -178,3 +184,6 @@ private:
     bool m_Closing = false;
     bool m_PromptOn = false;
 };
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif

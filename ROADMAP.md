@@ -187,6 +187,8 @@ Done when:
 - Pan and volume follow a sound's position relative to the listener (camera)
 - Unit tests for the mixer math (no audio device needed)
 
+**Status:** implemented, in review (`Audio/Spatial.h`, `Audio/Music.h` streaming MP3/OGG with a fixed ring + crossfade via `MusicPlayer`; mixer groups Music/Sfx/Ui with volume/mute; spatial `PlayOptions::Position` vs listener; `AudioExtrasTests`; sandbox Options music controls).
+
 ### Versioned save system ([#15](https://github.com/Ridejock/Emerald/issues/15))
 
 Save/load of game data with a format version, migrations between versions, atomic writes (no corrupt saves on crash) and save slots in the per-user folder.

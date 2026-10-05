@@ -7,6 +7,8 @@
 #include "Emerald/Assets/Assets.h"
 #include "Emerald/Assets/Image.h"
 #include "Emerald/Audio/Audio.h"
+#include "Emerald/Audio/Music.h"
+#include "Emerald/Audio/Spatial.h"
 #include "Emerald/Audio/Mixer.h"
 #include "Emerald/Audio/Sound.h"
 #include "Emerald/Audio/Synth.h"

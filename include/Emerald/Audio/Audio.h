@@ -1,5 +1,7 @@
 #pragma once
 
+#include <filesystem>
+
 #include <SDL3/SDL_audio.h>
 
 #include "Emerald/Audio/Mixer.h"
@@ -48,8 +50,28 @@ public:
     void SetMuted(bool muted);
     [[nodiscard]] bool IsMuted() const { return m_Mixer.IsMuted(); }
 
-    // Called by the Application once per frame: frees the samples of finished sounds here on the
-    // game thread, never on the audio thread.
+    void SetGroupVolume(AudioGroup group, f32 volume);
+    [[nodiscard]] f32 GetGroupVolume(AudioGroup group) const
+    {
+        return m_Mixer.GetGroupVolume(group);
+    }
+    void SetGroupMuted(AudioGroup group, bool muted);
+    [[nodiscard]] bool IsGroupMuted(AudioGroup group) const { return m_Mixer.IsGroupMuted(group); }
+
+    void SetListener(const Vec2& position);
+    void SetVoicePosition(VoiceHandle voice, const Vec2& position);
+
+    // Streaming music (.mp3 / .ogg); see Music.h. Crossfade swaps tracks over fadeMs.
+    bool PlayMusic(const std::filesystem::path& path, f32 fadeMs = MusicPlayer::kDefaultFadeMs);
+    bool CrossfadeMusic(const std::filesystem::path& path,
+                        f32 fadeMs = MusicPlayer::kDefaultFadeMs);
+    void StopMusic(f32 fadeMs = MusicPlayer::kDefaultFadeMs);
+    void SetMusicVolume(f32 volume);
+    [[nodiscard]] f32 GetMusicVolume() const;
+    [[nodiscard]] bool IsMusicPlaying() const;
+
+    // Called by the Application once per frame: frees the samples of finished sounds and pumps
+    // music decode here on the game thread, never on the audio thread.
     void Update();
 
 private:

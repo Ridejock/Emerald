@@ -291,6 +291,7 @@ structure-of-arrays layout instead (all x together, all y together).
 | `ThreadPoolTests` | futures return values, exceptions through futures, `WaitIdle`, shutdown with pending tasks, `ParallelFor` covers every index once |
 | `MemoryTests` | frame arena reset/alignment/overflow, many resets stay in the buffer, pmr containers use their resource, tracking counts, pools (incl. the synchronized pool from many threads) |
 | `InputTests` | key down/pressed/released edges, taps within one frame, fixed-step edges, `ReleaseAll`; actions with several keys, action taps across fixed steps, axes, rebinding; gamepads (synthetic pads, no hardware): deadzone math (per-axis, radial), trigger/stick virtual buttons with hysteresis, button edges across fixed steps, several pads, labels, gamepad bindings and largest-magnitude axes; `FixedTimestep` accumulation, average rate at 144 fps / 120 Hz, slow-frame clamp |
+| `AudioExtrasTests` | spatial attenuation/pan math; mixer groups mute and volume ramps; spatial voices following the listener; MP3/OGG `MusicStream` constant ring memory; crossfade between two tracks; file open for sandbox OGG loops |
 | `AudioTests` | MP3 decoding from an embedded 809-byte file (length, level, channels, pitch after resampling), garbage rejected, WAV loading, `LoadSound` by extension incl. unknown/missing files, `MakeSound` conversion; mixer handles (stale handles, reuse, releasing samples), fade-in/out and volume ramps without clicks, looping, pitch, pan, master volume/mute, voice stealing, soft limiter; synth waveforms (length, no NaN, peak), envelopes, lowpass |
 | `Renderer2DTests` | `Renderer2D` batching and shape generation on the CPU (no GPU), `Transform2D`, color packing; sprite quads (UVs, rotation, origin, flips, pixel snap), draw order across lines/sprites/texture switches and blend modes, atlas JSON parsing; `Camera2D` (pixel-space default, letterboxing, zoom/rotation, `ScreenToWorld` round trips against the GPU matrix, bounds clamp, follow dead zone and step-size independent damping, shake decay); atlas `"animations"` parsing (patterns, lists, durations, modes, missing frames reported), `Animator` loop / once / ping-pong timing at several dt, speed, stop/resume, finish and loop events, drawing a frame with flip and tint; `CrtEffect` afterglow decay, uniforms and bloom spread; `--gpu` parsing and driver names |
 | `ParticleTests` | particle spawning (shapes, ranges, base velocity), capacity limit, drag/gravity step, swap-remove, continuous rate, color/size fade when drawing, scalar and SSE updates agreeing over 240 steps |
@@ -1711,6 +1712,12 @@ audio.Stop(engine, 80.0f);       // fade out over 80 ms (default 10 ms)
 audio.IsPlaying(engine);         // false once it has faded out
 audio.SetMasterVolume(0.7f);
 audio.SetMuted(!audio.IsMuted());
+
+audio.SetGroupVolume(Emerald::AudioGroup::Music, 0.8f);
+audio.SetListener(camera.GetPosition());
+audio.Play(sfx, {.Position = enemyPos, .MinDistance = 64.0f, .MaxDistance = 512.0f});
+audio.PlayMusic("assets/audio/loop_a.ogg", 400.0f);
+audio.CrossfadeMusic("assets/audio/loop_b.ogg", 800.0f);
 ```
 
 - **Loading**: `LoadSound(path)` picks the loader by extension (case-insensitive): `.wav` →
@@ -1728,10 +1735,22 @@ audio.SetMuted(!audio.IsMuted());
 - **Mixer** (`Mixer.h`, owned by `Audio`): 32 voices. `Play` returns a `VoiceHandle` that remembers
   the voice's generation, so a handle to a sound that has ended (and whose voice was reused) is a
   safe no-op. `PlayOptions`: `Volume`, `Pan` (-1..1), `Pitch` (speed, linear interpolation),
-  `Loop`, `FadeInMs` (2 ms). Every gain change is ramped per sample (start, `Stop` fades,
-  `SetVolume`, master volume, mute), so nothing clicks. The master output goes through a soft
-  limiter (unchanged up to 0.8, then eases towards 1.0), so ten explosions at once get louder
-  without harsh clipping. When all voices are busy, the oldest non-looping sound is cut off.
+  `Loop`, `FadeInMs` (2 ms), `Group` (`AudioGroup::Sfx` / `Music` / `Ui`), and optional `Position`
+  / `MinDistance` / `MaxDistance` for spatial playback. Every gain change is ramped per sample
+  (start, `Stop` fades, `SetVolume`, master volume, mute, group volume/mute), so nothing clicks.
+  The master output goes through a soft limiter (unchanged up to 0.8, then eases towards 1.0), so
+  ten explosions at once get louder without harsh clipping. When all voices are busy, the oldest
+  non-looping sound is cut off.
+- **Groups**: `SetGroupVolume` / `SetGroupMuted` on `Audio` (or `Mixer`) for Music, Sfx and Ui;
+  each voice carries its group. Streaming music is mixed into the Music group gain.
+- **Spatial** (`Spatial.h`): linear falloff between min/max distance and balance pan from relative
+  X. `SetListener` (usually the camera) and `SetVoicePosition` update pans/volumes on the fly.
+  Pure CPU math — covered by `AudioExtrasTests` with no device.
+- **Music** (`Music.h`): `MusicStream` decodes `.mp3` (dr_mp3) or `.ogg` (stb_vorbis) a chunk at a
+  time into a fixed ~0.25 s stereo ring (constant PCM memory); `MusicPlayer` holds two streams for
+  Play / Crossfade / Stop. Prefer SDL3 core audio only (no SDL_mixer). Via `Audio`:
+  `PlayMusic` / `CrossfadeMusic` / `StopMusic` / `SetMusicVolume`. The sandbox Options screen has
+  Music group / track sliders and Play A / Crossfade B / Stop using `assets/audio/loop_*.ogg`.
 - **Threads**: SDL calls the mixer from its audio thread with the audio stream locked; every
   `Audio` method locks the same stream (for microseconds), so the game thread and the audio thread
   never touch mixer state at the same time. The audio thread never allocates or frees: finished

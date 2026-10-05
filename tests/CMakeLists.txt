@@ -146,3 +146,9 @@ add_executable(EmeraldLightingTests TestMain.cpp LightingTests.cpp)
 target_link_libraries(EmeraldLightingTests PRIVATE Emerald::Emerald)
 emerald_set_warnings(EmeraldLightingTests)
 add_test(NAME LightingTests COMMAND EmeraldLightingTests)
+
+# Audio extras: spatial math, mixer groups, music streaming / crossfade (no device).
+add_executable(EmeraldAudioExtrasTests TestMain.cpp AudioExtrasTests.cpp)
+target_link_libraries(EmeraldAudioExtrasTests PRIVATE Emerald::Emerald)
+emerald_set_warnings(EmeraldAudioExtrasTests)
+add_test(NAME AudioExtrasTests COMMAND EmeraldAudioExtrasTests)

@@ -108,4 +108,64 @@ void Audio::Update()
     m_Mixer.ReleaseFinished();
 }
 
+void Audio::SetGroupVolume(AudioGroup group, f32 volume)
+{
+    Lock lock(m_Stream);
+    m_Mixer.SetGroupVolume(group, volume);
+}
+
+void Audio::SetGroupMuted(AudioGroup group, bool muted)
+{
+    Lock lock(m_Stream);
+    m_Mixer.SetGroupMuted(group, muted);
+}
+
+void Audio::SetListener(const Vec2& position)
+{
+    Lock lock(m_Stream);
+    m_Mixer.SetListener(position);
+}
+
+void Audio::SetVoicePosition(VoiceHandle voice, const Vec2& position)
+{
+    Lock lock(m_Stream);
+    m_Mixer.SetVoicePosition(voice, position);
+}
+
+bool Audio::PlayMusic(const std::filesystem::path& path, f32 fadeMs)
+{
+    Lock lock(m_Stream);
+    return m_Mixer.GetMusic().Play(path, fadeMs);
+}
+
+bool Audio::CrossfadeMusic(const std::filesystem::path& path, f32 fadeMs)
+{
+    Lock lock(m_Stream);
+    return m_Mixer.GetMusic().Crossfade(path, fadeMs);
+}
+
+void Audio::StopMusic(f32 fadeMs)
+{
+    Lock lock(m_Stream);
+    m_Mixer.GetMusic().Stop(fadeMs);
+}
+
+void Audio::SetMusicVolume(f32 volume)
+{
+    Lock lock(m_Stream);
+    m_Mixer.GetMusic().SetVolume(volume);
+}
+
+f32 Audio::GetMusicVolume() const
+{
+    Lock lock(m_Stream);
+    return m_Mixer.GetMusic().GetVolume();
+}
+
+bool Audio::IsMusicPlaying() const
+{
+    Lock lock(m_Stream);
+    return m_Mixer.GetMusic().IsPlaying();
+}
+
 } // namespace Emerald

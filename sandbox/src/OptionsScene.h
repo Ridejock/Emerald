@@ -31,6 +31,12 @@ public:
             app.GetAudio().SetMasterVolume(master);
         if (m_Ui.Slider("Effects volume", &m_Shared.EffectsVolume, 0.0f, 1.0f))
             app.GetAudio().Play(m_Shared.Blip, {.Volume = m_Shared.EffectsVolume}); // a sample
+        f32 music = app.GetAudio().GetGroupVolume(Emerald::AudioGroup::Music);
+        if (m_Ui.Slider("Music group", &music, 0.0f, 1.0f))
+            app.GetAudio().SetGroupVolume(Emerald::AudioGroup::Music, music);
+        f32 track = app.GetAudio().GetMusicVolume();
+        if (m_Ui.Slider("Music track", &track, 0.0f, 1.0f))
+            app.GetAudio().SetMusicVolume(track);
         // Read back every frame, so changes made elsewhere (the C key) show up.
         bool fullscreen = app.GetWindow().IsFullscreen();
         if (m_Ui.Toggle("Fullscreen", &fullscreen))
@@ -49,9 +55,22 @@ public:
         m_Ui.Label("Pick   Enter / Space / South");
         m_Ui.Label("Back   Backspace / M / East");
         m_Ui.Space(8.0f);
+        m_Ui.Label("MUSIC", TextAlign::Center);
+        m_Ui.Columns(2);
+        if (m_Ui.Button("Play A"))
+            app.GetAudio().PlayMusic(Emerald::Paths::GetBasePath() / "assets/audio/loop_a.ogg",
+                                     400.0f);
+        if (m_Ui.Button("Crossfade B"))
+            app.GetAudio().CrossfadeMusic(Emerald::Paths::GetBasePath() / "assets/audio/loop_b.ogg",
+                                          800.0f);
+        if (m_Ui.Button("Stop music"))
+            app.GetAudio().StopMusic(400.0f);
+        m_Ui.Space(8.0f);
         m_Ui.Columns(2);
         if (m_Ui.Button("Defaults")) {
             app.GetAudio().SetMasterVolume(1.0f);
+            app.GetAudio().SetGroupVolume(Emerald::AudioGroup::Music, 1.0f);
+            app.GetAudio().SetMusicVolume(1.0f);
             m_Shared.EffectsVolume = 1.0f;
         }
         if ((m_Ui.Button("Back") || m_Ui.WasBackPressed()) && !m_Leaving) {

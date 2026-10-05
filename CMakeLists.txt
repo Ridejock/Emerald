@@ -43,6 +43,9 @@ include(cmake/Dependencies.cmake)
 find_package(Threads REQUIRED) # ThreadPool (pthreads on Linux/macOS)
 include(cmake/Shaders.cmake)
 
+# Vorbis decode TU without ASan (see src/Vendor/vorbis/CMakeLists.txt).
+add_subdirectory(src/Vendor/vorbis)
+
 # Warning flags for Emerald's own targets (not third-party code).
 function(emerald_set_warnings target)
     if(MSVC)
@@ -111,7 +114,6 @@ add_library(Emerald STATIC
     src/Audio/Synth.cpp
     src/Audio/Sound.cpp
     src/Audio/Music.cpp
-    src/Vendor/stb_vorbis.cpp
     src/Vendor/stb_image.cpp
     src/Vendor/stb_image_write.cpp
     src/Vendor/stb_truetype.cpp
@@ -126,7 +128,7 @@ target_include_directories(Emerald PUBLIC
 
 target_link_libraries(Emerald
     PUBLIC  Emerald::Math SDL3::SDL3 spdlog::spdlog EnTT::EnTT Threads::Threads
-    PRIVATE Emerald::stb Emerald::dr_libs nlohmann_json::nlohmann_json
+    PRIVATE Emerald::Vorbis Emerald::stb Emerald::dr_libs nlohmann_json::nlohmann_json
 )
 
 target_compile_definitions(Emerald PUBLIC

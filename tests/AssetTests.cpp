@@ -348,6 +348,35 @@ TEST(AssetsDialogueDecks)
     CHECK(talk.GetCardId() == "hi" && talk.GetText() == "Hey.");
 }
 
+// Particle effects through the manager: a missing file gives the default effect, and a hot
+// reload updates the effect in place (the config's address stays, so emitters keep working).
+TEST(AssetsParticleEffects)
+{
+    Fixture f("particles");
+    WriteText(f.Root / "sparks.json", R"({ "speed": [10, 20], "burst": 8 })");
+    Assets& assets = *f.Manager;
+    AssetHandle<ParticleEffect> sparks = assets.Load<ParticleEffect>("sparks.json");
+    CHECK(!assets.GetInfo(sparks.GetId())->Placeholder && sparks->Burst == 8);
+    CHECK(assets.GetInfo(sparks.GetId())->Type == AssetType::Particles);
+    AssetHandle<ParticleEffect> missing = assets.Load<ParticleEffect>("missing.json");
+    CHECK(assets.GetInfo(missing.GetId())->Placeholder && missing->Burst == 0);
+
+    if (!Assets::kHotReload)
+        return;
+    const ParticleEmitterConfig* config = &sparks->GetConfig();
+    const u32 revision = sparks->Revision;
+    WriteText(f.Root / "sparks.json", R"({ "speed": [30, 40], "burst": 16 })");
+    assets.CheckForChanges();
+    CHECK(assets.CheckForChanges() == 1);
+    CHECK(&sparks->GetConfig() == config && config->Speed.Max == 40.0f && sparks->Burst == 16);
+    CHECK(sparks->Revision != revision);
+
+    // A broken edit keeps the last good effect.
+    WriteText(f.Root / "sparks.json", R"({ "shape": "blob" })");
+    assets.CheckForChanges();
+    CHECK(assets.CheckForChanges() == 0 && sparks->Burst == 16);
+}
+
 TEST(AssetsHotReloadAtlasKeepsPointers)
 {
     if (!Assets::kHotReload)

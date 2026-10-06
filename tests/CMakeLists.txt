@@ -166,3 +166,10 @@ target_compile_definitions(EmeraldDialogueTests PRIVATE
     EMERALD_TEST_FONT="${PROJECT_SOURCE_DIR}/sandbox/assets/fonts/PressStart2P-Regular.ttf")
 emerald_set_warnings(EmeraldDialogueTests)
 add_test(NAME DialogueTests COMMAND EmeraldDialogueTests)
+
+# Editor tools: particle effect files always; Tweaks and the entity inspector in ImGui builds
+# (their stand-ins otherwise). No window or GPU.
+add_executable(EmeraldEditorTests TestMain.cpp EditorTests.cpp)
+target_link_libraries(EmeraldEditorTests PRIVATE Emerald::Emerald)
+emerald_set_warnings(EmeraldEditorTests)
+add_test(NAME EditorTests COMMAND EmeraldEditorTests)

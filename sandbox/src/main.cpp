@@ -36,6 +36,7 @@
 #include "DialogueScene.h"
 #include "LightingScene.h"
 #include "OptionsScene.h"
+#include "ParticlesScene.h"
 #include "PauseScene.h"
 #include "PlatformerScene.h"
 #include "Shared.h"
@@ -163,6 +164,11 @@ protected:
         BindInput();
         LoadAssets();
         m_Shared.LoadSettings(); // the options from the last run (Shared.h)
+        // Tweak values saved from the Tweaks panel (ImGui builds; the platformer's game feel).
+        // Automated runs (--frames, --replay) keep the code's values, so they stay repeatable.
+        const Emerald::DevOptions& dev = GetDevOptions();
+        if (dev.Frames == 0 && dev.Replay.empty())
+            Emerald::GetTweaks().SetFile(GetAssets().GetRoot() / "tweaks.json");
 
         // The scenes are made here, so they can reach each other through m_Shared.Make without
         // including each other.
@@ -186,6 +192,8 @@ protected:
                 return std::make_unique<LightingScene>(m_Shared);
             case SceneId::Dialogue:
                 return std::make_unique<DialogueScene>(m_Shared);
+            case SceneId::Particles:
+                return std::make_unique<ParticlesScene>(m_Shared);
             }
             return nullptr;
         };
@@ -291,6 +299,7 @@ protected:
                     GetRenderer2D().GetLastFrameDrawCalls());
         ImGui::Text("Move the hero: WASD / arrows / left stick (Shift runs), jump: Space / %s",
                     GetInput().GetGamepads().GetButtonLabel(GamepadButton::South));
+        ImGui::TextDisabled("F1 hides / shows these windows");
         ShowScenes();
         if (ImGui::CollapsingHeader("Engine")) {
             ShowAssets();
@@ -311,6 +320,7 @@ protected:
         }
         ImGui::End();
 #endif
+        Emerald::GetTweaks().ShowPanel(); // every Tweak in the program (nothing without ImGui)
     }
 
 #if EMERALD_WITH_IMGUI
@@ -726,6 +736,8 @@ SandboxOptions ParseOptions(i32 argc, char** argv)
             options.Start = SceneId::Lighting;
         } else if (arg == "--dialogue") {
             options.Start = SceneId::Dialogue;
+        } else if (arg == "--particles") {
+            options.Start = SceneId::Particles;
         } else if (arg == "--pan") {
             options.Room.Pan = true;
         } else if (arg == "--stats") {

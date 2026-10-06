@@ -102,6 +102,7 @@ add_library(Emerald STATIC
     src/Renderer/CrtEffect.cpp
     src/Renderer/PostChain.cpp
     src/Particles/ParticleSystem.cpp
+    src/Particles/ParticleEffect.cpp
     src/Tween/Easing.cpp
     src/Tween/Timers.cpp
     src/Tween/Tween.cpp
@@ -148,6 +149,13 @@ target_compile_definitions(Emerald PUBLIC
 
 if(EMERALD_USE_IMGUI)
     target_link_libraries(Emerald PUBLIC Emerald::imgui)
+    # The editor tools (Editor/): without ImGui their headers are inline stubs and these
+    # files are not built at all.
+    target_sources(Emerald PRIVATE
+        src/Editor/EntityInspector.cpp
+        src/Editor/ParticleEditor.cpp
+        src/Editor/Tweak.cpp
+    )
 endif()
 if(EMERALD_PROFILE)
     target_link_libraries(Emerald PUBLIC Tracy::TracyClient)

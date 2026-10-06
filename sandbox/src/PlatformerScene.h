@@ -9,6 +9,10 @@
 // A / D, arrows, d-pad or left stick run; Space / Z / gamepad South (Cross) jumps (hold for
 // higher); down + jump drops through a one-way platform; R / Back respawns; O shows the
 // collision; M / Start pauses; T fades to the camera demo.
+//
+// Game feel is tuned live with the Tweak variables below (PlatformerFeel; F1 shows the ImGui
+// panels in builds with ImGui, and the Tweaks window's Save writes sandbox/assets/tweaks.json,
+// loaded at the next start).
 
 #include <array>
 #include <cmath>
@@ -21,6 +25,56 @@
 #if EMERALD_WITH_IMGUI
 #include <imgui.h>
 #endif
+
+// The game-feel values as Tweaks. Members of the scene, so the Tweaks panel shows them while the
+// platformer runs; values changed in the panel are remembered when the scene is left.
+struct PlatformerFeel {
+    using Tweak = Emerald::Tweak<f32>;
+    static constexpr Emerald::PlatformerTunables kDefaults{};
+    static constexpr const char* kFeel = "Platformer feel";
+    static constexpr const char* kLook = "Platformer look";
+
+    Tweak Gravity{kFeel, "Gravity (px/s2)", kDefaults.Gravity, {200.0f, 4000.0f}};
+    // The jump as a height (v^2 / 2g): changing gravity keeps it, and only changes how floaty
+    // the jump feels.
+    Tweak JumpHeight{kFeel,
+                     "Jump height (px)",
+                     kDefaults.JumpVelocity* kDefaults.JumpVelocity / (2.0f * kDefaults.Gravity),
+                     {8.0f, 160.0f}};
+    Tweak JumpCut{kFeel, "Jump cut (early release)", kDefaults.JumpCut, {0.0f, 1.0f}};
+    Tweak MaxFallSpeed{kFeel, "Max fall speed", kDefaults.MaxFallSpeed, {50.0f, 1000.0f}};
+    Tweak RunSpeed{kFeel, "Run speed", kDefaults.RunSpeed, {20.0f, 400.0f}};
+    Tweak GroundAccel{kFeel, "Ground accel", kDefaults.GroundAccel, {100.0f, 8000.0f}};
+    Tweak GroundDecel{kFeel, "Ground decel", kDefaults.GroundDecel, {100.0f, 8000.0f}};
+    Tweak AirAccel{kFeel, "Air accel", kDefaults.AirAccel, {0.0f, 8000.0f}};
+    Tweak CoyoteTime{kFeel, "Coyote time (s)", kDefaults.CoyoteTime, {0.0f, 0.5f}};
+    Tweak JumpBuffer{kFeel, "Jump buffer (s)", kDefaults.JumpBuffer, {0.0f, 0.5f}};
+    Tweak SnapDown{kFeel, "Snap down (px)", kDefaults.SnapDown, {0.0f, 16.0f}};
+    Tweak DropThrough{kFeel, "Drop-through time (s)", kDefaults.DropThroughTime, {0.0f, 0.5f}};
+
+    Emerald::Tweak<bool> ShowTrail{kLook, "Show trail", true};
+    Emerald::Tweak<i32> TrailSteps{kLook, "Trail length (steps)", 360, {10, 360}};
+    Emerald::Tweak<Emerald::Vec4> Sky{kLook, "Sky", {0.36f, 0.62f, 0.86f, 1.0f}};
+
+    // The physics values (just the defaults in builds without ImGui).
+    [[nodiscard]] Emerald::PlatformerTunables GetTunables() const
+    {
+        Emerald::PlatformerTunables t{.Gravity = Gravity,
+                                      .MaxFallSpeed = MaxFallSpeed,
+                                      .RunSpeed = RunSpeed,
+                                      .GroundAccel = GroundAccel,
+                                      .GroundDecel = GroundDecel,
+                                      .AirAccel = AirAccel,
+                                      .JumpVelocity = 0.0f,
+                                      .JumpCut = JumpCut,
+                                      .CoyoteTime = CoyoteTime,
+                                      .JumpBuffer = JumpBuffer,
+                                      .SnapDown = SnapDown,
+                                      .DropThroughTime = DropThrough};
+        t.JumpVelocity = std::sqrt(2.0f * t.Gravity * JumpHeight.Get());
+        return t;
+    }
+};
 
 class PlatformerScene final : public Emerald::Scene {
 public:
@@ -49,6 +103,7 @@ public:
                                           .JumpHeld = input.IsActionDown("Jump"),
                                           .Down = input.GetAxis("MoveY") > 0.5f};
         const bool wasGrounded = m_Body.Grounded;
+        m_Tunables = m_Feel.GetTunables();
         Emerald::StepPlatformer(m_Body, in, m_Tunables, *m_Map, dt);
 
         // What kind of jump it was, for the HUD: off the ground, in coyote time (already in the
@@ -115,22 +170,12 @@ public:
 #if EMERALD_WITH_IMGUI
         ImGui::Begin("Emerald"); // appends to the app's window
         if (ImGui::CollapsingHeader("Platformer", ImGuiTreeNodeFlags_DefaultOpen)) {
-            Emerald::PlatformerTunables& t = m_Tunables;
-            ImGui::SliderFloat("Gravity", &t.Gravity, 200.0f, 4000.0f);
-            ImGui::SliderFloat("Max fall speed", &t.MaxFallSpeed, 50.0f, 1000.0f);
-            ImGui::SliderFloat("Run speed", &t.RunSpeed, 20.0f, 400.0f);
-            ImGui::SliderFloat("Ground accel", &t.GroundAccel, 100.0f, 8000.0f);
-            ImGui::SliderFloat("Ground decel", &t.GroundDecel, 100.0f, 8000.0f);
-            ImGui::SliderFloat("Air accel", &t.AirAccel, 0.0f, 8000.0f);
-            ImGui::SliderFloat("Jump velocity", &t.JumpVelocity, 50.0f, 900.0f);
-            ImGui::SliderFloat("Jump cut", &t.JumpCut, 0.0f, 1.0f);
-            ImGui::SliderFloat("Coyote time", &t.CoyoteTime, 0.0f, 0.5f, "%.3f s");
-            ImGui::SliderFloat("Jump buffer", &t.JumpBuffer, 0.0f, 0.5f, "%.3f s");
-            ImGui::SliderFloat("Snap down", &t.SnapDown, 0.0f, 16.0f, "%.1f px");
-            ImGui::SliderFloat("Drop-through time", &t.DropThroughTime, 0.0f, 0.5f, "%.3f s");
-            if (ImGui::Button("Default tunables"))
-                t = {};
-            ImGui::SameLine();
+            const Emerald::PlatformerTunables& t = m_Tunables;
+            ImGui::TextUnformatted("Game feel: Tweaks window, \"Platformer feel\"");
+            // What the tweaks add up to: the time to the top of a full jump.
+            ImGui::Text("Jump velocity %.0f px/s, %.2f s to the top",
+                        static_cast<f64>(t.JumpVelocity),
+                        static_cast<f64>(t.JumpVelocity / Emerald::Max(t.Gravity, 1.0f)));
             if (ImGui::Button("Respawn"))
                 Respawn();
             ImGui::Checkbox("Collision overlay", &m_ShowCollision);
@@ -194,14 +239,16 @@ private:
         const Emerald::Rect2D view = m_Camera.GetVisibleBounds();
         r.Begin(m_Camera);
         // A sky (it also covers the app's triangle and quad drawn under every scene).
-        r.FillRect(view.Min, view.Max - view.Min, {0.36f, 0.62f, 0.86f, 1.0f});
+        r.FillRect(view.Min, view.Max - view.Min, m_Feel.Sky);
         for (usize i = 0; i < map.GetLayers().size(); ++i) {
             if (map.GetLayers()[i].Kind == Emerald::LayerKind::Objects)
                 DrawHero(r);
             else if (map.GetLayers()[i].Visible)
                 map.DrawLayer(r, i, view);
         }
-        for (usize i = 0; i < m_TrailCount; ++i) {
+        const auto steps = static_cast<usize>(Emerald::Max(m_Feel.TrailSteps.Get(), 0));
+        const usize trail = m_Feel.ShowTrail ? Emerald::Min(m_TrailCount, steps) : 0;
+        for (usize i = 0; i < trail; ++i) {
             const TrailPoint& p = m_Trail[(m_TrailNext + kTrail - 1 - i) % kTrail];
             const Vec4 color = p.State == TrailState::Ground   ? Vec4(0.3f, 1.0f, 0.4f, 0.8f)
                                : p.State == TrailState::Coyote ? Vec4(1.0f, 0.9f, 0.2f, 1.0f)
@@ -301,8 +348,9 @@ private:
     Emerald::AssetHandle<Emerald::Tilemap> m_Map;
     Emerald::Camera2D m_Camera;
     Emerald::PlatformerBody m_Body;
-    Emerald::PlatformerTunables m_Tunables;
-    Vec2 m_Checkpoint{64.0f, 64.0f}; // feet position to respawn at
+    PlatformerFeel m_Feel;                                         // F1: the Tweaks window
+    Emerald::PlatformerTunables m_Tunables = m_Feel.GetTunables(); // this step's
+    Vec2 m_Checkpoint{64.0f, 64.0f};                               // feet position to respawn at
     Emerald::Animator m_Animator;
     bool m_FacingLeft = false;
     bool m_ShowCollision = false;

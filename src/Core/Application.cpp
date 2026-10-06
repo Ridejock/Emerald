@@ -258,6 +258,11 @@ void Application::ProcessEvent(const SDL_Event& event)
         m_Running = false;
         break;
     case SDL_EVENT_KEY_DOWN:
+#if EMERALD_WITH_IMGUI
+        // F1 shows / hides the whole ImGui overlay (the debug panels and editor tools).
+        if (event.key.scancode == SDL_SCANCODE_F1 && !event.key.repeat && !imguiWantsKeys)
+            m_ImGuiVisible = !m_ImGuiVisible;
+#endif
         if (!event.key.repeat && !imguiWantsKeys)
             m_Keyboard.OnKeyDown(event.key.scancode);
         break;
@@ -311,8 +316,10 @@ void Application::RenderFrame()
     ImGui_ImplSDLGPU3_NewFrame();
     ImGui_ImplSDL3_NewFrame();
     ImGui::NewFrame();
-    OnImGui();
-    m_Scenes.ImGui();
+    if (m_ImGuiVisible) {
+        OnImGui();
+        m_Scenes.ImGui();
+    }
     ImGui::Render();
     ImDrawData* drawData = ImGui::GetDrawData();
 #endif

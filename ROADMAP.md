@@ -211,6 +211,13 @@ Done when:
 - `Tweak` variables (float/int/bool/color) registered from code appear in a panel and can be saved
 - Compiled out entirely in builds without ImGui
 
+**Status:** implemented, in review (`Editor/Tweak.h`: `Tweak<T>` and the Tweaks panel with a JSON
+file; `Editor/EntityInspector.h`: the entity list, per-component inspectors that games register,
+click-to-select; `Editor/ParticleEditor.h` with `Particles/ParticleEffect.h`, particle effects as
+hot-reloaded JSON assets; F1 shows / hides the ImGui windows; stand-ins compile to nothing without
+ImGui; `EditorTests`; the sandbox's platformer and swarm tweaks and inspector and the Particles
+scene, `ParticlesScene.h` / `--particles`; CI builds with ImGui too, `debug-full`).
+
 ### Branching dialogue system ([#23](https://github.com/Ridejock/Emerald/issues/23))
 
 A small branching dialogue module inspired by Jari Komppa's DialogTree (D3), written fresh (no D3
@@ -227,7 +234,7 @@ Done when:
 - State round-trips through the save system
 - Used for NPCs in a test game (e.g. the Blaster Master-style platformer)
 
-**Status:** implemented, in review (`Dialogue/Dialogue.h`: decks, cards, answers, flag and number
+**Status:** done (`Dialogue/Dialogue.h`: decks, cards, answers, flag and number
 conditions/effects, JSON loading through `Assets` with hot reload, save/restore of flags and the
 current card; `Dialogue/DialogueBox.h`: typewriter text box and answer menu on the UI widgets;
 `DialogueTests` with ports of D3's samples; the sandbox's Dialogue scene, `DialogueScene.h` /

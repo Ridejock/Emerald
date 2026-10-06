@@ -41,7 +41,7 @@ What is planned next (camera, animation, collision, tilemaps, scenes, UI, shippi
 | Option | Default | Description |
 |---|---|---|
 | `EMERALD_BUILD_SANDBOX` | `ON` | Build the sandbox example executable |
-| `EMERALD_USE_IMGUI` | `OFF` | Fetch Dear ImGui (docking) and integrate it into the app loop |
+| `EMERALD_USE_IMGUI` | `OFF` | Fetch Dear ImGui (docking) and integrate it into the app loop, with the editor tools (see Editor tools) |
 | `EMERALD_BUILD_SHADERCROSS` | `ON` | Build the `shadercross` tool from source if `EMERALD_SHADERCROSS_EXECUTABLE` is empty |
 | `EMERALD_SHADERCROSS_EXECUTABLE` | *(empty)* | Use this prebuilt `shadercross` instead of building it |
 | `EMERALD_SHADERCROSS_BUILD_DIR` | `build/_shadercross` | Where the tool is built; shared by all presets |
@@ -129,6 +129,7 @@ Options can also be passed directly, e.g. `cmake --preset release -DEMERALD_USE_
 ./build/debug/bin/Sandbox --swarm                          # start in the entity swarm (see Entities)
 ./build/debug/bin/Sandbox --platformer                     # start in the platformer level (see Platformer physics)
 ./build/debug/bin/Sandbox --dialogue                       # start in the dialogue demo (see Dialogue)
+./build/debug/bin/Sandbox --particles                      # start in the particle effects (see Editor tools)
 SDL_GPU_DRIVER=vulkan ./build/debug/bin/Sandbox            # the same through SDL's environment variable
 ```
 
@@ -294,12 +295,13 @@ structure-of-arrays layout instead (all x together, all y together).
 | `InputTests` | key down/pressed/released edges, taps within one frame, fixed-step edges, `ReleaseAll`; actions with several keys, action taps across fixed steps, axes, rebinding; gamepads (synthetic pads, no hardware): deadzone math (per-axis, radial), trigger/stick virtual buttons with hysteresis, button edges across fixed steps, several pads, labels, gamepad bindings and largest-magnitude axes; `FixedTimestep` accumulation, average rate at 144 fps / 120 Hz, slow-frame clamp |
 | `SaveTests` | save values (types, fallbacks, escaping, key checks, rename); the text format round trip and hand-written files (no checksum, CRLF); save/load on disk, replacing a save and the `.bak`; a v1 -> v3 migration chain (order, partial chains, a missing step); newer data versions refused; every truncated prefix and a flipped byte rejected; falling back to the backup; a failed write (temp path blocked) and a leftover partial temp file keeping the old save; independent slots with listing, metadata, delete and bad names; a high-score table |
 | `DialogueTests` | condition/effect terms (D3's `has:` / `not:` / `hp-1` spellings too); ports of D3's samples as behaviour (the simple walk, the flag sample with visited-card flags and guarded text, the tag sample: an automatic start card, a once-only answer, a tag set by another deck, a menu card); numbers gating answers; missing cards, loops of automatic cards and broken files logged, never a crash; flags and the current card through `SaveSystem` (and refused restores: other deck, removed card); a hot-reloaded deck (changed text, removed current card); `WrapText`; `DialogueBox` typewriter (finish at once, then advance), keyboard and mouse answer picking |
+| `EditorTests` | particle effect files: a JSON round trip with every field changed (and the defaults), saving again gives the same text, missing keys keep defaults, 3-number colors, broken values rejected, revisions, files, deep copies that keep the config's address; with ImGui (`debug-full`): `Tweak` registration, the tweaks file round trip, wrong kinds skipped, values remembered across unregister / register and loaded before registration, unknown entries kept, `Save` / `Load` / `SetFile`, `ResetAll`; the entity inspector's registration (engine, custom and tag components), `Inspect`, `SelectAt` and a destroyed selection; without ImGui: tweaks are plain values and the stand-ins do nothing |
 | `AudioExtrasTests` | spatial attenuation/pan math; mixer groups mute and volume ramps; spatial voices following the listener; MP3/OGG `MusicStream` constant ring memory; crossfade between two tracks; file open for sandbox OGG loops |
 | `AudioTests` | MP3 decoding from an embedded 809-byte file (length, level, channels, pitch after resampling), garbage rejected, WAV loading, `LoadSound` by extension incl. unknown/missing files, `MakeSound` conversion; mixer handles (stale handles, reuse, releasing samples), fade-in/out and volume ramps without clicks, looping, pitch, pan, master volume/mute, voice stealing, soft limiter; synth waveforms (length, no NaN, peak), envelopes, lowpass |
 | `Renderer2DTests` | `Renderer2D` batching and shape generation on the CPU (no GPU), `Transform2D`, color packing; sprite quads (UVs, rotation, origin, flips, pixel snap), draw order across lines/sprites/texture switches and blend modes, atlas JSON parsing; `Camera2D` (pixel-space default, letterboxing, zoom/rotation, `ScreenToWorld` round trips against the GPU matrix, bounds clamp, follow dead zone and step-size independent damping, shake decay); atlas `"animations"` parsing (patterns, lists, durations, modes, missing frames reported), `Animator` loop / once / ping-pong timing at several dt, speed, stop/resume, finish and loop events, drawing a frame with flip and tint; `CrtEffect` afterglow decay, uniforms and bloom spread; `--gpu` parsing and driver names |
 | `ParticleTests` | particle spawning (shapes, ranges, base velocity), capacity limit, drag/gravity step, swap-remove, continuous rate, color/size fade when drawing, scalar and SSE updates agreeing over 240 steps |
 | `CollisionTests` | circle/circle, circle/AABB, AABB/AABB and SAT polygon contacts (normals, depths, touching = none, concentric circles, center inside a box, containment, winding, degenerate input); raycasts against circles, boxes and polygons (hits, misses, parallel, max distance, starting inside); `SpatialHash` insert/update/remove/query/pairs, wrap-around, brute-force equivalence on random data |
-| `AssetTests` | asset manager bookkeeping with a GPU-less loader: dedupe (same path, `..` paths, absolute paths; other options or types are other assets), handle copy/move/reset reference counts, unloading on `Update` and reviving before it, placeholders for missing and broken files (texture, atlas, font, sound), hot reload in place (textures, atlas image + JSON with sprites and animators keeping their pointers, fonts, real WAVs, dialogue decks with a conversation in progress), broken reloads keeping the old version, placeholders replaced when the file appears, reloads through `Update` on the thread pool within a second |
+| `AssetTests` | asset manager bookkeeping with a GPU-less loader: dedupe (same path, `..` paths, absolute paths; other options or types are other assets), handle copy/move/reset reference counts, unloading on `Update` and reviving before it, placeholders for missing and broken files (texture, atlas, font, sound), hot reload in place (textures, atlas image + JSON with sprites and animators keeping their pointers, fonts, real WAVs, dialogue decks with a conversation in progress, particle effects keeping their config's address), broken reloads keeping the old version, placeholders replaced when the file appears, reloads through `Update` on the thread pool within a second |
 | `TilemapTests` | the sample room from Tiled JSON: layer order and kinds, external `.tsj` and embedded tilesets (GID lookup, sprite regions), objects (shapes, class, position, size, properties), the collision grid from tile properties and classes (non-colliding layer), tile ranges with touching edges, `OverlapsSolid`, `MoveAndCollide` (flush stops, no tunneling, sliding along walls, one-way from above / below / inside); all 8 flip-bit combinations against Tiled's transform; missing and broken files (JSON, sizes, infinite, isometric, missing/XML tileset, missing image, base64, bad cells) logged and failing cleanly, unknown tile ids left empty; through the asset manager: placeholder for a missing map, hot reload of the map and of its external tileset, broken edits keeping the last version |
 | `SceneTests` | the scene stack without a GPU: requests applied only at the end of `Update`, hook order for push / pop / replace / clear / `ReplaceAll` (pause, resume, exit, destruction), requests from inside a scene's own hooks, `DrawBelow` / `UpdateBelow` chains (which scenes draw and update, in which order), fade timing (change at full cover, then uncover, requests queued meanwhile), fading into an empty stack, custom transition `Draw`, input blocked below the top and during transitions (and the app's own block kept), empty-stack pops, exiting every scene on destruction |
 | `EntityTests` | add / get / has / remove and replacing components, deferred destroy (skipped by `Each`, invalid at once, destructors at `Flush`, stale handles after slot reuse), `Clear`; spawning, adding and destroying inside `Each`; churn of 400,000 spawns without leaks (destructor counts, bounded storage); movement, animation (an `OnFinished` that destroys); collisions (circle / circle normal and depth, circle / box, layer masks, destroyed and collider-less entities leaving the broadphase); `DrawSprites` order by layer and y, culling |
@@ -554,7 +556,7 @@ The camera has no interpolation between fixed steps: update it where the things 
 
 ## Assets (`Assets`)
 
-The asset manager loads textures, atlases, fonts, sounds, tilemaps and dialogue decks by path and hands out
+The asset manager loads textures, atlases, fonts, sounds, tilemaps, dialogue decks and particle effects by path and hands out
 `AssetHandle<T>`s. Application owns one (`GetAssets()`):
 
 ```cpp
@@ -586,9 +588,10 @@ GetAudio().Play(*m_Boom);
   - fonts: every character is a hollow box;
   - sounds: a tenth of a second of silence;
   - tilemaps: an empty map (no layers, nothing collides);
-  - dialogue decks: a deck with no cards (starting it logs an error and does nothing).
+  - dialogue decks: a deck with no cards (starting it logs an error and does nothing);
+  - particle effects: the default `ParticleEmitterConfig` (white points) with a burst of 0.
 - **Hot reload (debug builds).** Edit a PNG, an atlas JSON, a WAV/MP3, a font, a Tiled map
-  (or one of its tilesets) or a dialogue deck while the game runs, and it updates within about half a second. Release builds compile this out.
+  (or one of its tilesets), a dialogue deck or a particle effect while the game runs, and it updates within about half a second. Release builds compile this out.
 
 How hot reload works:
 
@@ -911,6 +914,49 @@ A dead particle is overwritten by the last one (**swap-remove**), so live partic
 drops new particles and counts them (`GetDroppedCount`). `Update` uses the SSE path when the math
 library does (`EMERALD_MATH_SIMD` on x86); `UpdateScalar` and `UpdateSse` are public, and
 `ParticleTests` checks that they agree.
+
+### Particle effect files (`ParticleEffect`)
+
+An effect can also be a JSON file loaded through the asset manager (hot reloaded in debug builds,
+and edited live with the particle editor, see Editor tools). A `ParticleEffect` is a config plus
+how it is usually played, a burst size and a blend mode:
+
+```cpp
+Emerald::AssetHandle<Emerald::ParticleEffect> m_Sparks =
+    GetAssets().Load<Emerald::ParticleEffect>("assets/particles/sparks.json");
+
+m_Particles.Emit(m_Sparks->GetConfig(), position, m_Sparks->Burst);
+m_Particles.EmitContinuous(m_Smoke->GetConfig(), m_Chimney, top, dt); // the file's "rate"
+m_Particles.Draw(r, {.Blend = m_Sparks->Blend});
+```
+
+```json
+{
+  "startColor": [1, 0.85, 0.4, 1],
+  "endColor": [1, 0.25, 0.05, 0],
+  "shape": "circle",
+  "radius": 3,
+  "lineHalfExtent": [0, 0],
+  "speed": [80, 260],
+  "angle": [0, 360],
+  "lifetime": [0.25, 0.7],
+  "drag": 2.5,
+  "gravity": [0, 220],
+  "startSize": 6,
+  "endSize": 0,
+  "rate": 0,
+  "burst": 60,
+  "blend": "additive"
+}
+```
+
+Every key is optional (missing ones keep `ParticleEmitterConfig`'s defaults); angles are in
+degrees (the config's are radians), colors are `[r, g, b, a]` or `[r, g, b]`, `shape` is `point`,
+`circle` or `line`, `blend` is `additive` or `alpha`. A wrong value (a string for a number, an
+unknown shape) is logged and the file doesn't load (the last good version stays on hot reload).
+`ParseParticleEffect` / `LoadParticleEffect` / `ParticleEffectToJson` / `SaveParticleEffect` work
+without the asset manager; saving writes every field, one per line. Hot reload assigns the new
+values in place, so `GetConfig()`'s address stays the same.
 
 ### When is SIMD worth it?
 
@@ -1273,7 +1319,12 @@ The scene shows:
 - **Popups** over the hero: "coyote jump!", "buffered jump!" and "drop through!", also logged.
 - **Trail** of the feet over the last 3 s: green on the ground, yellow in coyote time, white in
   the air.
-- **ImGui** (debug-full): sliders for every tunable, a reset, and the position and velocity.
+- **Tweaks** (debug-full, F1 shows the windows): every tunable is a `Tweak` in the Tweaks window
+  ("Platformer feel": gravity, jump height, jump cut, run speed, accelerations, coyote time, jump
+  buffer, snap down, drop-through time; "Platformer look": trail on/off and length, sky color).
+  The jump is set by its height, so changing gravity keeps the jump as high and only changes how
+  floaty it feels. Save keeps the values in `sandbox/assets/tweaks.json` (loaded at the next
+  start); the scene's own ImGui section shows the resulting jump velocity and time to the top.
 
 ## Scenes (`Scene/`)
 
@@ -1532,12 +1583,16 @@ Vulkan), a release build runs 6,000 entities at about 55 fps.
 | Space / gamepad South | burst of 1000 at the mouse |
 | Backspace | destroy half |
 | Up / Down | target -1000 / +1000 (default 3000) |
+| Left click | select the nearest entity in the inspector (ImGui builds) |
 | M / Start | pause |
 | T | platformer |
 
 The HUD shows entities, target, fps, spawned and destroyed per second, contacts and pairs, and
 each system's time. With ImGui, the "Entity swarm" section shows the same, plus the broadphase
-cells, a target slider, collision and y-sort toggles and burst / destroy buttons.
+cells, a target slider, collision and y-sort toggles and burst / destroy buttons. The "Entities"
+window (see Editor tools) lists the swarm and edits the selected entity, including the scene's own
+`Life` component; the selection is outlined and stops aging so it stays to be inspected. The bump
+flash and spawn speed are tweaks ("Swarm").
 
 ## Input (actions)
 
@@ -1927,6 +1982,115 @@ about the gate, text lines and answers that change once you have the key or open
 once-only answer, and F5 / F9 (or the panel's buttons) to save and load the flags
 and the current card, also mid-conversation (`dialogue.sav` next to `settings.sav`). The top right
 shows the flag store. Edit `keeper.json` while it runs (debug build) to see hot reload.
+
+## Editor tools (`Editor/`, ImGui builds)
+
+Debug panels on top of the ImGui overlay: live `Tweak` variables, an entity inspector and a particle
+editor. They exist in builds with ImGui (`EMERALD_USE_IMGUI=ON`, e.g. the `debug-full` preset);
+without it the headers turn into stand-ins that compile to nothing (a `Tweak` is just its value,
+the inspector and editor calls are empty inline functions), so games call them unconditionally.
+**F1** hides and shows every ImGui window (`Application::SetImGuiVisible`).
+
+**Tweaks** (`Editor/Tweak.h`): values registered from code and tuned in the Tweaks window while the
+game runs. `f32` and `i32` (a slider with a range, a drag field without), `bool` and `Vec4` (a color):
+
+```cpp
+// At namespace scope, or as members of the scene that uses them (shown while it exists):
+Emerald::Tweak<f32> g_JumpHeight{"Player", "Jump height (px)", 57.0f, {8.0f, 160.0f}};
+Emerald::Tweak<i32> g_Lives{"Player", "Lives", 3, {1, 9}};
+Emerald::Tweak<bool> g_ShowTrail{"Effects", "Show trail", true};
+Emerald::Tweak<Emerald::Vec4> g_Sky{"Effects", "Sky", {0.36f, 0.62f, 0.86f, 1.0f}};
+
+const f32 height = g_JumpHeight; // reads like the value (or .Get())
+
+// Once at startup: the saved values, if the file exists. In OnImGui: the window.
+Emerald::GetTweaks().SetFile(GetAssets().GetRoot() / "tweaks.json");
+Emerald::GetTweaks().ShowPanel();
+```
+
+The window groups them by category, with a filter, Save / Load / Reset all, and a "reset" button
+next to each value that differs from the code's default. The file is readable JSON, grouped the
+same way:
+
+```json
+{
+  "Platformer feel": {
+    "Coyote time (s)": 0.14,
+    "Gravity (px/s2)": 1650,
+    "Jump height (px)": 64
+  },
+  "Platformer look": {
+    "Show trail": false,
+    "Sky": [0.2, 0.3, 0.5, 1]
+  }
+}
+```
+
+Values are applied when a tweak registers, so a file loaded at startup reaches tweaks created later
+(a scene's members), and a tweak that goes away (the scene is left) leaves its value for the next
+one. Entries for tweaks that aren't registered are kept and written back. Editing the file while
+it runs reloads it (the window checks it twice a second). Tuned values only exist in ImGui builds:
+copy the good ones back into the code. The sandbox keeps its file (`sandbox/assets/tweaks.json`)
+out of git and skips it for automated runs (`--frames`, `--replay`), so replays use the code's
+values.
+
+**Entity inspector** (`Editor/EntityInspector.h`): the "Entities" window lists a `World`'s entities
+(filtered by component, thousands are fine: only visible rows are built), and shows the selected
+one's components with their values editable live, a Remove button per component and Destroy. The
+engine's components are registered (`Transform`, `Velocity`, `SpriteRenderer`, `Animator`,
+`Collider`); a game adds its own with a function made of `Edit::` widgets, so it doesn't need
+`imgui.h`:
+
+```cpp
+struct Health { i32 Points = 10; f32 Regen = 0.5f; };
+struct Frozen {};
+
+Emerald::EntityInspector m_Inspector;
+m_Inspector.Add<Health>("Health", [](Health& h) {
+    Emerald::Edit::Int("Points", h.Points, 0, 100);
+    Emerald::Edit::Float("Regen", h.Regen, 0.0f, 5.0f); // 0, 0: a drag field
+});
+m_Inspector.AddTag<Frozen>("Frozen"); // an empty struct: listed, nothing to edit
+
+m_Inspector.Show(m_World);                         // OnImGui
+m_Inspector.DrawSelection(r);                      // OnRender2D: outline the selection
+m_Inspector.SelectAt(m_World, mouse.GetPosition()); // on a click: the nearest entity
+```
+
+`Edit::` has `Float`, `Int`, `Bool`, `Vector` (a `Vec2`), `Color`, `Angle` (radians shown in
+degrees), `Choice` and `Text`.
+
+**Particle editor** (`Editor/ParticleEditor.h`): a window that edits every field of a
+`ParticleEffect` (colors, sizes, shape and its size, speed, angle and lifetime ranges, drag,
+gravity, rate, burst, blend), with Save, Revert (to the file), Defaults, Burst and Clear, and a `*`
+while there are unsaved changes. The caller owns the effect and the preview:
+
+```cpp
+// m_Working is a copy of the asset, so edits show at once; Save writes the file, and the asset
+// manager's hot reload passes it on to every handle of that effect.
+if (m_Effect->Revision != m_Working.Revision) // (re)loaded from disk
+    m_Working = *m_Effect;
+const Emerald::ParticleEditorResult edit =
+    m_Editor.Show(m_Working, GetAssets().Resolve("particles/sparks.json"));
+if (edit.Burst)
+    m_Particles.Emit(m_Working.GetConfig(), m_Emitter, m_Working.Burst);
+```
+
+**The sandbox:** the platformer's game feel and the swarm's flash are tweaks, the swarm has the
+inspector (click an entity), and the Particles scene (`--particles`, or Particles in the title
+menu) plays `sandbox/assets/particles/` (sparks, fire, fountain, smoke) with the particle editor:
+
+| Key | Action |
+|---|---|
+| Up / Down | previous / next effect |
+| Space / gamepad South | a burst (the effect's burst count) |
+| Hold left mouse | move the emitter |
+| Tab | quads / lines |
+| R | clear and recenter |
+| M / Start | pause |
+| F1 | hide / show the ImGui windows |
+
+Without ImGui the scene still plays the effects, and editing a file updates them (debug builds).
 
 ## Fixed-timestep update
 

@@ -24,7 +24,7 @@ namespace Emerald {
 class Assets;
 class ThreadPool;
 
-enum class AssetType : u8 { Texture, Atlas, Font, Sound, Tilemap, Dialogue };
+enum class AssetType : u8 { Texture, Atlas, Font, Sound, Tilemap, Dialogue, Particles };
 [[nodiscard]] const char* GetAssetTypeName(AssetType type);
 
 // What each asset type is loaded with: Load<T>(path, options).
@@ -51,6 +51,10 @@ template <> struct AssetTraits<Tilemap> { // a Tiled .tmj; the options are for i
 };
 template <> struct AssetTraits<DialogueDeck> { // a dialogue .json (Dialogue.h)
     static constexpr AssetType Type = AssetType::Dialogue;
+    struct Options {};
+};
+template <> struct AssetTraits<ParticleEffect> { // a particle effect .json (ParticleEffect.h)
+    static constexpr AssetType Type = AssetType::Particles;
     struct Options {};
 };
 
@@ -100,8 +104,8 @@ struct AssetInfo {
     bool Placeholder = false;
 };
 
-// The asset manager: loads textures, atlases, fonts, sounds, tilemaps and dialogue decks by path,
-// each file only once.
+// The asset manager: loads textures, atlases, fonts, sounds, tilemaps, dialogue decks and particle
+// effects by path, each file only once.
 //
 //   AssetHandle<Texture> ship = GetAssets().Load<Texture>("assets/ship.png");
 //   r.DrawSprite(*ship, position);
@@ -109,6 +113,7 @@ struct AssetInfo {
 //   GetAudio().Play(*GetAssets().Load<Sound>("assets/boom.wav"));
 //   AssetHandle<Tilemap> map = GetAssets().Load<Tilemap>("assets/level1.tmj");
 //   AssetHandle<DialogueDeck> npc = GetAssets().Load<DialogueDeck>("assets/dialogue/npc.json");
+//   AssetHandle<ParticleEffect> fx = GetAssets().Load<ParticleEffect>("assets/particles/fx.json");
 //
 // - Relative paths are relative to the root, by default Paths::GetBasePath() (the folder of the
 //   executable, where the build copies the assets).
@@ -165,9 +170,11 @@ public:
 private:
     template <typename U> friend class AssetHandle;
 
-    using Object = std::variant<Texture, TextureAtlas, Font, Sound, Tilemap, DialogueDeck>;
-    using Options = std::variant<TextureOptions, FontOptions, AssetTraits<Sound>::Options,
-                                 AssetTraits<DialogueDeck>::Options>;
+    using Object =
+        std::variant<Texture, TextureAtlas, Font, Sound, Tilemap, DialogueDeck, ParticleEffect>;
+    using Options =
+        std::variant<TextureOptions, FontOptions, AssetTraits<Sound>::Options,
+                     AssetTraits<DialogueDeck>::Options, AssetTraits<ParticleEffect>::Options>;
     using FileTime = std::optional<std::filesystem::file_time_type>; // nullopt: no such file
 
     struct Entry {

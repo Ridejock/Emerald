@@ -26,6 +26,8 @@ Thumbs.db
 
 # Runtime
 imgui.ini
+# Values saved from the Tweaks panel: local tuning (copy the good ones back into the code)
+sandbox/assets/tweaks.json
 *.log
 logs/
 

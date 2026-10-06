@@ -51,4 +51,12 @@ add_custom_command(TARGET Sandbox POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
             ${CMAKE_CURRENT_SOURCE_DIR}/assets/dialogue/keeper.json
             $<TARGET_FILE_DIR:Sandbox>/assets/dialogue/
+    # The particle effects (ParticlesScene.h; edit them with the particle editor).
+    COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:Sandbox>/assets/particles
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${CMAKE_CURRENT_SOURCE_DIR}/assets/particles/sparks.json
+            ${CMAKE_CURRENT_SOURCE_DIR}/assets/particles/fire.json
+            ${CMAKE_CURRENT_SOURCE_DIR}/assets/particles/fountain.json
+            ${CMAKE_CURRENT_SOURCE_DIR}/assets/particles/smoke.json
+            $<TARGET_FILE_DIR:Sandbox>/assets/particles/
     VERBATIM)

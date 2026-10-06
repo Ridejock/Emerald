@@ -8,6 +8,7 @@
 #include "Emerald/Assets/Image.h"
 #include "Emerald/Audio/Sound.h"
 #include "Emerald/Dialogue/Dialogue.h"
+#include "Emerald/Particles/ParticleEffect.h"
 #include "Emerald/Renderer/Font.h"
 #include "Emerald/Renderer/Texture.h"
 #include "Emerald/Renderer/TextureAtlas.h"
@@ -52,6 +53,13 @@ public:
     }
     // A deck without cards: starting it logs "no card" and ends at once.
     [[nodiscard]] virtual DialogueDeck MakePlaceholderDialogue() { return {}; }
+    // Particle effects too; the placeholder is the default config (white dots, 1 s).
+    [[nodiscard]] virtual std::optional<ParticleEffect>
+    LoadParticleEffectFile(const std::filesystem::path& file)
+    {
+        return LoadParticleEffect(file);
+    }
+    [[nodiscard]] virtual ParticleEffect MakePlaceholderParticleEffect() { return {}; }
 };
 
 // The real loader: files from disk, textures uploaded to `device`.

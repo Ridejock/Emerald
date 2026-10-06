@@ -40,6 +40,11 @@ std::string OptionsKey(const AssetTraits<DialogueDeck>::Options&)
     return {};
 }
 
+std::string OptionsKey(const AssetTraits<ParticleEffect>::Options&)
+{
+    return {};
+}
+
 // When the file was last written, or nullopt if it does not exist.
 std::optional<std::filesystem::file_time_type> GetFileTime(const std::filesystem::path& path)
 {
@@ -67,6 +72,8 @@ const char* GetAssetTypeName(AssetType type)
         return "tilemap";
     case AssetType::Dialogue:
         return "dialogue";
+    case AssetType::Particles:
+        return "particles";
     }
     return "?";
 }
@@ -170,6 +177,10 @@ std::unique_ptr<Assets::Object> Assets::LoadObject(const Entry& entry) const
         if (auto deck = m_Loader->LoadDialogueDeck(file))
             return std::make_unique<Object>(std::in_place_type<DialogueDeck>, std::move(*deck));
         break;
+    case AssetType::Particles:
+        if (auto effect = m_Loader->LoadParticleEffectFile(file))
+            return std::make_unique<Object>(std::in_place_type<ParticleEffect>, std::move(*effect));
+        break;
     }
     return nullptr;
 }
@@ -187,6 +198,8 @@ Assets::Object Assets::MakePlaceholder(const Entry& entry) const
         return m_Loader->MakePlaceholderTilemap();
     case AssetType::Dialogue:
         return m_Loader->MakePlaceholderDialogue();
+    case AssetType::Particles:
+        return m_Loader->MakePlaceholderParticleEffect();
     case AssetType::Sound:
         break;
     }

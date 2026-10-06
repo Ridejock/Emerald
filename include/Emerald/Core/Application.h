@@ -95,6 +95,14 @@ public:
     [[nodiscard]] u64 GetSeed() const { return m_Seed; }
     // Playing back a --replay file: the Input answers from the recording, not the devices.
     [[nodiscard]] bool IsReplaying() const { return m_Session.IsReplaying(); }
+#if EMERALD_WITH_IMGUI
+    // The ImGui overlay (OnImGui and the scenes' panels); F1 toggles it.
+    [[nodiscard]] bool IsImGuiVisible() const { return m_ImGuiVisible; }
+    void SetImGuiVisible(bool visible) { m_ImGuiVisible = visible; }
+#else
+    [[nodiscard]] bool IsImGuiVisible() const { return false; }
+    void SetImGuiVisible(bool) {}
+#endif
     // Title, gameplay, pause...: scenes pushed here get their hooks called after the app's own
     // (see SceneStack.h). An app that never pushes a scene works as before.
     [[nodiscard]] SceneStack& GetScenes() { return m_Scenes; }
@@ -198,6 +206,7 @@ private:
     bool m_RendererInitialized = false;
 #if EMERALD_WITH_IMGUI
     bool m_ImGuiInitialized = false;
+    bool m_ImGuiVisible = true; // F1
 #endif
     bool m_Running = false;
     u64 m_FrameCount = 0;

@@ -8,6 +8,11 @@
 //
 // Space / South: a burst of 1,000 at the mouse (or the middle). Backspace: destroy half.
 // Up / Down: target population -/+ 1,000. M / Start pauses, T fades to the platformer.
+//
+// Editor tools (ImGui builds, F1 shows them): the "Entities" window lists the swarm and edits the
+// selected entity's components, including the scene's own Life component (registered below).
+// Left click selects the nearest entity; the selection stops aging so it stays to be inspected.
+// The bump flash and spawn speed are Tweaks ("Swarm" in the Tweaks window).
 
 #include <chrono>
 #include <cmath>
@@ -29,14 +34,22 @@ public:
     using Vec2 = Emerald::Vec2;
     using Entity = Emerald::Entity;
 
-    explicit SwarmScene(SandboxShared& shared) : Scene("Entity swarm"), m_Shared(shared) {}
+    explicit SwarmScene(SandboxShared& shared) : Scene("Entity swarm"), m_Shared(shared)
+    {
+        // The scene's own component in the inspector, next to the engine's.
+        m_Inspector.Add<Life>("Life", [](Life& life) {
+            Emerald::Edit::Float("Age", life.Age, 0.0f, life.Span);
+            Emerald::Edit::Float("Span", life.Span, 0.5f, 20.0f);
+            Emerald::Edit::Float("Flash", life.Flash, 0.0f, 1.0f);
+        });
+    }
 
     void OnEnter() override
     {
         const Vec2 size = m_Shared.GetViewSize();
         std::uniform_real_distribution<f32> x(0.0f, size.x), y(0.0f, size.y);
         for (u32 i = 0; i < m_Target; ++i)
-            Spawn({x(m_Rng), y(m_Rng)}, RandomVelocity(30.0f, 90.0f));
+            Spawn({x(m_Rng), y(m_Rng)}, RandomVelocity(30.0f, m_Tweaks.WalkSpeed));
     }
 
     void OnUpdate(f32 dt) override
@@ -54,6 +67,9 @@ public:
             m_Target = m_Target > 1000 ? m_Target - 1000 : 0;
         if (input.WasActionPressed("MenuDown"))
             m_Target += 1000;
+        // Not over an ImGui window: the Application keeps those clicks from the game.
+        if (input.GetMouse().WasButtonPressed(Emerald::MouseButton::Left))
+            m_Inspector.SelectAt(m_World, input.GetMouse().GetPosition());
 
         Simulate(Emerald::Min(dt, 1.0f / 30.0f));
         Time(m_AnimateMs, [&] { Emerald::UpdateAnimation(m_World, dt); });
@@ -75,12 +91,14 @@ public:
                                             .Visible = Emerald::Rect2D{{0.0f, 0.0f}, size},
                                             .Scratch = m_Shared.App.GetFrameAllocator()});
         });
+        m_Inspector.DrawSelection(r);
         DrawHud(r, size);
         r.End();
     }
 
     void OnImGui() override
     {
+        m_Inspector.Show(m_World);
 #if EMERALD_WITH_IMGUI
         ImGui::Begin("Emerald");
         if (ImGui::CollapsingHeader("Entity swarm", ImGuiTreeNodeFlags_DefaultOpen)) {
@@ -151,6 +169,14 @@ private:
     };
     enum class Kind : u8 { Hero, Coin, Gem };
 
+    // Shown in the Tweaks window while the swarm runs.
+    struct Tweaks {
+        Emerald::Tweak<f32> FlashTime{"Swarm", "Bump flash (s)", 0.2f, {0.0f, 1.0f}};
+        Emerald::Tweak<Emerald::Vec4> FlashColor{
+            "Swarm", "Bump flash color", {1.0f, 0.85f, 0.3f, 1.0f}};
+        Emerald::Tweak<f32> WalkSpeed{"Swarm", "Spawn speed (max)", 90.0f, {30.0f, 400.0f}};
+    };
+
     void Spawn(Vec2 at, Vec2 velocity)
     {
         using namespace Emerald;
@@ -207,7 +233,7 @@ private:
 
     // Equal masses: push both apart by half the overlap and swap their speeds along the normal
     // when they move towards each other. Then flash both.
-    static void Bounce(const Emerald::CollisionEvent& hit)
+    void Bounce(const Emerald::CollisionEvent& hit) const
     {
         using namespace Emerald;
         const Vec2 n = hit.Hit.Normal;
@@ -219,25 +245,29 @@ private:
         if (closing > 0.0f) {
             va.Linear -= n * closing;
             vb.Linear += n * closing;
-            hit.A.Get<Life>().Flash = 0.2f;
-            hit.B.Get<Life>().Flash = 0.2f;
+            hit.A.Get<Life>().Flash = m_Tweaks.FlashTime;
+            hit.B.Get<Life>().Flash = m_Tweaks.FlashTime;
         }
     }
 
-    // Ages everything (old ones go), fades the flashes, faces walkers the way they move.
+    // Ages everything (old ones go), fades the flashes, faces walkers the way they move. The
+    // inspector's selection doesn't age.
     void UpdateLives(f32 dt)
     {
         using namespace Emerald;
+        const Entity selected = m_Inspector.GetSelected();
+        const Vec4 flash = m_Tweaks.FlashColor;
         m_World.Each<Life, SpriteRenderer, Velocity>(
-            [dt](Entity e, Life& life, SpriteRenderer& s, const Velocity& v) {
-                life.Age += dt;
+            [&](Entity e, Life& life, SpriteRenderer& s, const Velocity& v) {
+                if (e != selected)
+                    life.Age += dt;
                 life.Flash = Max(life.Flash - dt, 0.0f);
                 if (life.Age > life.Span)
                     e.Destroy();
                 // Fade in over 0.2 s and out over the last 0.5 s; gold while flashing.
                 const f32 alpha =
                     Clamp(Min(life.Age * 5.0f, (life.Span - life.Age) * 2.0f), 0.0f, 1.0f);
-                s.Options.Tint = life.Flash > 0.0f ? Vec4(1.0f, 0.85f, 0.3f, alpha)
+                s.Options.Tint = life.Flash > 0.0f ? Vec4(flash.x, flash.y, flash.z, alpha)
                                                    : Vec4(1.0f, 1.0f, 1.0f, alpha);
                 s.Options.FlipX = v.Linear.x < 0.0f;
             });
@@ -252,7 +282,7 @@ private:
         m_SpawnBudget = Emerald::Min(m_SpawnBudget + 4000.0f * dt, 150.0f); // no saving up
         const usize alive = m_World.GetCount() - m_World.GetPendingDestroyCount();
         for (usize i = alive; i < m_Target && m_SpawnBudget >= 1.0f; ++i, m_SpawnBudget -= 1.0f)
-            Spawn({x(m_Rng), y(m_Rng)}, RandomVelocity(30.0f, 90.0f));
+            Spawn({x(m_Rng), y(m_Rng)}, RandomVelocity(30.0f, m_Tweaks.WalkSpeed));
     }
 
     // Spawned / destroyed per second, over half-second windows.
@@ -304,7 +334,8 @@ private:
                          fmt(m_AnimateMs) + " life " + fmt(m_LifeMs) + " draw " + fmt(m_DrawMs),
                      {x, 62.0f}, grey);
         r.DrawString(font,
-                     "Space burst  Backspace destroy half  Up/Down target  M pause  T platformer",
+                     "Space burst  Backspace destroy half  Up/Down target  click select  M pause  "
+                     "T platformer",
                      {12.0f, size.y - 20.0f}, {1.0f, 1.0f, 1.0f, 0.9f});
     }
 
@@ -332,6 +363,8 @@ private:
     SandboxShared& m_Shared;
     Emerald::World m_World;                       // the scene's entities
     Emerald::CollisionSystem m_Collisions{24.0f}; // its broadphase
+    Emerald::EntityInspector m_Inspector;         // F1 (ImGui builds)
+    Tweaks m_Tweaks;
     std::mt19937 m_Rng{42};
     u32 m_Target = 3000;
     bool m_Collide = true;

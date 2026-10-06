@@ -1,0 +1,17 @@
+{
+  "startColor": [1, 0.6, 0.15, 0.9],
+  "endColor": [0.9, 0.1, 0.05, 0],
+  "shape": "circle",
+  "radius": 12,
+  "lineHalfExtent": [0, 0],
+  "speed": [30, 80],
+  "angle": [-110, -70],
+  "lifetime": [0.6, 1.2],
+  "drag": 0.5,
+  "gravity": [0, -90],
+  "startSize": 16,
+  "endSize": 3,
+  "rate": 160,
+  "burst": 30,
+  "blend": "additive"
+}

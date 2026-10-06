@@ -1,8 +1,14 @@
-// Tests for the keyboard edge tracking, action-based Input on top of it, and the FixedTimestep
-// accumulator.
+// Tests for the keyboard edge tracking, action-based Input on top of it, saving its bindings,
+// and the FixedTimestep accumulator.
+
+#include <algorithm>
+#include <array>
+#include <cstdio>
 
 #include <Emerald/Core/FixedTimestep.h>
+#include <Emerald/Core/Log.h>
 #include <Emerald/Input/Input.h>
+#include <Emerald/Input/InputBindings.h>
 #include <Emerald/Input/Keyboard.h>
 #include <Emerald/Input/Mouse.h>
 
@@ -279,4 +285,110 @@ TEST(FixedTimestepInvalidArguments)
     FixedTimestep timestep(0.0, 0); // falls back to 120 Hz and 1 step
     CHECK(timestep.GetStepNanoseconds() == 8'333'333);
     CHECK(timestep.Advance(1'000'000'000) == 1);
+}
+
+// --- Saving bindings (InputBindings.h) ---
+
+TEST(InputBindingNamesRoundTrip)
+{
+    CHECK(GetKeyName(Key::Space) == "Space");
+    CHECK(GetKeyName(Key::LeftShift) == "Left Shift");
+    CHECK(FindKey("Left Shift") == Key::LeftShift);
+    CHECK(FindKey(",") == Key(SDL_SCANCODE_COMMA));
+    for (u32 code = 1; code < SDL_SCANCODE_COUNT; ++code) {
+        const Key key = Key(code);
+        if (FindKey(GetKeyName(key)) != key) {
+            std::printf("  key %u: '%s' does not read back\n", code, GetKeyName(key).c_str());
+            CHECK(false);
+        }
+    }
+    CHECK(!FindKey("NoSuchKey") && !FindKey("#99999") && !FindKey("#1x") && !FindKey("#0"));
+
+    for (usize i = 0; i < static_cast<usize>(GamepadButton::Count); ++i) {
+        const auto button = static_cast<GamepadButton>(i);
+        CHECK(!GetGamepadButtonName(button).empty());
+        CHECK(FindGamepadButton(GetGamepadButtonName(button)) == button);
+    }
+    CHECK(GetGamepadButtonName(GamepadButton::South) == "South");
+    CHECK(GetGamepadButtonName(GamepadButton::LeftStickUp) == "LeftStickUp");
+    CHECK(FindMouseButton(GetMouseButtonName(MouseButton::X2)) == MouseButton::X2);
+    CHECK(!FindGamepadButton("Cross") && !FindMouseButton("Wheel"));
+}
+
+TEST(InputBindingsSaveAndLoad)
+{
+    Log::Init({}); // unknown names are logged
+    constexpr std::array<std::string_view, 3> kRebindable = {"Jump", "Fire", "Pause"};
+    const auto bindDefaults = [](Input& input) {
+        input.BindAction("Jump", {Key::Space, Key::Z});
+        input.BindAction("Jump", {GamepadButton::South});
+        input.BindAction("Fire", {Key::C});
+        input.BindAction("Fire", {MouseButton::Left});
+        input.BindAction("Pause", {Key::Escape});
+        input.BindAction("Pause", {GamepadButton::Start});
+    };
+
+    Keyboard keyboard;
+    Gamepads pads;
+    Input input(keyboard, pads);
+    bindDefaults(input);
+    input.RebindAction("Jump", {Key(SDL_SCANCODE_COMMA), Key::Up});
+    input.RebindAction("Fire", {GamepadButton::RightTrigger});
+    input.RebindAction("Pause", std::span<const Key>()); // keys cleared: pad only
+
+    SaveData data;
+    SaveBindings(input, data, kRebindable);
+    CHECK(data.GetString("input.Jump.keys") == ",, Up"); // the comma key is ","
+    CHECK(data.GetString("input.Jump.buttons") == "South");
+    CHECK(data.GetString("input.Fire.buttons") == "RightTrigger");
+    CHECK(data.GetString("input.Fire.mouse") == "Left");
+    CHECK(data.Has("input.Pause.keys") && data.GetString("input.Pause.keys").empty());
+
+    // Through a save file and back into a fresh Input with the defaults.
+    const SaveSystem saves("unused", 1);
+    const LoadResult loaded = saves.Parse(SaveSystem::Serialize(data, 1, 0, {}));
+    CHECK(loaded);
+    Input fresh(keyboard, pads);
+    bindDefaults(fresh);
+    fresh.BindAction("Hop", {Key::X}); // not in the list: untouched
+    CHECK(LoadBindings(fresh, loaded.Data, kRebindable));
+    const auto same = [](auto a, auto b) { return std::ranges::equal(a, b); };
+    CHECK(same(fresh.GetActionKeys("Jump"), input.GetActionKeys("Jump")));
+    CHECK(same(fresh.GetActionButtons("Fire"), input.GetActionButtons("Fire")));
+    CHECK(same(fresh.GetActionMouseButtons("Fire"), input.GetActionMouseButtons("Fire")));
+    CHECK(fresh.GetActionKeys("Pause").empty());
+    CHECK(fresh.GetActionButtons("Pause").size() == 1);
+    CHECK(fresh.GetActionKeys("Hop").size() == 1);
+
+    // Missing values keep the defaults; unknown names are skipped and reported.
+    SaveData partial;
+    partial.SetString("settings.Jump.keys", "W, Bogus Key");
+    Input other(keyboard, pads);
+    bindDefaults(other);
+    CHECK(!LoadBindings(other, partial, kRebindable, "settings"));
+    CHECK(other.GetActionKeys("Jump").size() == 1 && other.GetActionKeys("Jump")[0] == Key::W);
+    CHECK(other.GetActionButtons("Jump").size() == 1);
+    CHECK(other.GetActionKeys("Fire").size() == 1 && other.GetActionKeys("Fire")[0] == Key::C);
+}
+
+TEST(InputPressedKeyAndButton)
+{
+    // "Press a key to rebind": whatever went down this frame.
+    Keyboard keyboard;
+    keyboard.BeginFrame();
+    CHECK(!keyboard.GetPressedKey());
+    keyboard.OnKeyDown(SDL_SCANCODE_SEMICOLON);
+    CHECK(keyboard.GetPressedKey() == Key(SDL_SCANCODE_SEMICOLON));
+    keyboard.BeginFrame();
+    CHECK(!keyboard.GetPressedKey()); // still held, not a new press
+
+    Gamepads pads;
+    pads.AddPad(1, nullptr, "Test pad", SDL_GAMEPAD_TYPE_PS4);
+    pads.BeginFrame();
+    CHECK(!pads.GetPressedButton());
+    pads.OnAxis(1, GamepadAxis::RightTrigger, 1.0f); // virtual buttons count too
+    CHECK(pads.GetPressedButton() == GamepadButton::RightTrigger);
+    pads.BeginFrame();
+    pads.OnButton(1, GamepadButton::East, true);
+    CHECK(pads.GetPressedButton() == GamepadButton::East);
 }

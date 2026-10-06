@@ -80,6 +80,7 @@ add_library(Emerald STATIC
     src/Core/ThreadPool.cpp
     src/Input/Gamepads.cpp
     src/Input/Input.cpp
+    src/Input/InputBindings.cpp
     src/Input/InputRecording.cpp
     src/Memory/FrameArena.cpp
     src/Memory/TrackingResource.cpp

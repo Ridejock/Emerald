@@ -7,7 +7,7 @@ namespace Emerald {
 
 namespace {
 
-template <typename T> void AddUnique(std::vector<T>& list, std::initializer_list<T> items)
+template <typename T> void AddUnique(std::vector<T>& list, std::span<const T> items)
 {
     for (const T& item : items) {
         if (std::find(list.begin(), list.end(), item) == list.end())
@@ -19,35 +19,53 @@ template <typename T> void AddUnique(std::vector<T>& list, std::initializer_list
 
 void Input::BindAction(std::string_view action, std::initializer_list<Key> keys)
 {
-    AddUnique(GetOrAddAction(action).Keys, keys);
+    AddUnique(GetOrAddAction(action).Keys, std::span(keys.begin(), keys.size()));
 }
 
 void Input::BindAction(std::string_view action, std::initializer_list<GamepadButton> buttons)
 {
-    AddUnique(GetOrAddAction(action).Buttons, buttons);
+    AddUnique(GetOrAddAction(action).Buttons, std::span(buttons.begin(), buttons.size()));
 }
 
 void Input::BindAction(std::string_view action, std::initializer_list<MouseButton> buttons)
 {
-    AddUnique(GetOrAddAction(action).MouseButtons, buttons);
+    AddUnique(GetOrAddAction(action).MouseButtons, std::span(buttons.begin(), buttons.size()));
 }
 
 void Input::RebindAction(std::string_view action, std::initializer_list<Key> keys)
 {
-    GetOrAddAction(action).Keys.clear();
-    BindAction(action, keys);
+    RebindAction(action, std::span(keys.begin(), keys.size()));
 }
 
 void Input::RebindAction(std::string_view action, std::initializer_list<GamepadButton> buttons)
 {
-    GetOrAddAction(action).Buttons.clear();
-    BindAction(action, buttons);
+    RebindAction(action, std::span(buttons.begin(), buttons.size()));
 }
 
 void Input::RebindAction(std::string_view action, std::initializer_list<MouseButton> buttons)
 {
-    GetOrAddAction(action).MouseButtons.clear();
-    BindAction(action, buttons);
+    RebindAction(action, std::span(buttons.begin(), buttons.size()));
+}
+
+void Input::RebindAction(std::string_view action, std::span<const Key> keys)
+{
+    Action& a = GetOrAddAction(action);
+    a.Keys.clear();
+    AddUnique(a.Keys, keys);
+}
+
+void Input::RebindAction(std::string_view action, std::span<const GamepadButton> buttons)
+{
+    Action& a = GetOrAddAction(action);
+    a.Buttons.clear();
+    AddUnique(a.Buttons, buttons);
+}
+
+void Input::RebindAction(std::string_view action, std::span<const MouseButton> buttons)
+{
+    Action& a = GetOrAddAction(action);
+    a.MouseButtons.clear();
+    AddUnique(a.MouseButtons, buttons);
 }
 
 void Input::BindAxis(std::string_view axis, Key negative, Key positive)

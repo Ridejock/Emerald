@@ -2,6 +2,7 @@
 
 #include <array>
 #include <bitset>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -96,6 +97,16 @@ public:
     [[nodiscard]] bool WasButtonReleased(GamepadButton b) const
     {
         return m_Buttons.WasReleased(Index(b));
+    }
+    // A button pressed since the last frame / fixed step (the first in GamepadButton order if
+    // several), virtual ones included: for "press a button to rebind" screens.
+    [[nodiscard]] std::optional<GamepadButton> GetPressedButton() const
+    {
+        for (usize i = 0; i < kButtonCount; ++i) {
+            if (m_Buttons.WasPressed(i))
+                return static_cast<GamepadButton>(i);
+        }
+        return std::nullopt;
     }
     // Deadzoned value; with several pads the one with the largest magnitude.
     [[nodiscard]] f32 GetAxis(GamepadAxis axis) const;

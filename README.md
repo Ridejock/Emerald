@@ -292,7 +292,7 @@ structure-of-arrays layout instead (all x together, all y together).
 | `LogTests` | log file creation, truncation, relative paths, empty path, failure fallback |
 | `ThreadPoolTests` | futures return values, exceptions through futures, `WaitIdle`, shutdown with pending tasks, `ParallelFor` covers every index once |
 | `MemoryTests` | frame arena reset/alignment/overflow, many resets stay in the buffer, pmr containers use their resource, tracking counts, pools (incl. the synchronized pool from many threads) |
-| `InputTests` | key down/pressed/released edges, taps within one frame, fixed-step edges, `ReleaseAll`; actions with several keys, action taps across fixed steps, axes, rebinding; gamepads (synthetic pads, no hardware): deadzone math (per-axis, radial), trigger/stick virtual buttons with hysteresis, button edges across fixed steps, several pads, labels, gamepad bindings and largest-magnitude axes; `FixedTimestep` accumulation, average rate at 144 fps / 120 Hz, slow-frame clamp |
+| `InputTests` | key down/pressed/released edges, taps within one frame, fixed-step edges, `ReleaseAll`; actions with several keys, action taps across fixed steps, axes, rebinding; saving bindings (key / button names round trip, save + load through a save file, missing values keep defaults, unknown names skipped), the key / button pressed this frame; gamepads (synthetic pads, no hardware): deadzone math (per-axis, radial), trigger/stick virtual buttons with hysteresis, button edges across fixed steps, several pads, labels, gamepad bindings and largest-magnitude axes; `FixedTimestep` accumulation, average rate at 144 fps / 120 Hz, slow-frame clamp |
 | `SaveTests` | save values (types, fallbacks, escaping, key checks, rename); the text format round trip and hand-written files (no checksum, CRLF); save/load on disk, replacing a save and the `.bak`; a v1 -> v3 migration chain (order, partial chains, a missing step); newer data versions refused; every truncated prefix and a flipped byte rejected; falling back to the backup; a failed write (temp path blocked) and a leftover partial temp file keeping the old save; independent slots with listing, metadata, delete and bad names; a high-score table |
 | `DialogueTests` | condition/effect terms (D3's `has:` / `not:` / `hp-1` spellings too); ports of D3's samples as behaviour (the simple walk, the flag sample with visited-card flags and guarded text, the tag sample: an automatic start card, a once-only answer, a tag set by another deck, a menu card); numbers gating answers; missing cards, loops of automatic cards and broken files logged, never a crash; flags and the current card through `SaveSystem` (and refused restores: other deck, removed card); a hot-reloaded deck (changed text, removed current card); `WrapText`; `DialogueBox` typewriter (finish at once, then advance), keyboard and mouse answer picking |
 | `EditorTests` | particle effect files: a JSON round trip with every field changed (and the defaults), saving again gives the same text, missing keys keep defaults, 3-number colors, broken values rejected, revisions, files, deep copies that keep the config's address; with ImGui (`debug-full`): `Tweak` registration, the tweaks file round trip, wrong kinds skipped, values remembered across unregister / register and loaded before registration, unknown entries kept, `Save` / `Load` / `SetFile`, `ResetAll`; the entity inspector's registration (engine, custom and tag components), `Inspect`, `SelectAt` and a destroyed selection; without ImGui: tweaks are plain values and the stand-ins do nothing |
@@ -1636,6 +1636,24 @@ when its last key is. Opposite axis keys cancel out. Underneath, `Emerald::Keybo
 scancodes, so `Key::W` is the key left of `E` on any layout). `GetAxis` returns the binding with
 the largest magnitude, so a full key press beats a half-tilted stick. Rebinding keys keeps the pad
 bindings and vice versa (and the mouse buttons).
+
+**Rebinding screens and saving the bindings** (`InputBindings.h`): `keyboard.GetPressedKey()` and
+`gamepads.GetPressedButton()` give whatever went down this frame ("press a key..."), and
+`GetKeyLabel(key)` what is printed on that key with the player's layout. `SaveBindings` /
+`LoadBindings` store the listed actions in a `SaveData` with readable names, so they persist with
+the save system:
+
+```cpp
+constexpr std::array<std::string_view, 2> kRebindable = {"Jump", "Fire"};
+SaveBindings(input, settings, kRebindable); // input.Jump.keys = Space, Z / .buttons = South / .mouse =
+saves.Save("settings", settings);
+// At startup: bind the defaults, then load what the player changed (missing values keep them).
+LoadBindings(input, saves.Load("settings").Data, kRebindable);
+```
+
+Keys are saved by SDL's scancode names (`GetKeyName` / `FindKey`: "Space", "Left Shift"; `#<n>`
+for keys without a unique name), buttons by their enum names ("South", "LeftTrigger"). Unknown
+names are skipped and logged; axes are not saved.
 
 `Emerald::Mouse` (`Mouse.h`, `input.GetMouse()`) has the buttons (`Left`, `Middle`, `Right`, `X1`,
 `X2`), `GetPosition()`, `HasMoved()` (this frame, e.g. to switch aiming from a stick back to the

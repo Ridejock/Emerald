@@ -56,6 +56,10 @@ public:
     void RebindAction(std::string_view action, std::initializer_list<Key> keys);
     void RebindAction(std::string_view action, std::initializer_list<GamepadButton> buttons);
     void RebindAction(std::string_view action, std::initializer_list<MouseButton> buttons);
+    // The same from lists built at runtime (e.g. loaded from a settings file).
+    void RebindAction(std::string_view action, std::span<const Key> keys);
+    void RebindAction(std::string_view action, std::span<const GamepadButton> buttons);
+    void RebindAction(std::string_view action, std::span<const MouseButton> buttons);
 
     // --- Axis bindings ---
     // A key or button pair: `negative` gives -1, `positive` +1, both or neither 0.

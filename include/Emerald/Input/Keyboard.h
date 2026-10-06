@@ -1,5 +1,7 @@
 #pragma once
 
+#include <optional>
+
 #include <SDL3/SDL_scancode.h>
 
 #include "Emerald/Core/Defines.h"
@@ -47,6 +49,16 @@ public:
     [[nodiscard]] bool IsKeyDown(Key key) const { return m_Keys.IsDown(Index(key)); }
     [[nodiscard]] bool WasKeyPressed(Key key) const { return m_Keys.WasPressed(Index(key)); }
     [[nodiscard]] bool WasKeyReleased(Key key) const { return m_Keys.WasReleased(Index(key)); }
+    // A key pressed since the last frame / fixed step (the lowest scancode if several), for
+    // "press a key to rebind" screens. Any scancode, not only the named Key values.
+    [[nodiscard]] std::optional<Key> GetPressedKey() const
+    {
+        for (usize i = 0; i < SDL_SCANCODE_COUNT; ++i) {
+            if (m_Keys.WasPressed(i))
+                return static_cast<Key>(i);
+        }
+        return std::nullopt;
+    }
 
     // --- Called by the Application (or by tests) ---
     // Key repeats (holding a key down) must not be passed in; they are not new presses.

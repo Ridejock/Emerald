@@ -143,6 +143,17 @@ TEST(UiFocusStartsOnFirstWidgetAndWraps)
     CHECK(ui.GetFocusedId() == ui.GetId("Quit"));
 }
 
+TEST(UiFirstFrameAccept)
+{
+    // The first widget has the focus from the very first frame, so Accept pressed as a menu
+    // opens picks it (instead of being lost while nothing is focused yet).
+    Ui ui;
+    Menu menu{ui};
+    Frame(ui, std::ref(menu), Press(&UiInput::Accept));
+    CHECK(menu.Play && !menu.Options);
+    CHECK(Find(ui, ui.GetId("Play")).Focus > 0.0f);
+}
+
 TEST(UiFocusMovesByRectangles)
 {
     // Wide
@@ -327,6 +338,8 @@ TEST(UiFocusHighlightEases)
         Frame(ui, std::ref(menu));
     CHECK(Find(ui, ui.GetId("Play")).Focus == 1.0f);
     CHECK(Find(ui, ui.GetId("Quit")).Focus == 0.0f);
+    Frame(ui, std::ref(menu)); // and it stays there (no flicker round the full value)
+    CHECK(Find(ui, ui.GetId("Play")).Focus == 1.0f);
 }
 
 TEST(UiReadsActions)

@@ -285,6 +285,8 @@ UiItem& Ui::Add(UiKind kind, std::string_view label, bool focusable)
     item.Text = DisplayText(label);
     item.Rect = NextRect();
     if (focusable) {
+        if (m_Focused == 0) // nothing focused yet (the first frame): the first widget is
+            m_Focused = item.Id;
         const bool over = item.Rect.Contains(m_Input.Mouse);
         if (over && m_Input.MouseMoved)
             m_Focused = item.Id; // the mouse focuses what it moves over
@@ -299,7 +301,9 @@ UiItem& Ui::Add(UiKind kind, std::string_view label, bool focusable)
     state.Frame = m_Frame;
     const f32 target = (focusable && m_Focused == item.Id) ? 1.0f : 0.0f;
     const f32 step = m_Style->FocusSpeed * m_Dt;
-    state.Focus = Clamp(state.Focus + (target > state.Focus ? step : -step), 0.0f, 1.0f);
+    // Towards the target, stopping there (stepping past it made a full highlight flicker).
+    state.Focus = target > state.Focus ? Min(state.Focus + step, target)
+                                       : Max(state.Focus - step, target);
     item.Focus = state.Focus;
     return item;
 }

@@ -87,6 +87,7 @@ public:
     struct DrawCommand {
         CommandType Type = CommandType::Lines;
         BlendMode Blend = BlendMode::Alpha;
+        bool Lit = false;    // sprites recorded while lighting was enabled
         u32 FirstVertex = 0; // into GetVertices() (lines) or GetSpriteVertices() (sprites)
         u32 VertexCount = 0;
         // Sprites only: the albedo (and optional normal map when lighting is on).
@@ -175,8 +176,12 @@ public:
     void Clear();
 
     // --- Lighting (Light.h; off by default, costs nothing then) ---
-    // When enabled, sprites use the lit shader (Lambert + attenuation, optional normal maps).
-    // Lines are unaffected. ClearLights / SetAmbient / AddLight configure the next frames.
+    // Sprites drawn while it is enabled use the lit shader (Lambert + attenuation, optional
+    // normal maps); lines are unaffected. It is captured per draw, so a frame can mix lit and
+    // unlit sprites: e.g. enable it for the world, disable it before the HUD (or for glowing
+    // sprites that should stay full bright). The ambient and lights are the frame's: the values
+    // set when Render runs apply to every lit sprite. ClearLights / SetAmbient / AddLight
+    // configure the next frames.
     void SetLightingEnabled(bool enabled) { m_LightingEnabled = enabled; }
     [[nodiscard]] bool IsLightingEnabled() const { return m_LightingEnabled; }
     void SetAmbient(const Vec3& rgb) { m_Ambient = rgb; }

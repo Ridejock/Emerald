@@ -229,18 +229,20 @@ void Renderer2D::End()
 void Renderer2D::UseCommand(CommandType type, const Texture* texture, const Texture* normal)
 {
     Batch& batch = m_Batches.back();
+    const bool lit = type == CommandType::Sprites && m_LightingEnabled;
     if (batch.CommandCount > 0) {
         const DrawCommand& last = m_Commands.back();
         const u32 normalId = normal ? normal->GetId() : 0;
         const bool sameTexture = type == CommandType::Lines ||
                                  (last.TextureId == texture->GetId() && last.NormalId == normalId);
-        if (last.Type == type && sameTexture && last.Blend == m_BlendMode)
+        if (last.Type == type && sameTexture && last.Blend == m_BlendMode && last.Lit == lit)
             return; // keep adding to the current run
         CloseCommand();
     }
     DrawCommand command;
     command.Type = type;
     command.Blend = m_BlendMode;
+    command.Lit = lit;
     if (type == CommandType::Lines) {
         command.FirstVertex = static_cast<u32>(m_Vertices.size());
     } else {
@@ -557,9 +559,9 @@ void Renderer2D::Render(SDL_GPUCommandBuffer* commandBuffer, SDL_GPURenderPass* 
                 continue; // nothing to draw, or no GPU texture (e.g. CreateWithoutGpu)
 
             // Switch pipelines (and their vertex buffer) only when the kind, blend or lighting
-            // changes.
+            // changes. Lighting is what it was when the sprites were drawn (see Lit).
             const bool additive = command.Blend == BlendMode::Additive;
-            const bool lit = !isLines && m_LightingEnabled && m_LitSpritePipeline;
+            const bool lit = !isLines && command.Lit && m_LitSpritePipeline;
             SDL_GPUGraphicsPipeline* pipeline =
                 isLines ? (additive ? m_AdditivePipeline : m_Pipeline)
                 : lit   ? (additive ? m_AdditiveLitSpritePipeline : m_LitSpritePipeline)

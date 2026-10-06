@@ -298,7 +298,7 @@ structure-of-arrays layout instead (all x together, all y together).
 | `EditorTests` | particle effect files: a JSON round trip with every field changed (and the defaults), saving again gives the same text, missing keys keep defaults, 3-number colors, broken values rejected, revisions, files, deep copies that keep the config's address; with ImGui (`debug-full`): `Tweak` registration, the tweaks file round trip, wrong kinds skipped, values remembered across unregister / register and loaded before registration, unknown entries kept, `Save` / `Load` / `SetFile`, `ResetAll`; the entity inspector's registration (engine, custom and tag components), `Inspect`, `SelectAt` and a destroyed selection; without ImGui: tweaks are plain values and the stand-ins do nothing |
 | `AudioExtrasTests` | spatial attenuation/pan math; mixer groups mute and volume ramps; spatial voices following the listener; MP3/OGG `MusicStream` constant ring memory; crossfade between two tracks; file open for sandbox OGG loops |
 | `AudioTests` | MP3 decoding from an embedded 809-byte file (length, level, channels, pitch after resampling), garbage rejected, WAV loading, `LoadSound` by extension incl. unknown/missing files, `MakeSound` conversion; mixer handles (stale handles, reuse, releasing samples), fade-in/out and volume ramps without clicks, looping, pitch, pan, master volume/mute, voice stealing, soft limiter; synth waveforms (length, no NaN, peak), envelopes, lowpass |
-| `Renderer2DTests` | `Renderer2D` batching and shape generation on the CPU (no GPU), `Transform2D`, color packing; sprite quads (UVs, rotation, origin, flips, pixel snap), draw order across lines/sprites/texture switches and blend modes, atlas JSON parsing; `Camera2D` (pixel-space default, letterboxing, zoom/rotation, `ScreenToWorld` round trips against the GPU matrix, bounds clamp, follow dead zone and step-size independent damping, shake decay); atlas `"animations"` parsing (patterns, lists, durations, modes, missing frames reported), `Animator` loop / once / ping-pong timing at several dt, speed, stop/resume, finish and loop events, drawing a frame with flip and tint; `CrtEffect` afterglow decay, uniforms and bloom spread; `--gpu` parsing and driver names |
+| `Renderer2DTests` | `Renderer2D` batching and shape generation on the CPU (no GPU), `Transform2D`, color packing; sprite quads (UVs, rotation, origin, flips, pixel snap), draw order across lines/sprites/texture switches and blend modes, lighting captured per draw (lit world and unlit HUD in one frame), atlas JSON parsing; `Camera2D` (pixel-space default, letterboxing, zoom/rotation, `ScreenToWorld` round trips against the GPU matrix, bounds clamp, follow dead zone and step-size independent damping, shake decay); atlas `"animations"` parsing (patterns, lists, durations, modes, missing frames reported), `Animator` loop / once / ping-pong timing at several dt, speed, stop/resume, finish and loop events, drawing a frame with flip and tint; `CrtEffect` afterglow decay, uniforms and bloom spread; `--gpu` parsing and driver names |
 | `ParticleTests` | particle spawning (shapes, ranges, base velocity), capacity limit, drag/gravity step, swap-remove, continuous rate, color/size fade when drawing, scalar and SSE updates agreeing over 240 steps |
 | `CollisionTests` | circle/circle, circle/AABB, AABB/AABB and SAT polygon contacts (normals, depths, touching = none, concentric circles, center inside a box, containment, winding, degenerate input); raycasts against circles, boxes and polygons (hits, misses, parallel, max distance, starting inside); `SpatialHash` insert/update/remove/query/pairs, wrap-around, brute-force equivalence on random data |
 | `AssetTests` | asset manager bookkeeping with a GPU-less loader: dedupe (same path, `..` paths, absolute paths; other options or types are other assets), handle copy/move/reset reference counts, unloading on `Update` and reviving before it, placeholders for missing and broken files (texture, atlas, font, sound), hot reload in place (textures, atlas image + JSON with sprites and animators keeping their pointers, fonts, real WAVs, dialogue decks with a conversation in progress, particle effects keeping their config's address), broken reloads keeping the old version, placeholders replaced when the file appears, reloads through `Update` on the thread pool within a second |
@@ -1751,7 +1751,10 @@ bounce, and `Back`; its auto-repeating Left / Right is `UiStyle::RepeatDelay` / 
 
 2D point and spot lights with an ambient term, optional normal maps on sprites, and a runtime
 post-effect chain. Lighting is **off by default** and then costs nothing (the unlit sprite
-pipeline is used); turn it on per frame with `Renderer2D::SetLightingEnabled(true)`.
+pipeline is used); turn it on with `Renderer2D::SetLightingEnabled(true)`. It applies to the
+sprites drawn while it is on, so one frame can mix lit and unlit draws: turn it off again before
+the HUD, menus or glowing sprites that should stay full bright. The ambient and lights are the
+frame's (the values at Render time light every lit sprite).
 
 ```cpp
 r.SetLightingEnabled(true);
@@ -1762,6 +1765,8 @@ r.AddLight({.Position = lamp, .Z = 40.0f, .Color = {1.0f, 0.8f, 0.5f},
 r.AddLight({.Kind = LightKind::Spot, .Position = torch, .Direction = {0, 1},
             .InnerAngle = 0.3f, .OuterAngle = 0.7f, .Radius = 300.0f});
 r.DrawSprite(wall, at, {.NormalMap = &wallNormal}); // optional; flat stand-in otherwise
+r.SetLightingEnabled(false);
+r.DrawString(font, "SCORE 100", {8, 8}, white);      // the HUD, unlit
 
 // Post chain (empty = draw straight to the swapchain):
 GetPostChain().Add(std::make_unique<TintEffect>());

@@ -257,3 +257,30 @@ TEST(Renderer2DBlendModes)
     CHECK(c[1].Blend == BlendMode::Additive && c[1].VertexCount == 4);
     CHECK(c[2].Blend == BlendMode::Alpha);
 }
+
+TEST(Renderer2DLightingPerDraw)
+{
+    // Lighting is captured per draw: lit world sprites, then an unlit HUD in the same frame.
+    // Turning it on or off starts a new command even for the same texture.
+    Renderer2D r;
+    r.SetLightingEnabled(true);
+    r.Begin(Mat4::Identity());
+    r.FillRect({0.0f, 0.0f}, {4.0f, 4.0f}, kWhite);
+    r.FillRect({4.0f, 0.0f}, {4.0f, 4.0f}, kWhite); // still lit: joins the previous draw
+    r.SetLightingEnabled(false);
+    r.FillRect({8.0f, 0.0f}, {4.0f, 4.0f}, kWhite); // a glow drawn full bright
+    r.DrawLine({0.0f, 0.0f}, {1.0f, 0.0f}, kWhite);
+    r.End();
+    r.Begin(Mat4::Identity()); // the HUD
+    r.FillRect({0.0f, 0.0f}, {4.0f, 4.0f}, kWhite);
+    r.End();
+
+    const auto c = r.GetCommands();
+    CHECK(c.size() == 4);
+    if (c.size() != 4)
+        return;
+    CHECK(c[0].Lit && c[0].VertexCount == 12 && c[0].NormalId != 0);
+    CHECK(!c[1].Lit && c[1].NormalId == 0);
+    CHECK(c[2].Type == Renderer2D::CommandType::Lines && !c[2].Lit);
+    CHECK(!c[3].Lit);
+}

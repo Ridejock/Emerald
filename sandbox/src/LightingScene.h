@@ -107,12 +107,15 @@ public:
                           .NormalMap = m_PropNormal ? &*m_PropNormal : nullptr});
         }
         if (m_Shared.PixelFont) {
+            // The text stays readable in the dark: lighting is per draw, so turn it off here.
+            r.SetLightingEnabled(false);
             const char* hint =
                 m_Lit ? "Lamps on  |  Space: lighting off  |  C: CRT  |  X: swap Tint/CRT"
                       : "Lighting off (unlit path)  |  Space: lighting on";
             r.DrawString(*m_Shared.PixelFont, hint, {12.0f, 12.0f}, {0.85f, 0.9f, 0.95f, 1.0f});
             r.DrawString(*m_Shared.PixelFont, "Lighting + post chain (#13)", {12.0f, 36.0f},
                          {0.35f, 0.95f, 0.55f, 1.0f});
+            r.SetLightingEnabled(m_Lit);
         }
         r.End();
     }

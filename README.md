@@ -1923,7 +1923,8 @@ conversation restarts at the start card (logged). Automatic cards that jump in a
 
 The sandbox's Dialogue scene (`--dialogue`, or Dialogue in the title menu) talks to a keeper
 (`sandbox/assets/dialogue/keeper.json`): branching answers, "Can I have the key?" only after asking
-about the gate, a once-only answer, and F5 / F9 (or the panel's buttons) to save and load the flags
+about the gate, text lines and answers that change once you have the key or open the gate, a
+once-only answer, and F5 / F9 (or the panel's buttons) to save and load the flags
 and the current card, also mid-conversation (`dialogue.sav` next to `settings.sav`). The top right
 shows the flag store. Edit `keeper.json` while it runs (debug build) to see hot reload.
 

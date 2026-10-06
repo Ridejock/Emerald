@@ -28,7 +28,7 @@
         { "text": "The gate is open now.", "if": "gate_open" }
       ],
       "answers": [
-        { "text": "What is behind the gate?", "goto": "gate" },
+        { "text": "What is behind the gate?", "goto": "gate", "if": "!gate_open" },
         { "text": "Can I have the key?", "goto": "key", "if": "knows_gate !has_key" },
         { "text": "Open the gate, please.", "goto": "open", "if": "has_key !gate_open" },
         { "text": "Anything else?", "goto": "coin", "once": true },
@@ -37,7 +37,11 @@
     },
     {
       "id": "gate",
-      "text": "Another room. The gate is locked.",
+      "text": [
+        "Another room.",
+        { "text": "The gate is locked.", "if": "!has_key" },
+        { "text": "It's still locked, but you have the key now.", "if": "has_key" }
+      ],
       "do": "knows_gate",
       "next": "menu"
     },

@@ -292,6 +292,17 @@ Done when:
 - Web demo of at least one game if the Emscripten build is viable
 - Profiler overlay available in the debug builds of each game
 
+## Maybe later
+
+Extras we might add someday. Not scheduled; label [`maybe-later`](https://github.com/Ridejock/Emerald/labels/maybe-later).
+
+### Hot-reloadable game code DLL ([#25](https://github.com/Ridejock/Emerald/issues/25))
+
+An optional mode where a game's code is built as a DLL that the engine reloads when it changes, in
+the style of Handmade Hero and Quake II's swappable `gamex86.dll` / `ref_*.dll`. The platform layer
+owns the window, memory and game state; the DLL exports a small table of functions. Complements
+JSON hot reload: DLLs for behavior changes, JSON for tuning and content.
+
 ## Done
 
 Already in the engine (see the [README](README.md) for each):

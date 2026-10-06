@@ -1,5 +1,6 @@
 # Windows tests: configure, build (zero MSVC warnings in Emerald's own code) and run the tests,
-# in the debug and debug-asan presets.
+# in the debug and debug-asan presets (no ImGui: the editor tools compile out) and debug-full
+# (ImGui on: the editor tools, their tests and the sandbox's panels).
 name: Windows
 
 on:
@@ -15,7 +16,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        preset: [debug, debug-asan]
+        preset: [debug, debug-asan, debug-full]
     name: ${{ matrix.preset }}
     defaults:
       run:
@@ -49,7 +50,7 @@ jobs:
       - name: Save shadercross
         if: steps.build.outcome == 'success' && steps.shadercross.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
-        continue-on-error: true # the other preset may save the same key first
+        continue-on-error: true # another preset may save the same key first
         with:
           path: build/_shadercross
           key: ${{ steps.shadercross.outputs.cache-primary-key }}

@@ -1,0 +1,70 @@
+{
+  "id": "keeper",
+  "speaker": "Keeper",
+  "portrait": "hero_idle_0",
+  "start": "start",
+  "cards": [
+    {
+      "id": "start",
+      "answers": [
+        { "goto": "again", "if": "keeper.hello" },
+        { "goto": "hello" }
+      ]
+    },
+    {
+      "id": "hello",
+      "text": ["Hello. This is a test conversation.", "Ask me anything below."],
+      "next": "menu"
+    },
+    {
+      "id": "again",
+      "text": "Hello again.",
+      "next": "menu"
+    },
+    {
+      "id": "menu",
+      "text": [
+        "What would you like to ask?",
+        { "text": "The gate is open now.", "if": "gate_open" }
+      ],
+      "answers": [
+        { "text": "What is behind the gate?", "goto": "gate" },
+        { "text": "Can I have the key?", "goto": "key", "if": "knows_gate !has_key" },
+        { "text": "Open the gate, please.", "goto": "open", "if": "has_key !gate_open" },
+        { "text": "Anything else?", "goto": "coin", "once": true },
+        { "text": "Goodbye.", "goto": "bye" }
+      ]
+    },
+    {
+      "id": "gate",
+      "text": "Another room. The gate is locked.",
+      "do": "knows_gate",
+      "next": "menu"
+    },
+    {
+      "id": "key",
+      "text": "Here is the key.",
+      "do": "has_key",
+      "next": "menu"
+    },
+    {
+      "id": "open",
+      "text": "There. The gate is open.",
+      "do": "gate_open",
+      "next": "menu"
+    },
+    {
+      "id": "coin",
+      "text": ["Take this coin.", "I only have one."],
+      "do": "coins+=1",
+      "next": "menu"
+    },
+    {
+      "id": "bye",
+      "text": [
+        "Goodbye.",
+        { "text": "Mind the gate.", "if": "has_key !gate_open" }
+      ]
+    }
+  ]
+}

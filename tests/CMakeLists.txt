@@ -158,3 +158,11 @@ add_executable(EmeraldSaveTests TestMain.cpp SaveTests.cpp)
 target_link_libraries(EmeraldSaveTests PRIVATE Emerald::Emerald)
 emerald_set_warnings(EmeraldSaveTests)
 add_test(NAME SaveTests COMMAND EmeraldSaveTests)
+
+# Branching dialogue: decks, D3 sample behaviour, saves, hot reload and the box (no GPU).
+add_executable(EmeraldDialogueTests TestMain.cpp DialogueTests.cpp)
+target_link_libraries(EmeraldDialogueTests PRIVATE Emerald::Emerald)
+target_compile_definitions(EmeraldDialogueTests PRIVATE
+    EMERALD_TEST_FONT="${PROJECT_SOURCE_DIR}/sandbox/assets/fonts/PressStart2P-Regular.ttf")
+emerald_set_warnings(EmeraldDialogueTests)
+add_test(NAME DialogueTests COMMAND EmeraldDialogueTests)

@@ -196,6 +196,7 @@ public:
     void Draw(Renderer2D& r, const Font& font) const;
     [[nodiscard]] const std::vector<UiItem>& GetItems() const { return m_Items; }
     [[nodiscard]] UiStyle& GetStyle() { return *m_Style; }
+    [[nodiscard]] const UiStyle& GetStyle() const { return *m_Style; }
 
 private:
     struct State {

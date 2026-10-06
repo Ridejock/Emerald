@@ -305,6 +305,49 @@ TEST(AssetsHotReloadInPlace)
     CHECK(!assets.GetInfo(sound.GetId())->Placeholder && sound->GetFrameCount() == 100);
 }
 
+// Dialogue decks through the manager: loaded once, hot reloaded in place, and a Dialogue that is
+// talking picks up the new text (or restarts if its card was removed).
+TEST(AssetsDialogueDecks)
+{
+    Fixture f("dialogue");
+    WriteText(f.Root / "npc.json", R"({ "id": "npc", "cards": [
+        { "id": "hi", "text": "Hello.", "next": "bye" }, { "id": "bye", "text": "Bye." } ] })");
+    Assets& assets = *f.Manager;
+    AssetHandle<DialogueDeck> deck = assets.Load<DialogueDeck>("npc.json");
+    CHECK(!assets.GetInfo(deck.GetId())->Placeholder && deck->Cards.size() == 2);
+    CHECK(assets.Load<DialogueDeck>("sub/../npc.json") == deck);
+
+    // A missing file gives an empty deck: starting it fails (logged) instead of crashing.
+    AssetHandle<DialogueDeck> missing = assets.Load<DialogueDeck>("missing.json");
+    DialogueFlags flags;
+    Dialogue none(*missing, flags);
+    CHECK(assets.GetInfo(missing.GetId())->Placeholder && !none.Start());
+
+    if (!Assets::kHotReload)
+        return;
+    Dialogue talk(*deck, flags);
+    CHECK(talk.Start() && talk.Advance() && talk.GetText() == "Bye.");
+    WriteText(f.Root / "npc.json", R"({ "id": "npc", "cards": [
+        { "id": "hi", "text": "Hello.", "next": "bye" }, { "id": "bye", "text": "See you." } ] })");
+    assets.CheckForChanges();
+    CHECK(assets.CheckForChanges() == 1);
+    talk.Refresh();
+    CHECK(talk.GetCardId() == "bye" && talk.GetText() == "See you.");
+
+    // A broken edit keeps the last good deck.
+    WriteText(f.Root / "npc.json", R"({ "id": "npc", "cards": [ { "id": "hi", "if": "?" } ] })");
+    assets.CheckForChanges();
+    CHECK(assets.CheckForChanges() == 0 && deck->Cards.size() == 2);
+
+    // The current card removed: the talk starts over.
+    WriteText(f.Root / "npc.json",
+              R"({ "id": "npc", "cards": [ { "id": "hi", "text": "Hey." } ] })");
+    assets.CheckForChanges();
+    CHECK(assets.CheckForChanges() == 1);
+    talk.Refresh();
+    CHECK(talk.GetCardId() == "hi" && talk.GetText() == "Hey.");
+}
+
 TEST(AssetsHotReloadAtlasKeepsPointers)
 {
     if (!Assets::kHotReload)

@@ -33,6 +33,7 @@
 #include <Emerald/Emerald.h>
 
 #include "DemoScene.h"
+#include "DialogueScene.h"
 #include "LightingScene.h"
 #include "OptionsScene.h"
 #include "PauseScene.h"
@@ -183,6 +184,8 @@ protected:
                 return std::make_unique<OptionsScene>(m_Shared);
             case SceneId::Lighting:
                 return std::make_unique<LightingScene>(m_Shared);
+            case SceneId::Dialogue:
+                return std::make_unique<DialogueScene>(m_Shared);
             }
             return nullptr;
         };
@@ -542,7 +545,9 @@ private:
         input.BindAction("Jump", {Key::Space}); // the platformer (down + jump drops through)
         input.BindAction("Jump", {Key::Z});
         input.BindAction("Jump", {GamepadButton::South});
-        input.BindAction("Overlay", {Key::O}); // the platformer's collision overlay
+        input.BindAction("Overlay", {Key::O});    // the platformer's collision overlay
+        input.BindAction("QuickSave", {Key::F5}); // the dialogue demo's save / load
+        input.BindAction("QuickLoad", {Key::F9});
         // The UI widgets (OptionsScene.h): the default UI actions, but Escape quits the sandbox,
         // so back is Backspace or M (rebinding replaces only the keys; East stays).
         Emerald::BindDefaultUiActions(input);
@@ -719,6 +724,8 @@ SandboxOptions ParseOptions(i32 argc, char** argv)
             options.Start = SceneId::Options;
         } else if (arg == "--lighting") {
             options.Start = SceneId::Lighting;
+        } else if (arg == "--dialogue") {
+            options.Start = SceneId::Dialogue;
         } else if (arg == "--pan") {
             options.Room.Pan = true;
         } else if (arg == "--stats") {

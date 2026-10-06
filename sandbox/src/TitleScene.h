@@ -52,6 +52,9 @@ public:
             case 5:
                 GetStack()->Replace(m_Shared.Make(SceneId::Lighting), FadeBlack());
                 break;
+            case 6:
+                GetStack()->Replace(m_Shared.Make(SceneId::Dialogue), FadeBlack());
+                break;
             default:
                 m_Shared.App.Quit();
                 break;
@@ -109,7 +112,7 @@ private:
     SandboxShared& m_Shared;
     MenuDemo m_Menu{"EMERALD",
                     {"Camera demo", "Tilemap room", "Entity swarm", "Platformer", "Options",
-                     "Lighting", "Quit"},
+                     "Lighting", "Dialogue", "Quit"},
                     "Up/Down + Enter"};
     HeroSprite m_Hero{m_Shared.Hero};
     f32 m_Time = 0.0f;

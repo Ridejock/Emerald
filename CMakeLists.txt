@@ -115,6 +115,9 @@ add_library(Emerald STATIC
     src/Audio/Sound.cpp
     src/Audio/Music.cpp
     src/Save/Save.cpp
+    src/Dialogue/Dialogue.cpp
+    src/Dialogue/DialogueBox.cpp
+    src/Dialogue/DialogueLoad.cpp
     src/Vendor/stb_image.cpp
     src/Vendor/stb_image_write.cpp
     src/Vendor/stb_truetype.cpp

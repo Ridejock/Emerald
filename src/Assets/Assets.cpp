@@ -35,6 +35,11 @@ std::string OptionsKey(const AssetTraits<Sound>::Options&)
     return {};
 }
 
+std::string OptionsKey(const AssetTraits<DialogueDeck>::Options&)
+{
+    return {};
+}
+
 // When the file was last written, or nullopt if it does not exist.
 std::optional<std::filesystem::file_time_type> GetFileTime(const std::filesystem::path& path)
 {
@@ -60,6 +65,8 @@ const char* GetAssetTypeName(AssetType type)
         return "sound";
     case AssetType::Tilemap:
         return "tilemap";
+    case AssetType::Dialogue:
+        return "dialogue";
     }
     return "?";
 }
@@ -159,6 +166,10 @@ std::unique_ptr<Assets::Object> Assets::LoadObject(const Entry& entry) const
         if (auto map = m_Loader->LoadTilemap(file, std::get<TextureOptions>(entry.LoadOptions)))
             return std::make_unique<Object>(std::in_place_type<Tilemap>, std::move(*map));
         break;
+    case AssetType::Dialogue:
+        if (auto deck = m_Loader->LoadDialogueDeck(file))
+            return std::make_unique<Object>(std::in_place_type<DialogueDeck>, std::move(*deck));
+        break;
     }
     return nullptr;
 }
@@ -174,6 +185,8 @@ Assets::Object Assets::MakePlaceholder(const Entry& entry) const
         return m_Loader->MakePlaceholderFont(std::get<FontOptions>(entry.LoadOptions));
     case AssetType::Tilemap:
         return m_Loader->MakePlaceholderTilemap();
+    case AssetType::Dialogue:
+        return m_Loader->MakePlaceholderDialogue();
     case AssetType::Sound:
         break;
     }

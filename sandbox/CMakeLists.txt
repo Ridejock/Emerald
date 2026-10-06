@@ -46,4 +46,9 @@ add_custom_command(TARGET Sandbox POST_BUILD
             ${CMAKE_CURRENT_SOURCE_DIR}/assets/audio/loop_a.ogg
             ${CMAKE_CURRENT_SOURCE_DIR}/assets/audio/loop_b.ogg
             $<TARGET_FILE_DIR:Sandbox>/assets/audio/
+    # The dialogue demo's conversation (DialogueScene.h).
+    COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:Sandbox>/assets/dialogue
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${CMAKE_CURRENT_SOURCE_DIR}/assets/dialogue/keeper.json
+            $<TARGET_FILE_DIR:Sandbox>/assets/dialogue/
     VERBATIM)

@@ -19,6 +19,8 @@
 #include "Emerald/Core/Profile.h"
 #include "Emerald/Core/ThreadPool.h"
 #include "Emerald/Core/Window.h"
+#include "Emerald/Dialogue/Dialogue.h"
+#include "Emerald/Dialogue/DialogueBox.h"
 #include "Emerald/Entity/Components.h"
 #include "Emerald/Entity/Systems.h"
 #include "Emerald/Entity/World.h"

@@ -163,7 +163,7 @@ Done when:
 - Focus/navigation logic unit-tested without a GPU
 - Rock Blaster's menus could be rebuilt on it
 
-**Status:** implemented, in review (`UI/UI.h`: immediate-mode widgets, layout, focus navigation and `UiStyle`; `UiTests`; the sandbox's options screen, `OptionsScene.h`).
+**Status:** done (`UI/UI.h`: immediate-mode widgets, layout, focus navigation and `UiStyle`; `UiTests`; the sandbox's options screen, `OptionsScene.h`).
 
 ### 2D lighting, normal maps and a post-effect chain ([#13](https://github.com/Ridejock/Emerald/issues/13))
 
@@ -175,7 +175,7 @@ Done when:
 - Lighting off costs nothing (no extra passes)
 - Sandbox scene showing lighting + chain
 
-**Status:** implemented, in review (`Renderer/Light.h`, lit sprite shaders, `PostEffect`/`PostChain` with CRT as one effect and a Tint grade; `LightingTests`; sandbox `LightingScene.h` / `--lighting`).
+**Status:** done (`Renderer/Light.h`, lit sprite shaders, `PostEffect`/`PostChain` with CRT as one effect and a Tint grade; `LightingTests`; sandbox `LightingScene.h` / `--lighting`).
 
 ### Audio extras ([#14](https://github.com/Ridejock/Emerald/issues/14))
 
@@ -187,7 +187,7 @@ Done when:
 - Pan and volume follow a sound's position relative to the listener (camera)
 - Unit tests for the mixer math (no audio device needed)
 
-**Status:** implemented, in review (`Audio/Spatial.h`, `Audio/Music.h` streaming MP3/OGG with a fixed ring + crossfade via `MusicPlayer`; mixer groups Music/Sfx/Ui with volume/mute; spatial `PlayOptions::Position` vs listener; `AudioExtrasTests`; sandbox Options music controls).
+**Status:** done (`Audio/Spatial.h`, `Audio/Music.h` streaming MP3/OGG with a fixed ring + crossfade via `MusicPlayer`; mixer groups Music/Sfx/Ui with volume/mute; spatial `PlayOptions::Position` vs listener; `AudioExtrasTests`; sandbox Options music controls).
 
 ### Versioned save system ([#15](https://github.com/Ridejock/Emerald/issues/15))
 
@@ -199,7 +199,7 @@ Done when:
 - Multiple slots; round-trip and migration unit tests
 - Rock Blaster's settings/high scores could use it
 
-**Status:** implemented, in review (`Save/Save.h`: `SaveData` key/value text format with a CRC-32, `SaveSystem` slots, migrations, atomic temp + rename writes with a `.bak`; `SaveTests`; the sandbox's Options screen persists through it).
+**Status:** done (`Save/Save.h`: `SaveData` key/value text format with a CRC-32, `SaveSystem` slots, migrations, atomic temp + rename writes with a `.bak`; `SaveTests`; the sandbox's Options screen persists through it).
 
 ### ImGui editor tools ([#16](https://github.com/Ridejock/Emerald/issues/16))
 
@@ -226,6 +226,12 @@ Done when:
 - Text box with typewriter effect and answer selection works with mouse, keyboard and gamepad
 - State round-trips through the save system
 - Used for NPCs in a test game (e.g. the Blaster Master-style platformer)
+
+**Status:** implemented, in review (`Dialogue/Dialogue.h`: decks, cards, answers, flag and number
+conditions/effects, JSON loading through `Assets` with hot reload, save/restore of flags and the
+current card; `Dialogue/DialogueBox.h`: typewriter text box and answer menu on the UI widgets;
+`DialogueTests` with ports of D3's samples; the sandbox's Dialogue scene, `DialogueScene.h` /
+`--dialogue`). NPCs in a real test game come with #17.
 
 ### Phase 3 test game ([#17](https://github.com/Ridejock/Emerald/issues/17))
 

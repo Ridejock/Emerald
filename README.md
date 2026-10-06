@@ -6,7 +6,7 @@ Emerald is a small, modern C++20 game engine built on [SDL3](https://github.com/
 It is split into:
 
 - **`Emerald::Emerald`** – the engine library (logging, window, SDL GPU renderer, batched 2D renderer for lines and
-  textured sprites, sprite animation, a 2D camera, textures and texture atlases, keyboard input, application loop with a fixed-timestep update, a scene stack with transitions, entities and components (EnTT), platformer character physics, UI widgets, 2D lighting and a post-effect chain, image loading, thread pool, `std::pmr`
+  textured sprites, sprite animation, a 2D camera, textures and texture atlases, keyboard input, application loop with a fixed-timestep update, a scene stack with transitions, entities and components (EnTT), platformer character physics, UI widgets, 2D lighting and a post-effect chain, branching dialogue, image loading, thread pool, `std::pmr`
   memory helpers).
 - **`Emerald::Math`** – a header-only math library (vectors, `Mat4`, optional SSE), included by the engine.
 - **`sandbox/`** – a minimal example app that links the engine and draws a rotating vertex-colored triangle
@@ -15,7 +15,7 @@ It is split into:
   an animated pixel-art hero (walk / idle / jump, from `tools/sprites/make_hero.py`) driven by
   keyboard or gamepad that a `Camera2D` follows around a larger world (pan, zoom, rotate, shake;
   with ImGui on, the panel shows the camera and lists connected pads and their live stick values).
-  It is organised as scenes (title, camera demo, tilemap room, entity swarm, platformer, pause, options, lighting) on the scene stack.
+  It is organised as scenes (title, camera demo, tilemap room, entity swarm, platformer, pause, options, lighting, dialogue) on the scene stack.
 - **`tests/`** – small unit-test executables run with `ctest`.
 
 All dependencies are fetched automatically with CMake `FetchContent` and pinned to specific versions.
@@ -30,7 +30,7 @@ What is planned next (camera, animation, collision, tilemaps, scenes, UI, shippi
 | [SDL3](https://github.com/libsdl-org/SDL) | `release-3.4.16` | Built statically |
 | [spdlog](https://github.com/gabime/spdlog) | `v1.17.0` | Uses bundled fmt |
 | [stb](https://github.com/nothings/stb) | commit `2c980bb` | Header-only (stb_image, stb_image_write, stb_truetype + stb_rect_pack for fonts), exposed as `Emerald::stb` (INTERFACE) |
-| [nlohmann/json](https://github.com/nlohmann/json) | `v3.12.0` | Texture atlas JSON; release tarball (SHA-256 pinned), linked PRIVATE |
+| [nlohmann/json](https://github.com/nlohmann/json) | `v3.12.0` | JSON (atlases, Tiled maps, dialogue decks); release tarball (SHA-256 pinned), linked PRIVATE |
 | [dr_libs](https://github.com/mackron/dr_libs) | commit `dfe8377` | Only `dr_mp3.h` (MP3 decoding); header-only, public domain / MIT-0 |
 | [Dear ImGui](https://github.com/ocornut/imgui) | `v1.92.9b-docking` | Optional, SDL3 + SDLGPU3 backends |
 | [EnTT](https://github.com/skypjack/entt) | `v3.16.0` | Entity storage behind `World` / `Entity` (see [Entities](#entities-entity)); headers included as SYSTEM |
@@ -128,6 +128,7 @@ Options can also be passed directly, e.g. `cmake --preset release -DEMERALD_USE_
 ./build/debug/bin/Sandbox --tilemap                        # start in the tilemap room (see Tilemaps)
 ./build/debug/bin/Sandbox --swarm                          # start in the entity swarm (see Entities)
 ./build/debug/bin/Sandbox --platformer                     # start in the platformer level (see Platformer physics)
+./build/debug/bin/Sandbox --dialogue                       # start in the dialogue demo (see Dialogue)
 SDL_GPU_DRIVER=vulkan ./build/debug/bin/Sandbox            # the same through SDL's environment variable
 ```
 
@@ -292,12 +293,13 @@ structure-of-arrays layout instead (all x together, all y together).
 | `MemoryTests` | frame arena reset/alignment/overflow, many resets stay in the buffer, pmr containers use their resource, tracking counts, pools (incl. the synchronized pool from many threads) |
 | `InputTests` | key down/pressed/released edges, taps within one frame, fixed-step edges, `ReleaseAll`; actions with several keys, action taps across fixed steps, axes, rebinding; gamepads (synthetic pads, no hardware): deadzone math (per-axis, radial), trigger/stick virtual buttons with hysteresis, button edges across fixed steps, several pads, labels, gamepad bindings and largest-magnitude axes; `FixedTimestep` accumulation, average rate at 144 fps / 120 Hz, slow-frame clamp |
 | `SaveTests` | save values (types, fallbacks, escaping, key checks, rename); the text format round trip and hand-written files (no checksum, CRLF); save/load on disk, replacing a save and the `.bak`; a v1 -> v3 migration chain (order, partial chains, a missing step); newer data versions refused; every truncated prefix and a flipped byte rejected; falling back to the backup; a failed write (temp path blocked) and a leftover partial temp file keeping the old save; independent slots with listing, metadata, delete and bad names; a high-score table |
+| `DialogueTests` | condition/effect terms (D3's `has:` / `not:` / `hp-1` spellings too); ports of D3's samples as behaviour (the simple walk, the flag sample with visited-card flags and guarded text, the tag sample: an automatic start card, a once-only answer, a tag set by another deck, a menu card); numbers gating answers; missing cards, loops of automatic cards and broken files logged, never a crash; flags and the current card through `SaveSystem` (and refused restores: other deck, removed card); a hot-reloaded deck (changed text, removed current card); `WrapText`; `DialogueBox` typewriter (finish at once, then advance), keyboard and mouse answer picking |
 | `AudioExtrasTests` | spatial attenuation/pan math; mixer groups mute and volume ramps; spatial voices following the listener; MP3/OGG `MusicStream` constant ring memory; crossfade between two tracks; file open for sandbox OGG loops |
 | `AudioTests` | MP3 decoding from an embedded 809-byte file (length, level, channels, pitch after resampling), garbage rejected, WAV loading, `LoadSound` by extension incl. unknown/missing files, `MakeSound` conversion; mixer handles (stale handles, reuse, releasing samples), fade-in/out and volume ramps without clicks, looping, pitch, pan, master volume/mute, voice stealing, soft limiter; synth waveforms (length, no NaN, peak), envelopes, lowpass |
 | `Renderer2DTests` | `Renderer2D` batching and shape generation on the CPU (no GPU), `Transform2D`, color packing; sprite quads (UVs, rotation, origin, flips, pixel snap), draw order across lines/sprites/texture switches and blend modes, atlas JSON parsing; `Camera2D` (pixel-space default, letterboxing, zoom/rotation, `ScreenToWorld` round trips against the GPU matrix, bounds clamp, follow dead zone and step-size independent damping, shake decay); atlas `"animations"` parsing (patterns, lists, durations, modes, missing frames reported), `Animator` loop / once / ping-pong timing at several dt, speed, stop/resume, finish and loop events, drawing a frame with flip and tint; `CrtEffect` afterglow decay, uniforms and bloom spread; `--gpu` parsing and driver names |
 | `ParticleTests` | particle spawning (shapes, ranges, base velocity), capacity limit, drag/gravity step, swap-remove, continuous rate, color/size fade when drawing, scalar and SSE updates agreeing over 240 steps |
 | `CollisionTests` | circle/circle, circle/AABB, AABB/AABB and SAT polygon contacts (normals, depths, touching = none, concentric circles, center inside a box, containment, winding, degenerate input); raycasts against circles, boxes and polygons (hits, misses, parallel, max distance, starting inside); `SpatialHash` insert/update/remove/query/pairs, wrap-around, brute-force equivalence on random data |
-| `AssetTests` | asset manager bookkeeping with a GPU-less loader: dedupe (same path, `..` paths, absolute paths; other options or types are other assets), handle copy/move/reset reference counts, unloading on `Update` and reviving before it, placeholders for missing and broken files (texture, atlas, font, sound), hot reload in place (textures, atlas image + JSON with sprites and animators keeping their pointers, fonts, real WAVs), broken reloads keeping the old version, placeholders replaced when the file appears, reloads through `Update` on the thread pool within a second |
+| `AssetTests` | asset manager bookkeeping with a GPU-less loader: dedupe (same path, `..` paths, absolute paths; other options or types are other assets), handle copy/move/reset reference counts, unloading on `Update` and reviving before it, placeholders for missing and broken files (texture, atlas, font, sound), hot reload in place (textures, atlas image + JSON with sprites and animators keeping their pointers, fonts, real WAVs, dialogue decks with a conversation in progress), broken reloads keeping the old version, placeholders replaced when the file appears, reloads through `Update` on the thread pool within a second |
 | `TilemapTests` | the sample room from Tiled JSON: layer order and kinds, external `.tsj` and embedded tilesets (GID lookup, sprite regions), objects (shapes, class, position, size, properties), the collision grid from tile properties and classes (non-colliding layer), tile ranges with touching edges, `OverlapsSolid`, `MoveAndCollide` (flush stops, no tunneling, sliding along walls, one-way from above / below / inside); all 8 flip-bit combinations against Tiled's transform; missing and broken files (JSON, sizes, infinite, isometric, missing/XML tileset, missing image, base64, bad cells) logged and failing cleanly, unknown tile ids left empty; through the asset manager: placeholder for a missing map, hot reload of the map and of its external tileset, broken edits keeping the last version |
 | `SceneTests` | the scene stack without a GPU: requests applied only at the end of `Update`, hook order for push / pop / replace / clear / `ReplaceAll` (pause, resume, exit, destruction), requests from inside a scene's own hooks, `DrawBelow` / `UpdateBelow` chains (which scenes draw and update, in which order), fade timing (change at full cover, then uncover, requests queued meanwhile), fading into an empty stack, custom transition `Draw`, input blocked below the top and during transitions (and the app's own block kept), empty-stack pops, exiting every scene on destruction |
 | `EntityTests` | add / get / has / remove and replacing components, deferred destroy (skipped by `Each`, invalid at once, destructors at `Flush`, stale handles after slot reuse), `Clear`; spawning, adding and destroying inside `Each`; churn of 400,000 spawns without leaks (destructor counts, bounded storage); movement, animation (an `OnFinished` that destroys); collisions (circle / circle normal and depth, circle / box, layer masks, destroyed and collider-less entities leaving the broadphase); `DrawSprites` order by layer and y, culling |
@@ -552,7 +554,7 @@ The camera has no interpolation between fixed steps: update it where the things 
 
 ## Assets (`Assets`)
 
-The asset manager loads textures, atlases, fonts, sounds and tilemaps by path and hands out
+The asset manager loads textures, atlases, fonts, sounds, tilemaps and dialogue decks by path and hands out
 `AssetHandle<T>`s. Application owns one (`GetAssets()`):
 
 ```cpp
@@ -583,9 +585,10 @@ GetAudio().Play(*m_Boom);
   - atlases: every sprite and animation shows that checkerboard;
   - fonts: every character is a hollow box;
   - sounds: a tenth of a second of silence;
-  - tilemaps: an empty map (no layers, nothing collides).
-- **Hot reload (debug builds).** Edit a PNG, an atlas JSON, a WAV/MP3, a font or a Tiled map
-  (or one of its tilesets) while the game runs, and it updates within about half a second. Release builds compile this out.
+  - tilemaps: an empty map (no layers, nothing collides);
+  - dialogue decks: a deck with no cards (starting it logs an error and does nothing).
+- **Hot reload (debug builds).** Edit a PNG, an atlas JSON, a WAV/MP3, a font, a Tiled map
+  (or one of its tilesets) or a dialogue deck while the game runs, and it updates within about half a second. Release builds compile this out.
 
 How hot reload works:
 
@@ -1819,6 +1822,111 @@ else if (loaded.Error != Emerald::SaveError::NotFound)
   `~/.local/share/Emerald/Sandbox/saves/`): saved when leaving Options, loaded at startup, except
   in `--frames` / `--replay` runs.
 
+## Dialogue (`Dialogue/`)
+
+Branching conversations, modeled on Jari Komppa's
+[DialogTree (D3)](https://github.com/jarikomppa/d3) and written fresh (no D3 code; D3 is released
+under the Unlicense, i.e. public domain). A conversation is a **deck** of **cards**; a card has text
+and answers that jump to other cards. Conditions read flags and numbers, effects change them. The
+logic (`Dialogue.h`) needs no GPU; `DialogueBox.h` draws it.
+
+```cpp
+// Members: one flag store for the whole game, the deck, a walker and a text box.
+Emerald::DialogueFlags m_Flags;
+Emerald::AssetHandle<Emerald::DialogueDeck> m_Deck =
+    GetAssets().Load<Emerald::DialogueDeck>("assets/dialogue/keeper.json"); // hot reloaded
+Emerald::Dialogue m_Talk{*m_Deck, m_Flags};
+Emerald::DialogueBox m_Box;
+
+m_Talk.Start(); // when the player talks to the keeper
+
+// OnUpdate: typewriter, answers, continue (mouse, keyboard and gamepad through the UI actions).
+m_Box.Update(m_Talk, Emerald::ReadUiInput(input, mouse), *m_Font, dt,
+             {.Position = {width * 0.5f, height - 16.0f}, .Width = 600.0f});
+// OnRender2D, in a pixel-space projection (the portrait is optional):
+m_Box.Draw(r, *m_Font, portraitSprite, 4.0f);
+
+// Saving: the flags and where the conversation is.
+m_Flags.Save(data, "flags"); // flags.flags = "has_key keeper.hello", flags.values = "coins=1"
+m_Talk.Save(data, "talk");   // talk.deck = "keeper", talk.card = "menu"
+```
+
+Without the box, the walker is a few calls: `GetText()`, `GetAnswerCount()` / `GetAnswer(i)`
+(the answers you may pick now), `Choose(i)`, `Advance()` (continue / close), `IsActive()`.
+
+**The file format** (JSON; ids are letters, digits and `_`):
+
+```json
+{
+  "id": "keeper",
+  "speaker": "Keeper",
+  "portrait": "hero_idle_0",
+  "start": "start",
+  "cards": [
+    { "id": "start", "answers": [
+        { "goto": "again", "if": "keeper.hello" },
+        { "goto": "hello" } ] },
+    { "id": "hello", "text": "Hello. This is a test conversation.", "next": "menu" },
+    { "id": "again", "text": "Hello again.", "next": "menu" },
+    { "id": "menu",
+      "text": ["What would you like to ask?", { "text": "The gate is open now.", "if": "gate_open" }],
+      "answers": [
+        { "text": "What is behind the gate?", "goto": "gate" },
+        { "text": "Can I have the key?", "goto": "key", "if": "knows_gate !has_key" },
+        { "text": "Anything else?", "goto": "coin", "once": true },
+        { "text": "Goodbye.", "goto": "bye" } ] },
+    { "id": "gate", "text": "Another room. The gate is locked.", "do": "knows_gate", "next": "menu" },
+    { "id": "key", "text": "Here is the key.", "do": "has_key", "next": "menu" },
+    { "id": "coin", "text": "Take this coin.", "do": "coins+=1", "next": "menu" },
+    { "id": "bye", "text": "Goodbye." }
+  ]
+}
+```
+
+- Deck: `id` (required), `start` (default: the first card), `speaker` / `portrait` (defaults for
+  every card), `data` (a free string for the game), `cards`.
+- Card: `id`, `text` (a string, or a list of strings and `{ "text", "if", "do" }` lines that show
+  only when their condition holds), `answers`, `next` (shorthand for one "continue" answer),
+  `speaker`, `portrait` (a name the game resolves, e.g. a sprite in its atlas), `if` + `do` (run
+  when the card is entered, if `if` holds; the card shows either way, as in D3), `data`.
+- Answer: `text`, `goto` (no goto ends the conversation), `if`, `do`, `once` (offered until picked
+  once), `data` (e.g. `"open_shop"` for the game to act on).
+
+**Flags and numbers.** One `DialogueFlags` store holds flags (on/off) and integer values (0 until
+set), shared by every deck and the game, so it can carry quest state ("quest.wolves.started",
+"wolves_killed"). Names are letters, digits, `_` and `.`.
+
+- Conditions (`if`, all terms must hold): `flag`, `!flag`, `name==3`, `name!=3`, `<`, `<=`, `>`,
+  `>=` (D3's `has:flag` / `not:flag` work too).
+- Effects (`do`, in order): `flag` or `set:flag`, `clear:flag`, `toggle:flag`, `name=3`,
+  `name+=3`, `name-=3`.
+- Entering a card sets `<deck>.<card>` ("was I there?", as D3 does); picking a `once` answer sets
+  `<deck>.<card>.a<N>`. Effects run when they happen; restoring a save doesn't run them again.
+
+**How a card plays:** answers whose `if` fails (or `once` answers already picked) are hidden. A
+card with text and answers with text asks; a card whose only answers have no text shows
+Continue; a card with text and no answers ends (Close). A card with neither text nor text answers
+jumps on at once through its first visible answer (pick "first time" vs "hello again" by flags); a
+card without text but with answers is a menu.
+
+**The text box** types the text out with a tween (`CharsPerSecond`, default 45). Accept (Enter /
+Space / South) or a click shows the whole text at once; then the answers are UI buttons (Up / Down
+/ d-pad, Accept or a click) with the first one focused, or Continue / Close. The actions are the
+UI's (`BindDefaultUiActions`), so they rebind like any other. `WrapText` breaks the lines.
+
+**Never crashes on bad data.** Broken JSON, duplicate or bad ids and terms it doesn't understand
+are logged and the file doesn't load (a placeholder deck with no cards, or the last good version
+on hot reload). An answer to a missing card is a warning at load and ends the conversation when
+picked. On hot reload, the open card shows its new text and answers; if it was removed, the
+conversation restarts at the start card (logged). Automatic cards that jump in a circle stop after
+`kMaxAutoSteps`.
+
+The sandbox's Dialogue scene (`--dialogue`, or Dialogue in the title menu) talks to a keeper
+(`sandbox/assets/dialogue/keeper.json`): branching answers, "Can I have the key?" only after asking
+about the gate, a once-only answer, and F5 / F9 (or the panel's buttons) to save and load the flags
+and the current card, also mid-conversation (`dialogue.sav` next to `settings.sav`). The top right
+shows the flag store. Edit `keeper.json` while it runs (debug build) to see hot reload.
+
 ## Fixed-timestep update
 
 `OnFixedUpdate(f32 dt)` runs at `ApplicationSpec::FixedUpdateRate` (default **120 Hz**) with a
@@ -1999,10 +2107,10 @@ It is always built in Release and lives in `build/_shadercross`, which every pre
 ## Project layout
 
 ```
-include/Emerald/   Public engine headers (Core/, Input/, Audio/, Renderer/, Particles/, Physics/, Tilemap/, Scene/, Entity/, Assets/, Tween/, UI/, Math/, Memory/)
+include/Emerald/   Public engine headers (Core/, Input/, Audio/, Renderer/, Particles/, Physics/, Tilemap/, Scene/, Entity/, Assets/, Tween/, UI/, Dialogue/, Save/, Math/, Memory/)
 src/               Engine implementation
 shaders/           The engine's HLSL shaders (Renderer2D lines, Sprite, the CRT post-process; compiled at build time for every app)
-sandbox/           Example application (src/, its own shaders/, assets/ for the demo font, hero sheet and tilemap room)
+sandbox/           Example application (src/, its own shaders/, assets/ for the demo font, hero sheet, tilemap room and dialogue deck)
 tests/             Unit tests (ctest)
 bench/             Math, particle, collision and entity micro-benchmarks (EMERALD_BUILD_BENCH)
 cmake/             Dependency setup (FetchContent), shader compilation (Shaders.cmake) and AddressSanitizer flags (Sanitizers.cmake)

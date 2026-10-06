@@ -24,7 +24,7 @@ namespace Emerald {
 class Assets;
 class ThreadPool;
 
-enum class AssetType : u8 { Texture, Atlas, Font, Sound, Tilemap };
+enum class AssetType : u8 { Texture, Atlas, Font, Sound, Tilemap, Dialogue };
 [[nodiscard]] const char* GetAssetTypeName(AssetType type);
 
 // What each asset type is loaded with: Load<T>(path, options).
@@ -48,6 +48,10 @@ template <> struct AssetTraits<Sound> {
 template <> struct AssetTraits<Tilemap> { // a Tiled .tmj; the options are for its images
     static constexpr AssetType Type = AssetType::Tilemap;
     using Options = TextureOptions;
+};
+template <> struct AssetTraits<DialogueDeck> { // a dialogue .json (Dialogue.h)
+    static constexpr AssetType Type = AssetType::Dialogue;
+    struct Options {};
 };
 
 using AssetId = u32;
@@ -96,14 +100,15 @@ struct AssetInfo {
     bool Placeholder = false;
 };
 
-// The asset manager: loads textures, atlases, fonts, sounds and tilemaps by path, each file only
-// once.
+// The asset manager: loads textures, atlases, fonts, sounds, tilemaps and dialogue decks by path,
+// each file only once.
 //
 //   AssetHandle<Texture> ship = GetAssets().Load<Texture>("assets/ship.png");
 //   r.DrawSprite(*ship, position);
 //   AssetHandle<Font> font = GetAssets().Load<Font>("assets/ui.ttf", {.Size = 16.0f});
 //   GetAudio().Play(*GetAssets().Load<Sound>("assets/boom.wav"));
 //   AssetHandle<Tilemap> map = GetAssets().Load<Tilemap>("assets/level1.tmj");
+//   AssetHandle<DialogueDeck> npc = GetAssets().Load<DialogueDeck>("assets/dialogue/npc.json");
 //
 // - Relative paths are relative to the root, by default Paths::GetBasePath() (the folder of the
 //   executable, where the build copies the assets).
@@ -160,8 +165,9 @@ public:
 private:
     template <typename U> friend class AssetHandle;
 
-    using Object = std::variant<Texture, TextureAtlas, Font, Sound, Tilemap>;
-    using Options = std::variant<TextureOptions, FontOptions, AssetTraits<Sound>::Options>;
+    using Object = std::variant<Texture, TextureAtlas, Font, Sound, Tilemap, DialogueDeck>;
+    using Options = std::variant<TextureOptions, FontOptions, AssetTraits<Sound>::Options,
+                                 AssetTraits<DialogueDeck>::Options>;
     using FileTime = std::optional<std::filesystem::file_time_type>; // nullopt: no such file
 
     struct Entry {

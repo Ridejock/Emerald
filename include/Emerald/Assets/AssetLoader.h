@@ -7,6 +7,7 @@
 
 #include "Emerald/Assets/Image.h"
 #include "Emerald/Audio/Sound.h"
+#include "Emerald/Dialogue/Dialogue.h"
 #include "Emerald/Renderer/Font.h"
 #include "Emerald/Renderer/Texture.h"
 #include "Emerald/Renderer/TextureAtlas.h"
@@ -43,6 +44,14 @@ public:
     [[nodiscard]] virtual Sound MakePlaceholderSound();
     // An empty map (no layers, no size), the same for every loader.
     [[nodiscard]] virtual Tilemap MakePlaceholderTilemap() { return {}; }
+    // Dialogue decks are plain data (no GPU): every loader reads them the same way.
+    [[nodiscard]] virtual std::optional<DialogueDeck>
+    LoadDialogueDeck(const std::filesystem::path& file)
+    {
+        return LoadDialogue(file);
+    }
+    // A deck without cards: starting it logs "no card" and ends at once.
+    [[nodiscard]] virtual DialogueDeck MakePlaceholderDialogue() { return {}; }
 };
 
 // The real loader: files from disk, textures uploaded to `device`.

@@ -2,6 +2,7 @@
 // objects and properties), flip bits, collision queries and MoveAndCollide, errors for missing
 // files and bad data, and hot reload through the asset manager. No GPU needed.
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <filesystem>
@@ -11,9 +12,11 @@
 #include <sstream>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include <Emerald/Assets/Assets.h>
 #include <Emerald/Core/Log.h>
+#include <Emerald/Renderer/Renderer2D.h>
 #include <Emerald/Tilemap/Tilemap.h>
 
 #include "Test.h"
@@ -357,6 +360,61 @@ TEST(TilemapErrorsAreLoggedNotFatal)
     // A broken external tileset fails the map too.
     WriteText(t.Dir / "dungeon.tsj", "{\"name\": \"dungeon\"}");
     CHECK(!Tilemap::Load(nullptr, t.Dir / "room.tmj"));
+}
+
+// A tileset's "normalMap" property: loaded next to the sheet, watched for hot reload, passed
+// with the tiles when lighting is on; a missing or mismatched image only loses the normals.
+TEST(TilemapTilesetNormalMap)
+{
+    TempMaps t;
+    std::string tsj = ReadText(t.Dir / "dungeon.tsj");
+    const std::optional<std::pair<usize, usize>> name = FindLoose(tsj, "\"name\": \"dungeon\",");
+    CHECK(name.has_value());
+    if (!name)
+        return;
+    tsj.insert(name->first + name->second,
+               " \"properties\": [{\"name\": \"normalMap\", \"type\": \"string\", "
+               "\"value\": \"dungeon_n.png\"}],");
+    WriteText(t.Dir / "dungeon.tsj", tsj);
+    const auto dungeon = [&] { return Tilemap::Load(nullptr, t.Dir / "room.tmj"); };
+
+    // Not there (yet): the map loads without it, and watches for it.
+    std::optional<Tilemap> map = dungeon();
+    CHECK(map && map->GetTilesets()[0].NormalImage == (t.Dir / "dungeon_n.png").lexically_normal());
+    CHECK(map && !map->GetTilesets()[0].NormalSheet);
+    const auto watched = [&](const Tilemap& m) {
+        const std::vector<fs::path>& files = m.GetFiles();
+        return std::find(files.begin(), files.end(), m.GetTilesets()[0].NormalImage) != files.end();
+    };
+    CHECK(map && watched(*map));
+
+    // The wrong size: ignored.
+    fs::copy_file(t.Dir / "props.png", t.Dir / "dungeon_n.png");
+    map = dungeon();
+    CHECK(map && !map->GetTilesets()[0].NormalSheet);
+
+    // A matching image: drawn with the tiles while lighting is on, not without.
+    fs::copy_file(t.Dir / "dungeon.png", t.Dir / "dungeon_n.png",
+                  fs::copy_options::overwrite_existing);
+    map = dungeon();
+    if (!map || !map->GetTilesets()[0].NormalSheet) {
+        CHECK(false);
+        return;
+    }
+    const Texture& normals = *map->GetTilesets()[0].NormalSheet;
+    CHECK(normals.GetWidth() == 128 && normals.GetHeight() == 32);
+    const Rect2D view{.Min = {0.0f, 0.0f}, .Max = {64.0f, 64.0f}};
+    Renderer2D r;
+    r.SetLightingEnabled(true);
+    r.Begin(Mat4::Identity());
+    CHECK(map->DrawLayer(r, 0, view) > 0);
+    r.SetLightingEnabled(false);
+    map->DrawLayer(r, 0, view);
+    r.End();
+    const auto commands = r.GetCommands();
+    CHECK(commands.size() == 2);
+    CHECK(commands.size() == 2 && commands[0].Lit && commands[0].NormalId == normals.GetId());
+    CHECK(commands.size() == 2 && !commands[1].Lit && commands[1].NormalId == 0);
 }
 
 // Through the asset manager: a handle, a placeholder for a missing map, and (debug builds) hot

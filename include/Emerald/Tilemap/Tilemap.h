@@ -114,6 +114,13 @@ struct Tileset {
     std::unique_ptr<Texture> Sheet; // on the heap so its address survives moves
     std::vector<TileInfo> Tiles;    // TileCount entries, by tile index
     Properties Props;
+    // Optional normal map for lit drawing (Renderer2D lighting): the tileset's string property
+    // "normalMap", an image path relative to the tileset file, laid out like Image. Tilemap
+    // drawing passes it with the tiles. Flipped tiles sample it mirrored but keep its X as is,
+    // so their bumps catch the light from the wrong side: for lit tiles, put mirrored copies in
+    // the tileset instead of flipping.
+    std::filesystem::path NormalImage;
+    std::unique_ptr<Texture> NormalSheet; // null without a (usable) normal map
 
     // The tile's region of the image; `index` is the GID minus FirstGid.
     [[nodiscard]] Sprite GetSprite(u32 index) const;

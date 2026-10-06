@@ -181,6 +181,20 @@ struct TilemapLoader {
         return false;
     }
 
+    // An image as a texture, or with no device just its size; null if it cannot be read.
+    std::unique_ptr<Texture> LoadImage(const fs::path& path) const
+    {
+        if (Device) {
+            std::optional<Texture> texture = Texture::Load(Device, path, Options);
+            return texture ? std::make_unique<Texture>(std::move(*texture)) : nullptr;
+        }
+        const std::optional<Image> pixels = Image::LoadFromFile(path);
+        if (!pixels)
+            return nullptr;
+        return std::make_unique<Texture>(Texture::CreateWithoutGpu(
+            static_cast<u32>(pixels->Width), static_cast<u32>(pixels->Height)));
+    }
+
     // Tiled's [{"name", "type", "value"}] list.
     void ReadProperties(const Json& owner, Properties& out)
     {
@@ -225,19 +239,23 @@ struct TilemapLoader {
             return Fail("tileset '{}' has no single image (image collections are not supported)",
                         set.Name);
         set.Image = (dir / image).lexically_normal();
+        set.Sheet = LoadImage(set.Image);
+        if (!set.Sheet)
+            return Fail("cannot load tileset image {}", set.Image.string());
 
-        // The image: a texture, or with no device just its size.
-        if (Device) {
-            std::optional<Texture> texture = Texture::Load(Device, set.Image, Options);
-            if (!texture)
-                return Fail("cannot load tileset image {}", set.Image.string());
-            set.Sheet = std::make_unique<Texture>(std::move(*texture));
-        } else {
-            const std::optional<Image> pixels = Image::LoadFromFile(set.Image);
-            if (!pixels)
-                return Fail("cannot load tileset image {}", set.Image.string());
-            set.Sheet = std::make_unique<Texture>(Texture::CreateWithoutGpu(
-                static_cast<u32>(pixels->Width), static_cast<u32>(pixels->Height)));
+        // An optional normal map for lit drawing: an image laid out like the tileset's. Without
+        // it (or if it is unusable) the tiles are still drawn, lit as flat.
+        if (const std::string_view normals = set.Props.GetString("normalMap"); !normals.empty()) {
+            set.NormalImage = (dir / fs::path(normals)).lexically_normal();
+            set.NormalSheet = LoadImage(set.NormalImage);
+            if (!set.NormalSheet)
+                EM_CORE_WARN("Tilemap: {}: tileset '{}': cannot load normal map {}", File.string(),
+                             set.Name, set.NormalImage.string());
+            else if (set.NormalSheet->GetSize() != set.Sheet->GetSize()) {
+                EM_CORE_WARN("Tilemap: {}: tileset '{}': normal map {} is not the size of {}",
+                             File.string(), set.Name, set.NormalImage.string(), set.Image.string());
+                set.NormalSheet.reset();
+            }
         }
 
         // Columns and count from the image if the file leaves them out.
@@ -313,6 +331,8 @@ struct TilemapLoader {
                 Map.m_Files.push_back(set.Source);
             }
             Map.m_Files.push_back(set.Image);
+            if (!set.NormalImage.empty()) // watched even when missing: it may be added later
+                Map.m_Files.push_back(set.NormalImage);
             Map.m_Tilesets.push_back(std::move(set));
         }
         std::sort(Map.m_Tilesets.begin(), Map.m_Tilesets.end(),
@@ -762,20 +782,23 @@ u32 Tilemap::DrawLayer(Renderer2D& r, usize index, const Rect2D& view, const Vec
                                       static_cast<f32>((y + 1) * m_TileSize.y) - size.y) +
                                  layer.Offset + set->DrawOffset;
             const TileTransform t = GetTileTransform(cell);
+            const Texture* normals = set->NormalSheet.get(); // used only while lighting is on
             if (t.Rotation == 0.0f)
                 r.DrawSprite(sprite, topLeft,
                              {.Origin = {0.0f, 0.0f},
                               .Tint = color,
                               .FlipX = t.FlipX,
                               .FlipY = t.FlipY,
-                              .PixelSnap = true});
+                              .PixelSnap = true,
+                              .NormalMap = normals});
             else
                 r.DrawSprite(sprite, topLeft + size * 0.5f,
                              {.Rotation = t.Rotation,
                               .Tint = color,
                               .FlipX = t.FlipX,
                               .FlipY = t.FlipY,
-                              .PixelSnap = true});
+                              .PixelSnap = true,
+                              .NormalMap = normals});
             ++drawn;
         }
     }

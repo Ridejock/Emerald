@@ -302,7 +302,7 @@ structure-of-arrays layout instead (all x together, all y together).
 | `ParticleTests` | particle spawning (shapes, ranges, base velocity), capacity limit, drag/gravity step, swap-remove, continuous rate, color/size fade when drawing, scalar and SSE updates agreeing over 240 steps |
 | `CollisionTests` | circle/circle, circle/AABB, AABB/AABB and SAT polygon contacts (normals, depths, touching = none, concentric circles, center inside a box, containment, winding, degenerate input); raycasts against circles, boxes and polygons (hits, misses, parallel, max distance, starting inside); `SpatialHash` insert/update/remove/query/pairs, wrap-around, brute-force equivalence on random data |
 | `AssetTests` | asset manager bookkeeping with a GPU-less loader: dedupe (same path, `..` paths, absolute paths; other options or types are other assets), handle copy/move/reset reference counts, unloading on `Update` and reviving before it, placeholders for missing and broken files (texture, atlas, font, sound), hot reload in place (textures, atlas image + JSON with sprites and animators keeping their pointers, fonts, real WAVs, dialogue decks with a conversation in progress, particle effects keeping their config's address), broken reloads keeping the old version, placeholders replaced when the file appears, reloads through `Update` on the thread pool within a second |
-| `TilemapTests` | the sample room from Tiled JSON: layer order and kinds, external `.tsj` and embedded tilesets (GID lookup, sprite regions), objects (shapes, class, position, size, properties), the collision grid from tile properties and classes (non-colliding layer), tile ranges with touching edges, `OverlapsSolid`, `MoveAndCollide` (flush stops, no tunneling, sliding along walls, one-way from above / below / inside); all 8 flip-bit combinations against Tiled's transform; missing and broken files (JSON, sizes, infinite, isometric, missing/XML tileset, missing image, base64, bad cells) logged and failing cleanly, unknown tile ids left empty; through the asset manager: placeholder for a missing map, hot reload of the map and of its external tileset, broken edits keeping the last version |
+| `TilemapTests` | the sample room from Tiled JSON: layer order and kinds, external `.tsj` and embedded tilesets (GID lookup, sprite regions), objects (shapes, class, position, size, properties), the collision grid from tile properties and classes (non-colliding layer), tile ranges with touching edges, `OverlapsSolid`, `MoveAndCollide` (flush stops, no tunneling, sliding along walls, one-way from above / below / inside); all 8 flip-bit combinations against Tiled's transform; missing and broken files (JSON, sizes, infinite, isometric, missing/XML tileset, missing image, base64, bad cells) logged and failing cleanly, unknown tile ids left empty; a tileset's `normalMap` (missing or the wrong size: ignored; watched; drawn with the tiles only while lighting is on); through the asset manager: placeholder for a missing map, hot reload of the map and of its external tileset, broken edits keeping the last version |
 | `SceneTests` | the scene stack without a GPU: requests applied only at the end of `Update`, hook order for push / pop / replace / clear / `ReplaceAll` (pause, resume, exit, destruction), requests from inside a scene's own hooks, `DrawBelow` / `UpdateBelow` chains (which scenes draw and update, in which order), fade timing (change at full cover, then uncover, requests queued meanwhile), fading into an empty stack, custom transition `Draw`, input blocked below the top and during transitions (and the app's own block kept), empty-stack pops, exiting every scene on destruction |
 | `EntityTests` | add / get / has / remove and replacing components, deferred destroy (skipped by `Each`, invalid at once, destructors at `Flush`, stale handles after slot reuse), `Clear`; spawning, adding and destroying inside `Each`; churn of 400,000 spawns without leaks (destructor counts, bounded storage); movement, animation (an `OnFinished` that destroys); collisions (circle / circle normal and depth, circle / box, layer masks, destroyed and collider-less entities leaving the broadphase); `DrawSprites` order by layer and y, culling |
 | `PlatformerTests` | slope tiles from the tileset (heights, flipped cells mirrored, floor heights, never blocking sideways); walking right and left over 45 and 22.5 degree hills grounded every step with the feet on the floor and always moving (no bounce, no sticking); landing on a slope and jumping along it; jumping up through a one-way platform and landing on it, down + jump dropping through to the ground, down + jump on solid ground being a jump; coyote time (in time, too late, off, longer) and the jump buffer (pressed early enough, too early, off, longer); variable jump height; walls and ceilings; a scripted 50 s run on the sandbox level replayed twice with the same positions bit for bit |
@@ -1092,7 +1092,8 @@ What the loader reads:
   warning.
 - **Tilesets:** embedded in the map or external `.tsj` files (a `.tsx` gives an error saying to
   save it as JSON). One image per tileset, with margin, spacing and drawing offset. The images
-  load as textures relative to the file that names them.
+  load as textures relative to the file that names them. A string property `normalMap` adds a
+  normal map for lighting (`Tileset::NormalSheet`; see Lighting below).
 - **Objects** (`MapLayer::Objects`, `FindObject(name)`): `Name`, `Type` (Tiled's "Class"),
   `Position` and `Size` in map pixels with the position at the top-left (Tiled puts tile objects
   at the bottom-left, so the loader moves them), `Rotation`, `Shape` (rectangle, point, ellipse,
@@ -1134,9 +1135,9 @@ put characters between layers, call `DrawLayer` per layer (the sandbox draws the
 "Objects" layer is).
 
 **Hot reload.** A tilemap asset watches the `.tmj`, its external `.tsj` files and every tileset
-image. Saving any of them in Tiled (or an image editor) reloads the whole map within about half a
-second. Read layers, objects and tilesets through the handle each time instead of keeping
-pointers into them.
+image (and normal map). Saving any of them in Tiled (or an image editor) reloads the whole map
+within about half a second. Read layers, objects and tilesets through the handle each time
+instead of keeping pointers into them.
 
 **The sandbox's tilemap room.** Pick it on the title screen, press T in the camera demo, or start
 the sandbox with `--tilemap`:
@@ -1774,9 +1775,12 @@ SetCrtEnabled(true); // CRT is one effect in the same chain; reorder with Move
 ```
 
 Up to `kMaxLights` (8) lights are packed as fragment uniforms (Lambert + distance falloff; spot =
-point + cone). The sandbox's Lighting scene (`--lighting`, or the title menu) shows a brick floor
-and props with procedural normals, a warm point light, a spot that follows the mouse, and Tint +
-CRT in the chain.
+point + cone). Tilemaps take a normal map per tileset: a string property `normalMap` on the
+tileset in Tiled, an image laid out like the tileset's (path relative to the tileset file); tile
+drawing passes it along, and hot reload watches it. Flipped tiles keep the normal map's X, so lit
+tiles that face both ways look best as mirrored copies in the tileset. The sandbox's Lighting
+scene (`--lighting`, or the title menu) shows a brick floor and props with procedural normals, a
+warm point light, a spot that follows the mouse, and Tint + CRT in the chain.
 
 ## Audio
 

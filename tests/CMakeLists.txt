@@ -152,3 +152,9 @@ add_executable(EmeraldAudioExtrasTests TestMain.cpp AudioExtrasTests.cpp)
 target_link_libraries(EmeraldAudioExtrasTests PRIVATE Emerald::Emerald)
 emerald_set_warnings(EmeraldAudioExtrasTests)
 add_test(NAME AudioExtrasTests COMMAND EmeraldAudioExtrasTests)
+
+# The versioned save system: format, migrations, atomic writes, slots (temp folder, no device).
+add_executable(EmeraldSaveTests TestMain.cpp SaveTests.cpp)
+target_link_libraries(EmeraldSaveTests PRIVATE Emerald::Emerald)
+emerald_set_warnings(EmeraldSaveTests)
+add_test(NAME SaveTests COMMAND EmeraldSaveTests)

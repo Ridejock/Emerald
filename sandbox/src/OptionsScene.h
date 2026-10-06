@@ -3,7 +3,8 @@
 // The options screen, built from the UI widgets (Emerald/UI): an overlay over the scene that
 // pushed it (title or pause). Volume sliders, fullscreen and CRT toggles, a highlight color
 // choice, the controls, and Defaults / Back. Mouse, keyboard and gamepad all work; Backspace / M /
-// East (the UiBack action) or "Back" leave.
+// East (the UiBack action) or "Back" leave; leaving saves the options for the next run
+// (SandboxShared::SaveSettings, through the save system).
 
 #include <Emerald/Emerald.h>
 
@@ -14,6 +15,7 @@ public:
     explicit OptionsScene(SandboxShared& shared) : Scene("Options"), m_Shared(shared)
     {
         DrawBelow = true;
+        m_Ui.GetStyle().Highlight = kHighlightColors[m_Shared.Highlight];
     }
 
     void OnUpdate(f32 dt) override
@@ -44,11 +46,8 @@ public:
         bool crt = app.IsCrtEnabled();
         if (m_Ui.Toggle("CRT effect", &crt))
             app.SetCrtEnabled(crt);
-        if (m_Ui.Choice("Highlight", &m_Color, {"Emerald", "Gold", "Sky"})) {
-            constexpr Emerald::Vec4 kColors[] = {
-                {0.18f, 0.8f, 0.44f, 1.0f}, {1.0f, 0.75f, 0.2f, 1.0f}, {0.35f, 0.65f, 1.0f, 1.0f}};
-            m_Ui.GetStyle().Highlight = kColors[m_Color];
-        }
+        if (m_Ui.Choice("Highlight", &m_Shared.Highlight, {"Emerald", "Gold", "Sky"}))
+            m_Ui.GetStyle().Highlight = kHighlightColors[m_Shared.Highlight];
         m_Ui.Space(8.0f);
         m_Ui.Label("CONTROLS", TextAlign::Center);
         m_Ui.Label("Move   arrows / WASD / d-pad");
@@ -75,6 +74,7 @@ public:
         }
         if ((m_Ui.Button("Back") || m_Ui.WasBackPressed()) && !m_Leaving) {
             m_Leaving = true;
+            m_Shared.SaveSettings(); // kept for the next run (Shared.h)
             GetStack()->Pop();
         }
         m_Ui.EndPanel();
@@ -95,6 +95,5 @@ public:
 private:
     SandboxShared& m_Shared;
     Emerald::Ui m_Ui;
-    i32 m_Color = 0;
     bool m_Leaving = false; // the pop happens at the end of the frame
 };

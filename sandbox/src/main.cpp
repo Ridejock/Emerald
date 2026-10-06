@@ -161,6 +161,7 @@ protected:
         RunThreadPoolDemo();
         BindInput();
         LoadAssets();
+        m_Shared.LoadSettings(); // the options from the last run (Shared.h)
 
         // The scenes are made here, so they can reach each other through m_Shared.Make without
         // including each other.

@@ -199,6 +199,8 @@ Done when:
 - Multiple slots; round-trip and migration unit tests
 - Rock Blaster's settings/high scores could use it
 
+**Status:** implemented, in review (`Save/Save.h`: `SaveData` key/value text format with a CRC-32, `SaveSystem` slots, migrations, atomic temp + rename writes with a `.bak`; `SaveTests`; the sandbox's Options screen persists through it).
+
 ### ImGui editor tools ([#16](https://github.com/Ridejock/Emerald/issues/16))
 
 Debug-build editor panels on top of the ImGui overlay: an entity inspector, a particle emitter editor with live preview and save to file, and live tweak variables.

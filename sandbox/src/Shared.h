@@ -6,6 +6,7 @@
 // SwarmScene.h, PlatformerScene.h, PauseScene.h, OptionsScene.h and LightingScene.h; main.cpp
 // creates them (SandboxShared::Make) and runs the global parts.
 
+#include <algorithm>
 #include <filesystem>
 #include <functional>
 #include <memory>
@@ -51,6 +52,47 @@ struct SandboxShared {
     std::function<std::unique_ptr<Emerald::Scene>(SceneId)> Make; // set by main.cpp
     // The options screen's "Effects volume": scales the blips.
     f32 EffectsVolume = 1.0f;
+    // The options screen's highlight color: an index into kHighlightColors.
+    i32 Highlight = 0;
+    // The options are kept between runs in <per-user folder>/saves/settings.sav (Save.h).
+    Emerald::SaveSystem Saves{Emerald::SaveSystem::DefaultFolder("Emerald", "Sandbox"), 1};
+
+    // Applies the saved options. Skipped for automated runs (--frames, --replay), so their
+    // screenshots don't depend on what was picked last time.
+    void LoadSettings()
+    {
+        const Emerald::DevOptions& dev = App.GetDevOptions();
+        if (dev.Frames > 0 || !dev.Replay.empty())
+            return;
+        const Emerald::LoadResult loaded = Saves.Load("settings");
+        if (!loaded)
+            return; // first run, or a damaged file (logged): keep the defaults
+        const Emerald::SaveData& data = loaded.Data;
+        Emerald::Audio& audio = App.GetAudio();
+        audio.SetMasterVolume(data.GetFloat("audio.master", 1.0f));
+        audio.SetGroupVolume(Emerald::AudioGroup::Music, data.GetFloat("audio.music_group", 1.0f));
+        audio.SetMusicVolume(data.GetFloat("audio.music_track", 1.0f));
+        EffectsVolume = data.GetFloat("audio.effects", 1.0f);
+        App.SetCrtEnabled(data.GetBool("video.crt", App.IsCrtEnabled()));
+        if (data.GetBool("video.fullscreen", false))
+            App.GetWindow().SetFullscreen(true);
+        Highlight = std::clamp(data.GetInt("ui.highlight", 0), 0, 2);
+        EM_INFO("Loaded the saved options (data version {})", loaded.FileVersion);
+    }
+
+    void SaveSettings()
+    {
+        Emerald::SaveData data;
+        const Emerald::Audio& audio = App.GetAudio();
+        data.SetFloat("audio.master", audio.GetMasterVolume());
+        data.SetFloat("audio.music_group", audio.GetGroupVolume(Emerald::AudioGroup::Music));
+        data.SetFloat("audio.music_track", audio.GetMusicVolume());
+        data.SetFloat("audio.effects", EffectsVolume);
+        data.SetBool("video.crt", App.IsCrtEnabled());
+        data.SetBool("video.fullscreen", App.GetWindow().IsFullscreen());
+        data.SetInt("ui.highlight", Highlight);
+        Saves.Save("settings", data, "Sandbox options"); // logs if it fails
+    }
 
     [[nodiscard]] bool HasFonts() const { return PixelFont && SmallFont && SmoothFont; }
     // Window size in window coordinates as floats: the pixel-space projections use it.
@@ -62,6 +104,10 @@ struct SandboxShared {
                 static_cast<f32>(App.GetRenderer().GetFrameHeight())};
     }
 };
+
+// The options screen's highlight color choices.
+inline constexpr Emerald::Vec4 kHighlightColors[] = {
+    {0.18f, 0.8f, 0.44f, 1.0f}, {1.0f, 0.75f, 0.2f, 1.0f}, {0.35f, 0.65f, 1.0f, 1.0f}};
 
 // The sandbox's transitions: a plain fade, and a custom one (horizontal blinds closing from
 // alternate sides) drawn by the Transition::Draw hook.

@@ -114,6 +114,7 @@ add_library(Emerald STATIC
     src/Audio/Synth.cpp
     src/Audio/Sound.cpp
     src/Audio/Music.cpp
+    src/Save/Save.cpp
     src/Vendor/stb_image.cpp
     src/Vendor/stb_image_write.cpp
     src/Vendor/stb_truetype.cpp

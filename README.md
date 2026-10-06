@@ -291,6 +291,7 @@ structure-of-arrays layout instead (all x together, all y together).
 | `ThreadPoolTests` | futures return values, exceptions through futures, `WaitIdle`, shutdown with pending tasks, `ParallelFor` covers every index once |
 | `MemoryTests` | frame arena reset/alignment/overflow, many resets stay in the buffer, pmr containers use their resource, tracking counts, pools (incl. the synchronized pool from many threads) |
 | `InputTests` | key down/pressed/released edges, taps within one frame, fixed-step edges, `ReleaseAll`; actions with several keys, action taps across fixed steps, axes, rebinding; gamepads (synthetic pads, no hardware): deadzone math (per-axis, radial), trigger/stick virtual buttons with hysteresis, button edges across fixed steps, several pads, labels, gamepad bindings and largest-magnitude axes; `FixedTimestep` accumulation, average rate at 144 fps / 120 Hz, slow-frame clamp |
+| `SaveTests` | save values (types, fallbacks, escaping, key checks, rename); the text format round trip and hand-written files (no checksum, CRLF); save/load on disk, replacing a save and the `.bak`; a v1 -> v3 migration chain (order, partial chains, a missing step); newer data versions refused; every truncated prefix and a flipped byte rejected; falling back to the backup; a failed write (temp path blocked) and a leftover partial temp file keeping the old save; independent slots with listing, metadata, delete and bad names; a high-score table |
 | `AudioExtrasTests` | spatial attenuation/pan math; mixer groups mute and volume ramps; spatial voices following the listener; MP3/OGG `MusicStream` constant ring memory; crossfade between two tracks; file open for sandbox OGG loops |
 | `AudioTests` | MP3 decoding from an embedded 809-byte file (length, level, channels, pitch after resampling), garbage rejected, WAV loading, `LoadSound` by extension incl. unknown/missing files, `MakeSound` conversion; mixer handles (stale handles, reuse, releasing samples), fade-in/out and volume ramps without clicks, looping, pitch, pan, master volume/mute, voice stealing, soft limiter; synth waveforms (length, no NaN, peak), envelopes, lowpass |
 | `Renderer2DTests` | `Renderer2D` batching and shape generation on the CPU (no GPU), `Transform2D`, color packing; sprite quads (UVs, rotation, origin, flips, pixel snap), draw order across lines/sprites/texture switches and blend modes, atlas JSON parsing; `Camera2D` (pixel-space default, letterboxing, zoom/rotation, `ScreenToWorld` round trips against the GPU matrix, bounds clamp, follow dead zone and step-size independent damping, shake decay); atlas `"animations"` parsing (patterns, lists, durations, modes, missing frames reported), `Animator` loop / once / ping-pong timing at several dt, speed, stop/resume, finish and loop events, drawing a frame with flip and tint; `CrtEffect` afterglow decay, uniforms and bloom spread; `--gpu` parsing and driver names |
@@ -1758,6 +1759,65 @@ audio.CrossfadeMusic("assets/audio/loop_b.ogg", 800.0f);
   frame). Call `Audio` from the main thread only.
 - Without an audio device the app runs normally and `Play` returns an invalid handle (a warning is
   logged). `SDL_AUDIO_DRIVER=disk` writes the output to a raw file instead (handy for testing).
+
+## Saves (`Save/Save.h`)
+
+Versioned save slots in the per-user folder: one small text file per slot, migrations from older
+data versions, and atomic writes.
+
+```cpp
+// Data version 2 of the game; the folder is %APPDATA%\Ridejock\RockBlaster\saves on Windows.
+Emerald::SaveSystem saves(Emerald::SaveSystem::DefaultFolder("Ridejock", "RockBlaster"), 2);
+saves.AddMigration(1, [](Emerald::SaveData& d) { d.Rename("volume", "audio.master"); }); // v1 -> v2
+
+Emerald::SaveData settings;
+settings.SetFloat("audio.master", 0.8f);
+settings.SetBool("video.fullscreen", true);
+saves.Save("settings", settings);
+
+if (Emerald::LoadResult loaded = saves.Load("settings"))
+    volume = loaded.Data.GetFloat("audio.master", 1.0f); // the fallback if the key is missing
+else if (loaded.Error != Emerald::SaveError::NotFound)
+    EM_WARN("Settings: {}", loaded.Message);
+```
+
+- **Data**: `SaveData` maps keys (letters, digits, `. _ -`) to ints (`i32`), floats, bools and
+  strings. Getters take a fallback, so a new key read from an old save just gets its default. A
+  table is numbered keys: `scores.count`, `scores.0.name`, `scores.0.points`, ...
+- **Slots**: any name of letters, digits, `_` and `-` (`settings`, `highscores`, `slot_1`), stored
+  as `<folder>/<name>.sav`. `ListSlots()` returns every slot with `Exists`, `Valid`, `Version`,
+  `SavedAt` (Unix seconds) and the `Summary` passed to `Save`; `GetInfo`, `Exists`, `Delete`.
+- **Format**: text, keys sorted, one value per line (newlines and backslashes escaped):
+
+  ```
+  EMERALD-SAVE 1
+  version = 1
+  saved = 1791297947
+  summary = second
+  crc32 = eabaa043
+  ---
+  audio.master = 0.25
+  player.name = Ervin
+  video.fullscreen = true
+  ```
+
+  `EMERALD-SAVE 1` is the container format, `version` the game's data version. The CRC-32 covers
+  everything after `---`, so truncated or damaged files are detected. Delete the `crc32` line to
+  edit a save by hand.
+- **Versions**: `AddMigration(n, f)` registers the step n -> n+1; `Load` runs the chain from the
+  file's version up to the current one (`LoadResult::FileVersion` tells where it started). A save
+  from a newer version fails with `SaveError::TooNew`, a gap in the chain with `NoMigration`; the
+  data is never half-migrated. `Load` doesn't write the upgraded save back; save it when you like.
+- **Atomic writes**: `Save` writes `<name>.sav.tmp`, flushes it to the disk (`SDL_FlushIO`:
+  `FlushFileBuffers` / `fsync`), then renames it over `<name>.sav` (`SDL_RenamePath`:
+  `MoveFileExW(MOVEFILE_REPLACE_EXISTING)` on Windows, `rename()` elsewhere). If anything fails,
+  `Save` returns false (logged) and the old file is untouched. The previous good save is kept as
+  `<name>.sav.bak`, and `Load` falls back to it (`FromBackup`) when `<name>.sav` is damaged.
+- `SaveSystem::Serialize` / `Parse` work on strings, for tests and tools.
+- The sandbox keeps its Options screen (volumes, CRT, fullscreen, highlight color) in
+  `settings.sav` under `%APPDATA%\Emerald\Sandbox\saves\` (Linux:
+  `~/.local/share/Emerald/Sandbox/saves/`): saved when leaving Options, loaded at startup, except
+  in `--frames` / `--replay` runs.
 
 ## Fixed-timestep update
 

@@ -7,7 +7,8 @@
 #
 # Output: <build>/bin/shadercross[.exe] with dxcompiler + dxil (.dll / .so / .dylib) copied next
 # to it. Build the `shadercross_bundle` target (Shaders.cmake does): it builds the tool, copies
-# the DXC libraries beside it and smoke-tests HLSL -> SPIR-V / DXIL.
+# the DXC libraries beside it, smoke-tests HLSL -> SPIR-V / DXIL and then writes the
+# bin/emerald-shadercross.ok marker that lets Emerald reuse the folder without rebuilding.
 cmake_minimum_required(VERSION 3.24)
 project(EmeraldShadercross LANGUAGES C CXX)
 
@@ -84,6 +85,8 @@ add_custom_target(shadercross_bundle ALL
             -DSHADERCROSS=$<TARGET_FILE:shadercross>
             -DWORK_DIR=${CMAKE_BINARY_DIR}/probe
             -P ${CMAKE_CURRENT_SOURCE_DIR}/Probe.cmake
+    # Last: tells Emerald's configure that this folder holds a finished, working tool.
+    COMMAND ${CMAKE_COMMAND} -E touch $<TARGET_FILE_DIR:shadercross>/emerald-shadercross.ok
     DEPENDS shadercross dxcompiler dxildll
     COMMENT "Copying DXC libraries next to shadercross and smoke-testing it"
     VERBATIM)

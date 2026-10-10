@@ -15,17 +15,50 @@
 #   1. EMERALD_SHADERCROSS_EXECUTABLE, if set (a prebuilt tool; e.g. from an SDL_shadercross
 #      release or your own build), else
 #   2. built from source (EMERALD_BUILD_SHADERCROSS=ON, default) as a separate host-tool project
-#      (tools/shadercross) in EMERALD_SHADERCROSS_BUILD_DIR. That directory is shared by all
-#      presets, so the (slow) DirectXShaderCompiler build only happens once, else
+#      (tools/shadercross) in EMERALD_SHADERCROSS_BUILD_DIR. By default that is a per-user cache
+#      folder named after a hash of the tool's recipe (tools/shadercross), e.g.
+#      %LOCALAPPDATA%/Emerald/shadercross/<hash> or ~/.cache/emerald/shadercross/<hash>, shared by
+#      every preset and every project on the machine. Once a build there has finished (its bin/
+#      holds the tool and an emerald-shadercross.ok marker), later configures use it as a prebuilt
+#      tool and never touch its build tree again, so the (slow) DirectXShaderCompiler build happens
+#      once per machine and recipe, else
 #   3. `shadercross` found on PATH.
 
 option(EMERALD_BUILD_SHADERCROSS
     "Build SDL_shadercross from source when EMERALD_SHADERCROSS_EXECUTABLE is not set" ON)
 set(EMERALD_SHADERCROSS_EXECUTABLE "" CACHE FILEPATH
     "Prebuilt shadercross executable to use instead of building it")
-# CMAKE_SOURCE_DIR is the top-level project: Emerald itself, or the game that pulls it in.
-set(EMERALD_SHADERCROSS_BUILD_DIR "${CMAKE_SOURCE_DIR}/build/_shadercross" CACHE PATH
-    "Build directory for the shadercross host tool (shared between presets)")
+# The default tool folder: per user, named after the tool's recipe, so a change to the pinned
+# versions or build steps gets a fresh folder and an unchanged one is reused everywhere.
+function(_emerald_default_shadercross_dir out)
+    get_filename_component(recipe_dir "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../tools/shadercross" ABSOLUTE)
+    set(recipe "")
+    foreach(name CMakeLists.txt Probe.cmake)
+        file(READ "${recipe_dir}/${name}" text)
+        string(APPEND recipe "${name}\n${text}\n")
+    endforeach()
+    string(SHA256 hash "${recipe}")
+    string(SUBSTRING "${hash}" 0 12 hash)
+    if(DEFINED ENV{EMERALD_CACHE_DIR})
+        set(root "$ENV{EMERALD_CACHE_DIR}")
+    elseif(CMAKE_HOST_WIN32 AND DEFINED ENV{LOCALAPPDATA})
+        set(root "$ENV{LOCALAPPDATA}/Emerald")
+    elseif(CMAKE_HOST_APPLE)
+        set(root "$ENV{HOME}/Library/Caches/Emerald")
+    elseif(DEFINED ENV{XDG_CACHE_HOME})
+        set(root "$ENV{XDG_CACHE_HOME}/emerald")
+    else()
+        set(root "$ENV{HOME}/.cache/emerald")
+    endif()
+    file(TO_CMAKE_PATH "${root}/shadercross/${hash}" dir)
+    set(${out} "${dir}" PARENT_SCOPE)
+endfunction()
+# Build dirs configured by older Emerald cached <project>/build/_shadercross: move them over.
+if(EMERALD_SHADERCROSS_BUILD_DIR STREQUAL "${CMAKE_SOURCE_DIR}/build/_shadercross")
+    unset(EMERALD_SHADERCROSS_BUILD_DIR CACHE)
+endif()
+set(EMERALD_SHADERCROSS_BUILD_DIR "" CACHE PATH
+    "Build directory for the shadercross host tool (empty: the per-user cache folder)")
 set(EMERALD_SHADER_FORMATS "SPIRV;DXIL;MSL" CACHE STRING
     "Shader formats to generate (any of SPIRV, DXIL, MSL)")
 
@@ -45,12 +78,24 @@ function(_emerald_setup_shadercross)
     # a subproject (FetchContent / add_subdirectory).
     get_filename_component(EMERALD_ROOT "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/.." ABSOLUTE)
 
+    # Not cached, so a new recipe (e.g. after bumping Emerald) picks its new folder.
+    set(tool_dir "${EMERALD_SHADERCROSS_BUILD_DIR}")
+    if(NOT tool_dir)
+        _emerald_default_shadercross_dir(tool_dir)
+    endif()
+
     if(EMERALD_SHADERCROSS_EXECUTABLE)
         set(exe "${EMERALD_SHADERCROSS_EXECUTABLE}")
+    elseif(EMERALD_BUILD_SHADERCROSS AND EXISTS
+           "${tool_dir}/bin/emerald-shadercross.ok")
+        # Built (and smoke-tested) before: use it as is, without a build step.
+        set(exe "${tool_dir}/bin/shadercross${CMAKE_EXECUTABLE_SUFFIX}")
+        set(prebuilt FALSE) # ours, with DXC beside it: no probe needed
+        message(STATUS "Emerald: using the shadercross built in ${tool_dir}")
     elseif(EMERALD_BUILD_SHADERCROSS)
         include(ExternalProject)
         set(prebuilt FALSE)
-        set(exe "${EMERALD_SHADERCROSS_BUILD_DIR}/bin/shadercross${CMAKE_EXECUTABLE_SUFFIX}")
+        set(exe "${tool_dir}/bin/shadercross${CMAKE_EXECUTABLE_SUFFIX}")
         set(tool_args -DCMAKE_BUILD_TYPE=Release)
         if(CMAKE_GENERATOR MATCHES "Ninja|Makefiles")
             set(tool_c "${CMAKE_C_COMPILER}")
@@ -77,34 +122,25 @@ function(_emerald_setup_shadercross)
             list(APPEND tool_args -DCMAKE_C_COMPILER=${tool_c} -DCMAKE_CXX_COMPILER=${tool_cxx})
         endif()
         # The tool's source must be the same path for every build sharing the tool dir, or its
-        # CMake cache refuses it. A game that FetchContent's Emerald has one Emerald copy per
-        # build dir (build/<preset>/_deps/emerald-src), so copy the few tool files to a stable
-        # folder next to the tool dir in that case. Top-level and local checkouts use them in place.
-        set(tool_source "${EMERALD_ROOT}/tools/shadercross")
-        cmake_path(IS_PREFIX CMAKE_BINARY_DIR "${EMERALD_ROOT}" NORMALIZE emerald_in_build_dir)
-        if(emerald_in_build_dir)
-            set(tool_source "${EMERALD_SHADERCROSS_BUILD_DIR}-src")
-            file(MAKE_DIRECTORY "${tool_source}")
-            file(GLOB tool_files "${EMERALD_ROOT}/tools/shadercross/*")
-            foreach(tool_file IN LISTS tool_files)
-                get_filename_component(tool_file_name "${tool_file}" NAME)
-                file(COPY_FILE "${tool_file}" "${tool_source}/${tool_file_name}" ONLY_IF_DIFFERENT)
-            endforeach()
-        endif()
+        # CMake cache refuses it (a game that FetchContent's Emerald has one Emerald copy per build
+        # dir). So copy the few recipe files to a folder next to the tool dir; only changed files
+        # are written, so their timestamps stay put.
+        set(tool_source "${tool_dir}-src")
+        file(MAKE_DIRECTORY "${tool_source}")
+        file(GLOB tool_files "${EMERALD_ROOT}/tools/shadercross/*")
+        foreach(tool_file IN LISTS tool_files)
+            get_filename_component(tool_file_name "${tool_file}" NAME)
+            file(COPY_FILE "${tool_file}" "${tool_source}/${tool_file_name}" ONLY_IF_DIFFERENT)
+        endforeach()
 
-        # The tool dir is shared, but ExternalProject's stamps live in each engine build dir. If
-        # the tool dir is missing or predates the dxcompiler copy next to the exe (older Emerald),
-        # drop the stamps so configure + build of the tool run again instead of being skipped.
+        # ExternalProject's stamps live in each engine build dir, the tool dir is shared: without
+        # a finished tool there, drop the stamps so configure + build of the tool really run.
         set(stamp_dir "${CMAKE_BINARY_DIR}/_emerald_shadercross-stamp")
-        set(dxc_lib "${CMAKE_SHARED_LIBRARY_PREFIX}dxcompiler${CMAKE_SHARED_LIBRARY_SUFFIX}")
-        if(NOT EXISTS "${EMERALD_SHADERCROSS_BUILD_DIR}/CMakeCache.txt" OR
-           NOT EXISTS "${EMERALD_SHADERCROSS_BUILD_DIR}/bin/${dxc_lib}")
-            file(REMOVE_RECURSE "${stamp_dir}")
-        endif()
+        file(REMOVE_RECURSE "${stamp_dir}")
         ExternalProject_Add(emerald_shadercross
             STAMP_DIR         "${stamp_dir}"
             SOURCE_DIR        "${tool_source}"
-            BINARY_DIR        "${EMERALD_SHADERCROSS_BUILD_DIR}"
+            BINARY_DIR        "${tool_dir}"
             CMAKE_ARGS        ${tool_args}
             # shadercross_bundle = shadercross + dxcompiler/dxil copied next to it + smoke test.
             BUILD_COMMAND     ${CMAKE_COMMAND} --build <BINARY_DIR> --config Release
@@ -115,8 +151,8 @@ function(_emerald_setup_shadercross)
             USES_TERMINAL_BUILD     TRUE
         )
         set(depends emerald_shadercross "${exe}")
-        message(STATUS "Emerald: shadercross will be built from source in ${EMERALD_SHADERCROSS_BUILD_DIR}"
-                       " (first build compiles DirectXShaderCompiler and takes a while)")
+        message(STATUS "Emerald: shadercross will be built from source in ${tool_dir}"
+                       " (compiles DirectXShaderCompiler once per machine and takes a while)")
     else()
         find_program(EMERALD_SHADERCROSS_FOUND NAMES shadercross)
         if(NOT EMERALD_SHADERCROSS_FOUND)

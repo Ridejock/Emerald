@@ -71,10 +71,8 @@ emerald_add_shaders(MyGame)                                # engine shaders (+ y
 
 As a subproject Emerald does not build its sandbox and tests (`EMERALD_BUILD_SANDBOX`/`_TESTS`
 default to on only when Emerald is the top-level project), keeps the parent's output directories,
-and builds shadercross in `<your project>/build/_shadercross` (shared by your presets: since each
-build dir has its own fetched copy of Emerald, the tool's two CMake files are copied to
-`build/_shadercross-src` so they always have the same path). Override the location with
-`EMERALD_SHADERCROSS_BUILD_DIR`. To work on a local Emerald checkout instead of the pinned commit, configure with
+and builds shadercross once per machine in a per-user cache folder that every preset and project
+shares (see [The shader compiler](docs/building.md#the-shader-compiler)). To work on a local Emerald checkout instead of the pinned commit, configure with
 `-DFETCHCONTENT_SOURCE_DIR_EMERALD=/path/to/Emerald`.
 
 ```cpp

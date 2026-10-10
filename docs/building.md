@@ -31,7 +31,7 @@ Dependencies, build options, per-platform setup, presets and the sandbox command
 | `EMERALD_USE_IMGUI` | `OFF` | Fetch Dear ImGui (docking) and integrate it into the app loop, with the editor tools (see [Editor tools](tools.md#editor-tools-editor-imgui-builds)) |
 | `EMERALD_BUILD_SHADERCROSS` | `ON` | Build the `shadercross` tool from source if `EMERALD_SHADERCROSS_EXECUTABLE` is empty |
 | `EMERALD_SHADERCROSS_EXECUTABLE` | *(empty)* | Use this prebuilt `shadercross` instead of building it |
-| `EMERALD_SHADERCROSS_BUILD_DIR` | `build/_shadercross` | Where the tool is built; shared by all presets |
+| `EMERALD_SHADERCROSS_BUILD_DIR` | *(empty)* | Where the tool is built; empty means the per-user cache folder (see [The shader compiler](#the-shader-compiler)) |
 | `EMERALD_SHADER_FORMATS` | `SPIRV;DXIL;MSL` | Shader formats generated at build time |
 | `EMERALD_MATH_SIMD` | `ON` | Use the SSE code paths of the math library on x86/x64 (see [Math library](core.md#math-library)) |
 | `EMERALD_BUILD_TESTS` | `ON` | Build the unit tests and register them with CTest |
@@ -101,6 +101,35 @@ cmake --build --preset debug
 | `debug-asan` | Debug build with `EMERALD_ASAN=ON` (AddressSanitizer) |
 
 Options can also be passed directly, e.g. `cmake --preset release -DEMERALD_USE_IMGUI=ON`.
+
+## The shader compiler
+
+The engine's HLSL shaders are compiled at build time by SDL_shadercross, which Emerald builds from
+source together with DirectXShaderCompiler (about a thousand files, 15 minutes or more). To do that
+only once per machine, the tool lives outside your build folders, in a per-user cache folder named
+after a hash of its recipe (`tools/shadercross`):
+
+| Platform | Folder |
+|---|---|
+| Windows | `%LOCALAPPDATA%\Emerald\shadercross\<hash>` |
+| macOS | `~/Library/Caches/Emerald/shadercross/<hash>` |
+| Linux | `$XDG_CACHE_HOME/emerald/shadercross/<hash>` (or `~/.cache/emerald/...`) |
+
+- The first build anywhere on the machine builds the tool there. When it has been built and
+  smoke-tested, its `bin/` gets an `emerald-shadercross.ok` marker.
+- Every later configure that finds the marker uses the tool as is, with no build step at all: other
+  presets, fresh build folders, and other projects using Emerald (a game that fetches Emerald finds
+  the same folder, as long as the recipe is the same).
+- A newer Emerald with a different recipe (e.g. new pinned versions) gets a new hash, so a new
+  folder and one more full build. Old `<hash>` folders can be deleted.
+- **To force a rebuild**, delete the `<hash>` folder (or just its `bin/emerald-shadercross.ok`)
+  and reconfigure.
+- `EMERALD_CACHE_DIR` (an environment variable) moves the whole cache, e.g. to another drive; CI
+  uses it. `-DEMERALD_SHADERCROSS_BUILD_DIR=<dir>` builds and reuses the tool in that exact folder
+  instead. `-DEMERALD_SHADERCROSS_EXECUTABLE=<exe>` uses a shadercross you built yourself.
+
+The tool used to be built in `<project>/build/_shadercross`. Build folders configured that way move
+to the cache folder at their next configure; the old `build/_shadercross*` folders can be deleted.
 
 ## Running
 

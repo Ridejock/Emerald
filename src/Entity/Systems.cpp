@@ -102,9 +102,10 @@ u32 DrawSprites(World& world, Renderer2D& r, const DrawSpritesOptions& options)
     };
     std::pmr::vector<Item> items(options.Scratch ? options.Scratch
                                                  : std::pmr::get_default_resource());
-    items.reserve(world.GetCount());
-
     entt::registry& registry = world.GetRegistry();
+    // Room for the sprites only (an upper bound: the smaller pool), not every entity.
+    items.reserve(registry.view<Transform, SpriteRenderer>().size_hint());
+
     world.Each<Transform, SpriteRenderer>([&](Entity e, const Transform& t,
                                               const SpriteRenderer& s) {
         const Animator* animator = registry.try_get<Animator>(e.GetId());

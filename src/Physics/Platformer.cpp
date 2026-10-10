@@ -29,9 +29,11 @@ void StepPlatformer(PlatformerBody& body, const PlatformerInput& input,
 
     // Run: accelerate towards the stick's speed (less grip in the air).
     const f32 move = Clamp(input.Move, -1.0f, 1.0f);
+    const bool turning = move * body.Velocity.x < 0.0f; // input against the motion
     const f32 accel = !body.Grounded ? tunables.AirAccel
-                      : move != 0.0f ? tunables.GroundAccel
-                                     : tunables.GroundDecel;
+                      : move == 0.0f ? tunables.GroundDecel
+                      : turning      ? tunables.TurnAccel
+                                     : tunables.GroundAccel;
     body.Velocity.x = Approach(body.Velocity.x, move * tunables.RunSpeed, accel * dt);
 
     // Jump (or drop) while on the ground or within coyote time of leaving it.

@@ -30,7 +30,8 @@ struct PlatformerTunables {
     f32 MaxFallSpeed = 420.0f;  // px/s
     f32 RunSpeed = 140.0f;      // px/s at full stick / key
     f32 GroundAccel = 1600.0f;  // px/s^2 towards the run speed on the ground...
-    f32 GroundDecel = 2000.0f;  // ...and back to 0 with no input
+    f32 GroundDecel = 2000.0f;  // ...and back to 0 with no input...
+    f32 TurnAccel = 2400.0f;    // ...and when the input points against the motion (turning)
     f32 AirAccel = 1000.0f;     // px/s^2 in the air, both ways (less control than on the ground)
     f32 JumpVelocity = 400.0f;  // px/s up when the jump starts (height = v^2 / 2g, ~57 px)
     f32 JumpCut = 0.45f;        // releasing jump while rising multiplies the up speed by this

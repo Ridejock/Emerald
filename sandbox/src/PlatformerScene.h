@@ -46,6 +46,7 @@ struct PlatformerFeel {
     Tweak RunSpeed{kFeel, "Run speed", kDefaults.RunSpeed, {20.0f, 400.0f}};
     Tweak GroundAccel{kFeel, "Ground accel", kDefaults.GroundAccel, {100.0f, 8000.0f}};
     Tweak GroundDecel{kFeel, "Ground decel", kDefaults.GroundDecel, {100.0f, 8000.0f}};
+    Tweak TurnAccel{kFeel, "Turn accel (ground)", kDefaults.TurnAccel, {100.0f, 8000.0f}};
     Tweak AirAccel{kFeel, "Air accel", kDefaults.AirAccel, {0.0f, 8000.0f}};
     Tweak CoyoteTime{kFeel, "Coyote time (s)", kDefaults.CoyoteTime, {0.0f, 0.5f}};
     Tweak JumpBuffer{kFeel, "Jump buffer (s)", kDefaults.JumpBuffer, {0.0f, 0.5f}};
@@ -64,6 +65,7 @@ struct PlatformerFeel {
                                       .RunSpeed = RunSpeed,
                                       .GroundAccel = GroundAccel,
                                       .GroundDecel = GroundDecel,
+                                      .TurnAccel = TurnAccel,
                                       .AirAccel = AirAccel,
                                       .JumpVelocity = 0.0f,
                                       .JumpCut = JumpCut,

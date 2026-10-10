@@ -1,6 +1,7 @@
 // Platformer physics (Physics/Platformer.h) on small maps written from text: walking up and down
 // 45 and 22.5 degree slopes, one-way platforms (landing, dropping through), coyote time, the jump
-// buffer and variable jump height, and the same scripted input giving the same path twice.
+// buffer and variable jump height, turning (TurnAccel), and the same scripted input giving the same
+// path twice.
 
 #include <bit>
 #include <filesystem>
@@ -338,6 +339,28 @@ TEST(PlatformerWallsAndCeilings)
         Step(body, *map, {.JumpHeld = true});
     CHECK(body.HitCeiling);
     CHECK_NEAR(body.GetBox().Min.y, 16.0f);
+}
+
+TEST(PlatformerTurnAccel)
+{
+    const std::optional<Tilemap> map = MakeMap({"..........", "..........", "##########"});
+    if (!map) {
+        CHECK(false);
+        return;
+    }
+    // Running right at full speed, then pushing left: TurnAccel applies until the body has
+    // turned, GroundAccel after that.
+    const PlatformerTunables tunables{.GroundAccel = 1000.0f, .TurnAccel = 3000.0f};
+    PlatformerBody body = StandingAt(80.0f, 32.0f);
+    body.Velocity.x = tunables.RunSpeed;
+    Step(body, *map, {.Move = -1.0f}, tunables);
+    CHECK_NEAR(body.Velocity.x, tunables.RunSpeed - tunables.TurnAccel * kDt);
+    body.Velocity.x = -10.0f; // already moving left: no longer turning
+    Step(body, *map, {.Move = -1.0f}, tunables);
+    CHECK_NEAR(body.Velocity.x, -10.0f - tunables.GroundAccel * kDt);
+    body.Velocity.x = 50.0f; // no input: GroundDecel
+    Step(body, *map, {}, tunables);
+    CHECK_NEAR(body.Velocity.x, 50.0f - tunables.GroundDecel * kDt);
 }
 
 TEST(PlatformerDeterministicReplay)

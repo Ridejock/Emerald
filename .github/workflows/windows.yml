@@ -9,6 +9,11 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Emerald keeps its built shader compiler in a per-machine cache folder (cmake/Shaders.cmake);
+# a fixed one here so the cache step below knows where it is.
+env:
+  EMERALD_CACHE_DIR: C:/emerald-cache
+
 jobs:
   test:
     runs-on: windows-latest
@@ -29,16 +34,18 @@ jobs:
         with:
           arch: x64
 
-      # The shader compiler (shadercross + DirectXShaderCompiler, built with MSVC) is built by the
-      # first build and takes a long time: keep it between runs. Saved after a successful build
+      # The shader compiler (shadercross + DirectXShaderCompiler, built with MSVC) takes a long
+      # time to build. Only its finished bin/ folder is kept (a few MB, with the marker that tells
+      # Emerald to use it as is), in a folder named after the tool's recipe hash: a restored
+      # folder that still matches is used without any build step. Saved after a successful build
       # (below), so a later failing step (warnings, tests) does not throw it away.
       - name: Restore shadercross
         id: shadercross
         uses: actions/cache/restore@v4
         with:
-          path: build/_shadercross
-          key: shadercross-windows-${{ hashFiles('tools/shadercross/**', 'cmake/Shaders.cmake') }}
-          restore-keys: shadercross-windows-
+          path: C:/emerald-cache/shadercross/*/bin
+          key: shadercross-bin-windows-${{ hashFiles('tools/shadercross/**') }}
+          restore-keys: shadercross-bin-windows-
 
       - name: Configure
         run: cmake --preset ${{ matrix.preset }}
@@ -52,15 +59,15 @@ jobs:
         uses: actions/cache/save@v4
         continue-on-error: true # another preset may save the same key first
         with:
-          path: build/_shadercross
+          path: C:/emerald-cache/shadercross/*/bin
           key: ${{ steps.shadercross.outputs.cache-primary-key }}
 
       # Zero warnings in Emerald's code. Fetched libraries (_deps) and the shadercross tool
-      # (_shadercross, e.g. C5051 in SPIRV-Cross) are not ours to fix.
+      # (in emerald-cache, e.g. C5051 in SPIRV-Cross) are not ours to fix.
       - name: Check for warnings
         run: |
           grep -E "warning C[0-9]+" build-log.txt \
-            | grep -viE "[\\/]_deps[\\/]|[\\/]_shadercross[\\/]" \
+            | grep -viE "[\\/]_deps[\\/]|emerald-cache" \
             | sort -u > warnings.txt || true
           if [ -s warnings.txt ]; then
             echo "::error::MSVC warnings in Emerald:"

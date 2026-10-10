@@ -93,9 +93,17 @@ TEST(CollideBoxes)
     CHECK(up && NearlyEqual(up->Normal, Vec2(0.0f, -1.0f)) && NearlyEqual(up->Depth, 1.0f));
     CHECK(!Collide(a, Aabb{{10.0f, 0.0f}, {20.0f, 10.0f}})); // sharing an edge
     CHECK(!Overlaps(a, Aabb{{10.0f, 0.0f}, {20.0f, 10.0f}}));
-    // Contained: pushed out along the shorter way.
-    const auto inner = Collide(a, Aabb{{4.0f, 1.0f}, {6.0f, 9.0f}});
-    CHECK(inner && NearlyEqual(inner->Depth, 2.0f) && inner->Normal.y == 0.0f);
+    // Contained: the depth is the full push out (not the overlap width), the shorter way.
+    const Aabb inside{{7.0f, 4.0f}, {8.0f, 6.0f}};
+    const auto inner = Collide(a, inside);
+    CHECK(inner && NearlyEqual(inner->Normal, Vec2(1.0f, 0.0f)) && NearlyEqual(inner->Depth, 3.0f));
+    CHECK(inner && Separates(a, inside, *inner));
+    const Aabb low{{3.0f, 8.0f}, {7.0f, 9.0f}}; // nearer the bottom: pushed down
+    const auto down = Collide(a, low);
+    CHECK(down && NearlyEqual(down->Normal, Vec2(0.0f, 1.0f)) && NearlyEqual(down->Depth, 2.0f));
+    CHECK(down && Separates(a, low, *down));
+    const auto outer = Collide(inside, a); // a containing box is pushed off the inner one
+    CHECK(outer && NearlyEqual(outer->Normal, Vec2(-1.0f, 0.0f)) && Separates(inside, a, *outer));
 }
 
 TEST(CollidePolygons)

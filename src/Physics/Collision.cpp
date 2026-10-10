@@ -110,14 +110,19 @@ std::optional<Contact> Collide(const Aabb& a, const Circle& b)
 
 std::optional<Contact> Collide(const Aabb& a, const Aabb& b)
 {
-    const f32 ox = std::min(a.Max.x, b.Max.x) - std::max(a.Min.x, b.Min.x);
-    const f32 oy = std::min(a.Max.y, b.Max.y) - std::max(a.Min.y, b.Min.y);
-    if (ox <= 0.0f || oy <= 0.0f)
-        return std::nullopt;
-    const Vec2 d = b.GetCenter() - a.GetCenter();
-    if (ox < oy)
-        return Contact{{d.x < 0.0f ? -1.0f : 1.0f, 0.0f}, ox};
-    return Contact{{0.0f, d.y < 0.0f ? -1.0f : 1.0f}, oy};
+    // How far b must move each way to clear a; the shortest one wins. This stays right when
+    // one box contains the other (an overlap width would be too small there).
+    const f32 right = a.Max.x - b.Min.x;
+    const f32 left = b.Max.x - a.Min.x;
+    const f32 down = a.Max.y - b.Min.y;
+    const f32 up = b.Max.y - a.Min.y;
+    if (right <= 0.0f || left <= 0.0f || down <= 0.0f || up <= 0.0f)
+        return std::nullopt; // apart or only touching
+    const f32 x = std::min(right, left);
+    const f32 y = std::min(down, up);
+    if (x < y)
+        return Contact{{right <= left ? 1.0f : -1.0f, 0.0f}, x};
+    return Contact{{0.0f, down <= up ? 1.0f : -1.0f}, y};
 }
 
 std::optional<Contact> Collide(std::span<const Vec2> a, std::span<const Vec2> b)

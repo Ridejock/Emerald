@@ -1,6 +1,6 @@
 // Collision: shape overlap with normal and depth (incl. touching, containment and degenerate
 // cases), raycasts against each shape, and the spatial hash (insert/update/remove, queries,
-// pairs, wrapping) checked against brute force.
+// pairs, wrapping) checked against brute force, and its guards against NaN and huge boxes.
 
 #include <algorithm>
 #include <array>
@@ -10,6 +10,7 @@
 #include <utility>
 #include <vector>
 
+#include <Emerald/Core/Log.h>
 #include <Emerald/Physics/Collision.h>
 #include <Emerald/Physics/SpatialHash.h>
 
@@ -336,4 +337,37 @@ TEST(SpatialHashWraps)
         }
     wrapped.GetPairs(pairs);
     CHECK(pairs == expected);
+}
+
+TEST(SpatialHashRejectsBadBoxes)
+{
+    Log::Init({}); // the skipped boxes are logged
+    SpatialHash hash(16.0f);
+    hash.Insert(1, Aabb::FromCenter({0.0f, 0.0f}, {2.0f, 2.0f}));
+
+    // A NaN box (e.g. from a NaN position) is skipped, and drops the object's old box.
+    const f32 nan = std::nanf("");
+    hash.Insert(2, Aabb{{nan, nan}, {nan, nan}});
+    hash.Insert(1, Aabb{{nan, 0.0f}, {1.0f, 1.0f}});
+    CHECK(!hash.Contains(1) && !hash.Contains(2) && hash.GetCount() == 0);
+    hash.Insert(3, Aabb::FromCenter({0.0f, 0.0f}, {2.0f, 2.0f}));
+    std::vector<u32> ids;
+    hash.Query(Aabb{{nan, nan}, {nan, nan}}, ids);
+    CHECK(ids.empty());
+
+    // Huge finite boxes finish at once instead of visiting billions of cells.
+    hash.Insert(4, Aabb{{-1e9f, -1e9f}, {1e9f, 1e9f}});
+    CHECK(!hash.Contains(4));
+    hash.Insert(5, Aabb{{-3e38f, 0.0f}, {3e38f, 1.0f}});
+    CHECK(!hash.Contains(5));
+    hash.Query(Aabb{{-1e30f, -1e30f}, {1e30f, 1e30f}}, ids); // still finds what is there
+    CHECK(ids == (std::vector<u32>{3}));
+    std::vector<std::pair<u32, u32>> pairs;
+    hash.GetPairs(pairs);
+    CHECK(pairs.empty());
+
+    // Far away but small is still fine.
+    hash.Insert(6, Aabb::FromCenter({1e7f, -1e7f}, {4.0f, 4.0f}));
+    hash.Query(Aabb::FromCenter({1e7f, -1e7f}, {8.0f, 8.0f}), ids);
+    CHECK(ids == (std::vector<u32>{6}));
 }

@@ -1,11 +1,33 @@
 #include "Emerald/Physics/SpatialHash.h"
 
+#include "Emerald/Core/Log.h"
+
 #include <algorithm>
 #include <cmath>
 
 namespace Emerald {
 
 namespace {
+// Cell coordinates are kept within +-kMaxCell, so the float-to-int conversion and the cell
+// loops can never overflow.
+constexpr f32 kMaxCell = 1048576.0f; // 2^20
+
+// A box covering more cells than this is not stored (it would take forever to file).
+constexpr i64 kMaxCellsPerBox = 1 << 16;
+
+bool IsFinite(const Aabb& box)
+{
+    return std::isfinite(box.Min.x) && std::isfinite(box.Min.y) && std::isfinite(box.Max.x) &&
+           std::isfinite(box.Max.y);
+}
+
+i64 CellCount(i32 x0, i32 y0, i32 x1, i32 y1)
+{
+    if (x1 < x0 || y1 < y0)
+        return 0;
+    return (static_cast<i64>(x1) - x0 + 1) * (static_cast<i64>(y1) - y0 + 1);
+}
+
 // Two intervals [aLo, aHi] and [bLo, bHi] overlap on a circle of `length` (strictly).
 bool WrappedOverlap(f32 aLo, f32 aHi, f32 bLo, f32 bHi, f32 length)
 {
@@ -33,7 +55,10 @@ SpatialHash::SpatialHash(f32 cellSize, std::optional<Vec2> wrapSize)
 
 SpatialHash::CellRange SpatialHash::CellsFor(const Aabb& box) const
 {
-    const auto cell = [](f32 v, f32 size) { return static_cast<i32>(std::floor(v / size)); };
+    // Clamped as floats first, like Tilemap::GetTileRange.
+    const auto cell = [](f32 v, f32 size) {
+        return static_cast<i32>(Clamp(std::floor(v / size), -kMaxCell, kMaxCell));
+    };
     CellRange r{cell(box.Min.x, m_CellSize.x), cell(box.Min.y, m_CellSize.y),
                 cell(box.Max.x, m_CellSize.x), cell(box.Max.y, m_CellSize.y)};
     if (m_Wrap) {
@@ -70,7 +95,17 @@ bool SpatialHash::BoxesOverlap(const Aabb& a, const Aabb& b) const
 
 void SpatialHash::Insert(Id id, const Aabb& box)
 {
+    if (!IsFinite(box)) { // e.g. a NaN position: skipped rather than filed somewhere random
+        EM_CORE_WARN("SpatialHash: skipped object {} with a non-finite box", id);
+        Remove(id);
+        return;
+    }
     const CellRange cells = CellsFor(box);
+    if (CellCount(cells.X0, cells.Y0, cells.X1, cells.Y1) > kMaxCellsPerBox) {
+        EM_CORE_WARN("SpatialHash: skipped object {}, its box covers too many cells", id);
+        Remove(id);
+        return;
+    }
     if (const auto it = m_Objects.find(id); it != m_Objects.end()) {
         if (it->second.Cells == cells) { // still in the same cells: just the new box
             it->second.Box = box;
@@ -112,7 +147,20 @@ void SpatialHash::Clear()
 void SpatialHash::Query(const Aabb& area, std::vector<Id>& out) const
 {
     out.clear();
-    ForEachCell(CellsFor(area), [&](u64 key) {
+    if (!IsFinite(area)) {
+        EM_CORE_WARN("SpatialHash: ignored a query with a non-finite area");
+        return;
+    }
+    const CellRange cells = CellsFor(area);
+    if (CellCount(cells.X0, cells.Y0, cells.X1, cells.Y1) > static_cast<i64>(m_Cells.size())) {
+        // A huge area: checking every object is quicker than visiting every cell.
+        for (const auto& [id, object] : m_Objects)
+            if (BoxesOverlap(area, object.Box))
+                out.push_back(id);
+        std::sort(out.begin(), out.end());
+        return;
+    }
+    ForEachCell(cells, [&](u64 key) {
         const auto cell = m_Cells.find(key);
         if (cell == m_Cells.end())
             return;

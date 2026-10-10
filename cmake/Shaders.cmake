@@ -17,7 +17,7 @@
 #   2. built from source (EMERALD_BUILD_SHADERCROSS=ON, default) as a separate host-tool project
 #      (tools/shadercross) in EMERALD_SHADERCROSS_BUILD_DIR. By default that is a per-user cache
 #      folder named after a hash of the tool's recipe (tools/shadercross), e.g.
-#      %LOCALAPPDATA%/Emerald/shadercross/<hash> or ~/.cache/emerald/shadercross/<hash>, shared by
+#      %USERPROFILE%/.emerald/shadercross/<hash> or ~/.cache/emerald/shadercross/<hash>, shared by
 #      every preset and every project on the machine. Once a build there has finished (its bin/
 #      holds the tool and an emerald-shadercross.ok marker), later configures use it as a prebuilt
 #      tool and never touch its build tree again, so the (slow) DirectXShaderCompiler build happens
@@ -41,8 +41,10 @@ function(_emerald_default_shadercross_dir out)
     string(SUBSTRING "${hash}" 0 12 hash)
     if(DEFINED ENV{EMERALD_CACHE_DIR})
         set(root "$ENV{EMERALD_CACHE_DIR}")
-    elseif(CMAKE_HOST_WIN32 AND DEFINED ENV{LOCALAPPDATA})
-        set(root "$ENV{LOCALAPPDATA}/Emerald")
+    elseif(CMAKE_HOST_WIN32 AND DEFINED ENV{USERPROFILE})
+        # Not %LOCALAPPDATA%: DXC's sources hold paths ~200 characters deep, and Windows (git,
+        # MSVC) fails past 260, so the folder itself must stay short.
+        set(root "$ENV{USERPROFILE}/.emerald")
     elseif(CMAKE_HOST_APPLE)
         set(root "$ENV{HOME}/Library/Caches/Emerald")
     elseif(DEFINED ENV{XDG_CACHE_HOME})
@@ -125,6 +127,13 @@ function(_emerald_setup_shadercross)
         # CMake cache refuses it (a game that FetchContent's Emerald has one Emerald copy per build
         # dir). So copy the few recipe files to a folder next to the tool dir; only changed files
         # are written, so their timestamps stay put.
+        string(LENGTH "${tool_dir}" tool_dir_length)
+        if(CMAKE_HOST_WIN32 AND tool_dir_length GREATER 56)
+            message(WARNING "Emerald: the shadercross folder '${tool_dir}' is long; DXC's deepest "
+                            "source paths may pass Windows' 260-character limit and fail to clone "
+                            "or build. Set the EMERALD_CACHE_DIR environment variable to a short "
+                            "folder such as C:/emerald-cache.")
+        endif()
         set(tool_source "${tool_dir}-src")
         file(MAKE_DIRECTORY "${tool_source}")
         file(GLOB tool_files "${EMERALD_ROOT}/tools/shadercross/*")

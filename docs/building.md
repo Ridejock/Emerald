@@ -111,7 +111,7 @@ after a hash of its recipe (`tools/shadercross`):
 
 | Platform | Folder |
 |---|---|
-| Windows | `%LOCALAPPDATA%\Emerald\shadercross\<hash>` |
+| Windows | `%USERPROFILE%\.emerald\shadercross\<hash>` (kept short: DXC's sources go about 200 characters deep, and Windows tools fail past 260) |
 | macOS | `~/Library/Caches/Emerald/shadercross/<hash>` |
 | Linux | `$XDG_CACHE_HOME/emerald/shadercross/<hash>` (or `~/.cache/emerald/...`) |
 

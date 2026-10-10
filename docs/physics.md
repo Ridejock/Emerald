@@ -23,6 +23,8 @@ broadphase so you don't test every pair:
   - Touching is not overlapping.
   - Concentric circles push apart along +X.
   - A circle whose center is inside a box exits through the nearest side.
+  - A box inside another box is pushed out the shortest way, by the full distance needed to clear
+    it (not just the overlap width).
 - **`Raycast(Ray{origin, direction, maxDistance}, shape)`:** the first hit (`Distance`, `Point`,
   surface `Normal`) on a circle, AABB or polygon. The direction doesn't need to be normalized. A
   ray that starts inside hits at distance 0.
@@ -47,9 +49,15 @@ hash.Query(area, ids); // ids whose boxes overlap `area`
 Asteroids. A box hanging off the right edge finds objects at the left, and queries wrap the same
 way. Results are sorted by id, so they don't depend on hash map order.
 
+**Bad boxes.** A box with a NaN or infinite coordinate (say, from a NaN position) is skipped with a
+warning, and the object's old entry is removed. So is a box covering more than 65,536 cells, which
+would otherwise take ages to file. Cell coordinates are clamped as floats before the integer
+conversion, like `Tilemap::GetTileRange`, so huge values can't overflow. A query with a non-finite
+area returns nothing; a query covering more cells than the hash holds checks every object instead.
+
 `CollisionTests` checks every shape pair's normal and depth, the edge cases above, raycasts (hits,
 misses, parallel rays, max distance, starting inside), and the hash against brute force on random
-data, with and without wrapping.
+data, with and without wrapping, plus NaN and huge boxes.
 
 `EmeraldCollisionBench` (Release, `-DEMERALD_BUILD_BENCH=ON`) uses 10,000 moving circles (radius
 2-8) in a 2000 x 2000 world. Each frame moves them, updates the hash, collects the pairs and runs
@@ -242,6 +250,7 @@ void OnFixedUpdate(f32 dt) override
 | `MaxFallSpeed` | 420 px/s | terminal velocity |
 | `RunSpeed` | 140 px/s | speed at full stick or key |
 | `GroundAccel` / `GroundDecel` | 1600 / 2000 px/s² | towards the run speed on the ground, and back to 0 with no input |
+| `TurnAccel` | 2400 px/s² | on the ground when the input points against the motion (turning around) |
 | `AirAccel` | 1000 px/s² | control in the air, both ways |
 | `JumpVelocity` | 400 px/s | upward speed when a jump starts (height v² / 2g, about 57 px) |
 | `JumpCut` | 0.45 | releasing jump while rising multiplies the upward speed by this (variable jump height) |
@@ -261,7 +270,9 @@ void OnFixedUpdate(f32 dt) override
 
 **One step**, in order:
 1. **Timers.** A jump press sets `BufferTimer` to `JumpBuffer`; otherwise it counts down.
-2. **Run.** The horizontal speed accelerates towards `Move * RunSpeed`.
+2. **Run.** The horizontal speed accelerates towards `Move * RunSpeed`: in the air at `AirAccel`;
+   on the ground at `GroundDecel` with no input, `TurnAccel` when the input opposes the motion, and
+   `GroundAccel` otherwise.
 3. **Jump.** It happens if a jump is buffered (`BufferTimer > 0`) and the body is grounded or
    within coyote time. If the body stands on one-way tiles only and down is held, it drops
    through instead: `DropTimer` starts and no jump happens. Either way the buffer and coyote

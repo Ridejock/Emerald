@@ -10,7 +10,7 @@ platformer physics, scenes, UI, dialogue and audio. All dependencies are fetched
 - **`Emerald::Emerald`**: the engine library.
 - **`Emerald::Math`**: a header-only math library (vectors, `Mat4`, optional SSE), included by the engine.
 - **`sandbox/`**: an example app, organised as scenes on the scene stack (title, camera demo, tilemap room,
-  entity swarm, platformer, pause, options, lighting, dialogue). It is also the quickest way to see the engine run.
+  entity swarm, platformer, pause, options, lighting, dialogue, particles). It is also the quickest way to see the engine run.
 - **`tests/`**: unit-test executables run with `ctest`.
 
 What is planned next is in [ROADMAP.md](ROADMAP.md), with one GitHub issue per feature.
@@ -106,10 +106,10 @@ int main() { return MyGame{}.Run(); }
 
 ```
 docs/              Documentation (one file per topic, see above)
-include/Emerald/   Public engine headers (Core/, Input/, Audio/, Renderer/, Particles/, Physics/, Tilemap/, Scene/, Entity/, Assets/, Tween/, UI/, Dialogue/, Save/, Math/, Memory/)
+include/Emerald/   Public engine headers (Core/, Input/, Audio/, Renderer/, Particles/, Physics/, Tilemap/, Scene/, Entity/, Assets/, Tween/, UI/, Dialogue/, Save/, Editor/, Math/, Memory/)
 src/               Engine implementation
-shaders/           The engine's HLSL shaders (Renderer2D lines, Sprite, the CRT post-process; compiled at build time for every app)
-sandbox/           Example application (src/, its own shaders/, assets/ for the demo font, hero sheet, tilemap room and dialogue deck)
+shaders/           The engine's HLSL shaders (Renderer2D lines, Sprite, lit sprites, tint, the CRT post-process; compiled at build time for every app)
+sandbox/           Example application (src/, its own shaders/, assets/ for the demo font, hero sheet, tilemap room, dialogue deck, particle effects and audio)
 tests/             Unit tests (ctest)
 bench/             Math, particle, collision and entity micro-benchmarks (EMERALD_BUILD_BENCH)
 cmake/             Dependency setup (FetchContent), shader compilation (Shaders.cmake) and AddressSanitizer flags (Sanitizers.cmake)

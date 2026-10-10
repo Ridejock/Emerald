@@ -28,7 +28,7 @@ Dependencies, build options, per-platform setup, presets and the sandbox command
 | Option | Default | Description |
 |---|---|---|
 | `EMERALD_BUILD_SANDBOX` | `ON` | Build the sandbox example executable |
-| `EMERALD_USE_IMGUI` | `OFF` | Fetch Dear ImGui (docking) and integrate it into the app loop, with the editor tools (see Editor tools) |
+| `EMERALD_USE_IMGUI` | `OFF` | Fetch Dear ImGui (docking) and integrate it into the app loop, with the editor tools (see [Editor tools](tools.md#editor-tools-editor-imgui-builds)) |
 | `EMERALD_BUILD_SHADERCROSS` | `ON` | Build the `shadercross` tool from source if `EMERALD_SHADERCROSS_EXECUTABLE` is empty |
 | `EMERALD_SHADERCROSS_EXECUTABLE` | *(empty)* | Use this prebuilt `shadercross` instead of building it |
 | `EMERALD_SHADERCROSS_BUILD_DIR` | `build/_shadercross` | Where the tool is built; shared by all presets |
@@ -117,6 +117,10 @@ Options can also be passed directly, e.g. `cmake --preset release -DEMERALD_USE_
 ./build/debug/bin/Sandbox --platformer                     # start in the platformer level (see Platformer physics)
 ./build/debug/bin/Sandbox --dialogue                       # start in the dialogue demo (see Dialogue)
 ./build/debug/bin/Sandbox --particles                      # start in the particle effects (see Editor tools)
+./build/debug/bin/Sandbox --lighting                       # start in the lighting scene (see Lighting)
+./build/debug/bin/Sandbox --options                        # start in the options screen over the title
+./build/debug/bin/Sandbox --platformer --collision         # turn on the collision overlay
+./build/debug/bin/Sandbox --tilemap --objects              # turn on the map objects overlay
 SDL_GPU_DRIVER=vulkan ./build/debug/bin/Sandbox            # the same through SDL's environment variable
 ```
 

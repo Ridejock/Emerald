@@ -259,7 +259,7 @@ const Vec2 size = ui->MeasureText("Score: 1200");                           // w
 - `Font::LoadFromMemory(device, bytes, options)` takes a font embedded in the executable.
 
 The sandbox's text demo uses Press Start 2P (SIL Open Font License, in `sandbox/assets/fonts/`,
-see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)); the engine itself ships no fonts.
+see [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md)); the engine itself ships no fonts.
 
 ## CRT post-process (`CrtEffect`)
 

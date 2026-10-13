@@ -177,16 +177,17 @@ else if (loaded.Error != Emerald::SaveError::NotFound)
   version = 1
   saved = 1791297947
   summary = second
-  crc32 = eabaa043
+  checksum = 1c0f3a9e
   ---
   audio.master = 0.25
   player.name = Ervin
   video.fullscreen = true
   ```
 
-  `EMERALD-SAVE 1` is the container format, `version` the game's data version. The CRC-32 covers
-  everything after `---`, so truncated or damaged files are detected. Delete the `crc32` line to
-  edit a save by hand.
+  `EMERALD-SAVE 1` is the container format, `version` the game's data version. The `checksum`
+  (CRC-32) covers the whole file except its own line, so truncated or damaged files (header
+  included) are detected; a BOM and CRLF line endings from an editor don't count. Delete the line
+  to edit a save by hand. Older files have `crc32` over the body only, and still load.
 - **Versions**: `AddMigration(n, f)` registers the step n -> n+1; `Load` runs the chain from the
   file's version up to the current one (`LoadResult::FileVersion` tells where it started). A save
   from a newer version fails with `SaveError::TooNew`, a gap in the chain with `NoMigration`; the
@@ -195,7 +196,12 @@ else if (loaded.Error != Emerald::SaveError::NotFound)
   `FlushFileBuffers` / `fsync`), then renames it over `<name>.sav` (`SDL_RenamePath`:
   `MoveFileExW(MOVEFILE_REPLACE_EXISTING)` on Windows, `rename()` elsewhere). If anything fails,
   `Save` returns false (logged) and the old file is untouched. The previous good save is kept as
-  `<name>.sav.bak`, and `Load` falls back to it (`FromBackup`) when `<name>.sav` is damaged.
+  `<name>.sav.bak` (rotated by rename), and `Load` falls back to it (`FromBackup`) when
+  `<name>.sav` is damaged or missing; `ListSlots` lists backup-only slots too. Renames are retried
+  3 times, 50 ms apart (antivirus and sync tools briefly hold files on Windows).
+- **Newer saves**: a save from a newer data version (a beta, then a downgrade) is moved to
+  `<name>.sav.v<N>` before an older game saves; it is never overwritten.
+- One thread per `SaveSystem` (normally the main one): `Save` flushes before it returns.
 - `SaveSystem::Serialize` / `Parse` work on strings, for tests and tools.
 - The sandbox keeps its Options screen (volumes, CRT, fullscreen, highlight color) in
   `settings.sav` under `%APPDATA%\Emerald\Sandbox\saves\` (Linux:

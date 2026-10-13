@@ -336,8 +336,13 @@ LoadBindings(input, saves.Load("settings").Data, kRebindable);
 ```
 
 Keys are saved by SDL's scancode names (`GetKeyName` / `FindKey`: "Space", "Left Shift"; `#<n>`
-for keys without a unique name), buttons by their enum names ("South", "LeftTrigger"). Unknown
-names are skipped and logged; axes are not saved.
+for keys without a unique name), buttons by their enum names ("South", "LeftTrigger"). A list
+with an unknown name is not applied (logged; the defaults stay). `SaveBindings` returns false for
+action names that can't be save keys. Axes: `SaveAxisBindings` / `LoadAxisBindings` store key and
+gamepad button pairs as parallel lists (`input.MoveX.negative = A, Left` /
+`.positive = D, Right`, `.pad.negative` / `.pad.positive`); analog sticks are not saved.
+`GetAxisKeyPairs` and friends read them, `RebindAxis(axis, pairs)` replaces them, and
+`FindActionsUsing(key)` lists the actions an input is bound to (conflicts and swaps).
 
 `Emerald::Mouse` (`Mouse.h`, `input.GetMouse()`) has the buttons (`Left`, `Middle`, `Right`, `X1`,
 `X2`), `GetPosition()`, `HasMoved()` (this frame, e.g. to switch aiming from a stick back to the

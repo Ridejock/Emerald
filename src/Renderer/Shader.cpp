@@ -48,8 +48,12 @@ void ApplyReflection(const std::string& jsonPath, ShaderDesc& desc)
 {
     usize size = 0;
     void* data = SDL_LoadFile(jsonPath.c_str(), &size);
-    if (!data)
-        return; // no reflection data: keep the counts from the ShaderDesc
+    if (!data) {
+        // Keep the counts from the ShaderDesc; if they are wrong, creating the pipeline fails.
+        EM_CORE_WARN("LoadShader: no reflection file '{}' (using the built-in resource counts)",
+                     jsonPath);
+        return;
+    }
     const std::string_view json(static_cast<const char*>(data), size);
     ReadJsonCount(json, "samplers", desc.Samplers);
     ReadJsonCount(json, "storage_textures", desc.StorageTextures);
@@ -74,8 +78,9 @@ SDL_GPUShader* LoadShader(SDL_GPUDevice* device, const ShaderDesc& inDesc)
     }
 
     // Shaders are compiled next to the executable (see cmake/Shaders.cmake).
+    const char* exeDir = SDL_GetBasePath(); // null if the platform can't tell
     const std::string basePath =
-        std::string(SDL_GetBasePath()) + "shaders/" + std::string(inDesc.Name);
+        std::string(exeDir ? exeDir : "") + "shaders/" + std::string(inDesc.Name);
 
     ShaderDesc desc = inDesc;
     ApplyReflection(basePath + ".json", desc);

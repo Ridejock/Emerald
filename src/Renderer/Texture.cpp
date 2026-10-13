@@ -97,13 +97,19 @@ Texture Texture::CreateWithoutGpu(u32 width, u32 height)
 std::optional<Texture> Texture::Create(SDL_GPUDevice* device, const Image& image,
                                        const TextureOptions& options)
 {
+    // SDL GPU only guarantees 16384 px on a side on every backend; the limit also keeps the
+    // byte count below in u32 range.
+    constexpr i32 kMaxSide = 16384;
+    if (!device || image.Width <= 0 || image.Height <= 0 || image.Width > kMaxSide ||
+        image.Height > kMaxSide ||
+        image.Pixels.size() != static_cast<usize>(image.Width) * image.Height * 4) {
+        EM_CORE_ERROR("Texture::Create: invalid image or device ({} x {})", image.Width,
+                      image.Height);
+        return std::nullopt;
+    }
     const u32 width = static_cast<u32>(image.Width);
     const u32 height = static_cast<u32>(image.Height);
     const u32 bytes = width * height * 4;
-    if (!device || image.Width <= 0 || image.Height <= 0 || image.Pixels.size() != bytes) {
-        EM_CORE_ERROR("Texture::Create: invalid image or device");
-        return std::nullopt;
-    }
 
     Texture texture = CreateWithoutGpu(width, height);
     texture.m_Device = device;
@@ -139,6 +145,11 @@ std::optional<Texture> Texture::Create(SDL_GPUDevice* device, const Image& image
     SDL_UnmapGPUTransferBuffer(device, transfer);
 
     SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(device);
+    if (!cmd) {
+        EM_CORE_ERROR("Texture::Create: SDL_AcquireGPUCommandBuffer failed: {}", SDL_GetError());
+        SDL_ReleaseGPUTransferBuffer(device, transfer);
+        return std::nullopt;
+    }
     SDL_GPUCopyPass* copy = SDL_BeginGPUCopyPass(cmd);
     SDL_GPUTextureTransferInfo source{};
     source.transfer_buffer = transfer;

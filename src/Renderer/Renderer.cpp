@@ -314,11 +314,18 @@ SDL_GPUBuffer* Renderer::CreateBuffer(SDL_GPUBufferUsageFlags usage, const void*
         return nullptr;
     }
     void* mapped = SDL_MapGPUTransferBuffer(m_Device, transfer, false);
+    // ...and is then copied into the real buffer by the GPU during a copy pass.
+    SDL_GPUCommandBuffer* cmd = mapped ? SDL_AcquireGPUCommandBuffer(m_Device) : nullptr;
+    if (!cmd) {
+        EM_CORE_ERROR("CreateBuffer: could not upload the data: {}", SDL_GetError());
+        if (mapped)
+            SDL_UnmapGPUTransferBuffer(m_Device, transfer);
+        SDL_ReleaseGPUTransferBuffer(m_Device, transfer);
+        SDL_ReleaseGPUBuffer(m_Device, buffer);
+        return nullptr;
+    }
     std::memcpy(mapped, data, size);
     SDL_UnmapGPUTransferBuffer(m_Device, transfer);
-
-    // ...and is then copied into the real buffer by the GPU during a copy pass.
-    SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(m_Device);
     SDL_GPUCopyPass* copy = SDL_BeginGPUCopyPass(cmd);
     const SDL_GPUTransferBufferLocation source{transfer, 0};
     const SDL_GPUBufferRegion destination{buffer, 0, size};

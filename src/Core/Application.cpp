@@ -213,7 +213,11 @@ int Application::Run()
         RequestCaptures();
         {
             EM_PROFILE_SCOPE("Render"); // includes waiting for the swapchain (vsync)
-            RenderFrame();
+            if (!RenderFrame()) {
+                // Minimized: there is no vsync to wait on, so don't spin a core. Wake up early
+                // for an event (e.g. the window being restored).
+                SDL_WaitEventTimeout(nullptr, 10);
+            }
         }
         FinishCaptures();
         EM_PROFILE_FRAME();
@@ -311,7 +315,7 @@ void Application::ProcessEvent(const SDL_Event& event)
     m_Scenes.OnEvent(event);
 }
 
-void Application::RenderFrame()
+bool Application::RenderFrame()
 {
 #if EMERALD_WITH_IMGUI
     ImGui_ImplSDLGPU3_NewFrame();
@@ -326,7 +330,7 @@ void Application::RenderFrame()
 #endif
 
     if (!m_Renderer->BeginFrame())
-        return; // minimized: nothing to draw this frame
+        return false; // minimized: nothing to draw this frame
 
     // Copy passes (uploads) must happen before the render pass: first record the app's 2D shapes
     // and upload them, then ImGui's vertex/index data.
@@ -364,6 +368,7 @@ void Application::RenderFrame()
     if (pass)
         m_Renderer->EndRenderPass();
     m_Renderer->EndFrame();
+    return true;
 }
 
 void Application::StartInputSession()

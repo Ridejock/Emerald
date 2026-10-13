@@ -34,7 +34,8 @@ The code lives in `include/Emerald/Renderer/` and `src/Renderer/` and is intenti
 - `Window::SetFullscreen(bool)` switches to borderless fullscreen on the current display and back
   (`WindowSpec::Fullscreen` starts that way); `Window::SetIcon(image)` sets the title bar /
   taskbar icon from an RGBA `Image`.
-  When the window is minimized the swapchain texture is null and the frame is skipped.
+  When the window is minimized the swapchain texture is null and the frame is skipped; the loop
+  then waits up to 10 ms for an event instead of spinning (the simulation keeps running).
   `CreateBuffer()` shows the upload path (transfer buffer → copy pass → GPU buffer) and
   `RequestScreenshot()` reads the next frame back into a PNG.
 - **`LoadShader()`** – loads `bin/shaders/<Name>.<spv|dxil|msl>` for whichever format the device

@@ -174,7 +174,7 @@ private:
     void InitImGui();
     void ShutdownImGui();
     void ProcessEvent(const SDL_Event& event);
-    void RenderFrame();
+    bool RenderFrame(); // false: nothing drawn (the window is minimized or hidden)
     // The dev options' parts of the loop: start recording / replaying (after OnStart), screenshot
     // and capture requests for the coming frame, and what is left after it was drawn.
     void StartInputSession();

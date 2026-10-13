@@ -4,6 +4,8 @@
 #include <algorithm>
 #include <array>
 #include <cstdio>
+#include <utility>
+#include <vector>
 
 #include <Emerald/Core/FixedTimestep.h>
 #include <Emerald/Core/Log.h>
@@ -345,7 +347,7 @@ TEST(InputBindingsSaveAndLoad)
     input.RebindAction("Pause", std::span<const Key>()); // keys cleared: pad only
 
     SaveData data;
-    SaveBindings(input, data, kRebindable);
+    CHECK(SaveBindings(input, data, kRebindable));
     CHECK(data.GetString("input.Jump.keys") == ",, Up"); // the comma key is ","
     CHECK(data.GetString("input.Jump.buttons") == "South");
     CHECK(data.GetString("input.Fire.buttons") == "RightTrigger");
@@ -368,13 +370,16 @@ TEST(InputBindingsSaveAndLoad)
     CHECK(fresh.GetActionButtons("Pause").size() == 1);
     CHECK(fresh.GetActionKeys("Hop").size() == 1);
 
-    // Missing values keep the defaults; unknown names are skipped and reported.
+    // Missing values keep the defaults; a list with an unknown name is not applied at all.
     SaveData partial;
     partial.SetString("settings.Jump.keys", "W, Bogus Key");
+    partial.SetString("settings.Fire.buttons", "Cross");
     Input other(keyboard, pads);
     bindDefaults(other);
     CHECK(!LoadBindings(other, partial, kRebindable, "settings"));
-    CHECK(other.GetActionKeys("Jump").size() == 1 && other.GetActionKeys("Jump")[0] == Key::W);
+    CHECK(same(other.GetActionKeys("Jump"), std::array{Key::Space, Key::Z}));
+    CHECK(other.GetActionButtons("Fire").empty() &&
+          other.GetActionMouseButtons("Fire").size() == 1);
     CHECK(other.GetActionButtons("Jump").size() == 1);
     CHECK(other.GetActionKeys("Fire").size() == 1 && other.GetActionKeys("Fire")[0] == Key::C);
 }
@@ -399,4 +404,109 @@ TEST(InputPressedKeyAndButton)
     pads.BeginFrame();
     pads.OnButton(1, GamepadButton::East, true);
     CHECK(pads.GetPressedButton() == GamepadButton::East);
+}
+
+TEST(InputBindingsBadActionName)
+{
+    Log::Init({});
+    Keyboard keyboard;
+    Gamepads pads;
+    Input input(keyboard, pads);
+    input.BindAction("Jump", {Key::Space});
+    SaveData data;
+    // A name that can't be a key is reported (BindAction itself asserts in debug builds).
+    constexpr std::array<std::string_view, 2> kActions = {"Jump", "Move Left"};
+    CHECK(!SaveBindings(input, data, kActions));
+    CHECK(data.GetString("input.Jump.keys") == "Space");
+    CHECK(data.GetValues().size() == 3);
+}
+
+TEST(InputAxisBindingsSaveAndLoad)
+{
+    Log::Init({});
+    constexpr std::array<std::string_view, 1> kAxes = {"MoveX"};
+    const auto bindDefaults = [](Input& input) {
+        input.BindAxis("MoveX", Key::A, Key::D);
+        input.BindAxis("MoveX", Key::Left, Key::Right);
+        input.BindAxis("MoveX", GamepadButton::DPadLeft, GamepadButton::DPadRight);
+        input.BindAxis("MoveX", GamepadAxis::LeftX);
+    };
+    Keyboard keyboard;
+    Gamepads pads;
+    Input input(keyboard, pads);
+    bindDefaults(input);
+    CHECK(input.GetAxisKeyPairs("MoveX").size() == 2);
+    CHECK(input.GetAxisAnalogs("MoveX").size() == 1 &&
+          input.GetAxisAnalogs("MoveX")[0].Axis == GamepadAxis::LeftX);
+    CHECK(input.GetAxisKeyPairs("Nope").empty());
+
+    // Change one pair, keep the arrows.
+    std::vector<AxisPair<Key>> pairs(input.GetAxisKeyPairs("MoveX").begin(),
+                                     input.GetAxisKeyPairs("MoveX").end());
+    pairs[0] = {Key::J, Key::L};
+    input.RebindAxis("MoveX", std::span<const AxisPair<Key>>(pairs));
+    CHECK(input.GetAxisKeyPairs("MoveX").size() == 2 &&
+          input.GetAxisKeyPairs("MoveX")[1] == (AxisPair<Key>{Key::Left, Key::Right}));
+
+    SaveData data;
+    CHECK(SaveAxisBindings(input, data, kAxes));
+    CHECK(data.GetString("input.MoveX.negative") == "J, Left");
+    CHECK(data.GetString("input.MoveX.positive") == "L, Right");
+    CHECK(data.GetString("input.MoveX.pad.negative") == "DPadLeft");
+
+    Input fresh(keyboard, pads);
+    bindDefaults(fresh);
+    CHECK(LoadAxisBindings(fresh, data, kAxes));
+    CHECK(std::ranges::equal(fresh.GetAxisKeyPairs("MoveX"), input.GetAxisKeyPairs("MoveX")));
+    CHECK(fresh.GetAxisAnalogs("MoveX").size() == 1); // analog bindings stay
+
+    // Lists of different lengths or unknown names keep the defaults.
+    SaveData bad;
+    bad.SetString("input.MoveX.negative", "J, Left");
+    bad.SetString("input.MoveX.positive", "L");
+    bad.SetString("input.MoveX.pad.negative", "Cross");
+    bad.SetString("input.MoveX.pad.positive", "East");
+    Input other(keyboard, pads);
+    bindDefaults(other);
+    CHECK(!LoadAxisBindings(other, bad, kAxes));
+    CHECK(other.GetAxisKeyPairs("MoveX")[0] == (AxisPair<Key>{Key::A, Key::D}));
+    CHECK(other.GetAxisButtonPairs("MoveX").size() == 1);
+}
+
+TEST(InputFindActionsUsing)
+{
+    Keyboard keyboard;
+    Gamepads pads;
+    Input input(keyboard, pads);
+    input.BindAction("Jump", {Key::Space, Key::Z});
+    input.BindAction("Confirm", {Key::Space});
+    input.BindAction("Jump", {GamepadButton::South});
+    input.BindAction("Fire", {MouseButton::Left});
+    const std::vector<std::string_view> space = input.FindActionsUsing(Key::Space);
+    CHECK(space.size() == 2 && space[0] == "Jump" && space[1] == "Confirm");
+    CHECK(input.FindActionsUsing(Key::X).empty());
+    CHECK(input.FindActionsUsing(GamepadButton::South).size() == 1);
+    CHECK(input.FindActionsUsing(MouseButton::Left)[0] == "Fire");
+}
+
+// Saved bindings are SDL's key names: if SDL renamed one, players' saved controls would be
+// dropped (back to the defaults). This pins the names games bind.
+TEST(InputKeyNamesPinned)
+{
+    const std::array<std::pair<Key, std::string_view>, 12> names = {{
+        {Key::A, "A"},
+        {Key::Z, "Z"},
+        {Key::Space, "Space"},
+        {Key::Escape, "Escape"},
+        {Key::Left, "Left"},
+        {Key::Up, "Up"},
+        {Key::LeftShift, "Left Shift"},
+        {Key::LeftCtrl, "Left Ctrl"},
+        {Key::Tab, "Tab"},
+        {Key::Backspace, "Backspace"},
+        {Key::F1, "F1"},
+        {Key(SDL_SCANCODE_RETURN), "Return"},
+    }};
+    for (const auto& [key, name] : names)
+        CHECK(GetKeyName(key) == name);
 }

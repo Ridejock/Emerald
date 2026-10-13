@@ -1,7 +1,10 @@
 #include "Emerald/Input/Input.h"
 
 #include <algorithm>
+#include <cassert>
 #include <cmath>
+
+#include "Emerald/Save/Save.h"
 
 namespace Emerald {
 
@@ -13,6 +16,19 @@ template <typename T> void AddUnique(std::vector<T>& list, std::span<const T> it
         if (std::find(list.begin(), list.end(), item) == list.end())
             list.push_back(item);
     }
+}
+
+template <typename T, typename Item>
+std::vector<std::string_view> ActionsUsing(const std::vector<T>& actions, const Item& item,
+                                           std::vector<Item> T::* list)
+{
+    std::vector<std::string_view> names;
+    for (const T& a : actions) {
+        const std::vector<Item>& items = a.*list;
+        if (std::find(items.begin(), items.end(), item) != items.end())
+            names.push_back(a.Name);
+    }
+    return names;
 }
 
 } // namespace
@@ -105,6 +121,50 @@ void Input::Unbind(std::string_view name)
 {
     std::erase_if(m_Actions, [&](const Action& a) { return a.Name == name; });
     std::erase_if(m_Axes, [&](const Axis& a) { return a.Name == name; });
+}
+
+void Input::RebindAxis(std::string_view axis, std::span<const AxisPair<Key>> pairs)
+{
+    GetOrAddAxis(axis).KeyPairs.assign(pairs.begin(), pairs.end());
+}
+
+void Input::RebindAxis(std::string_view axis, std::span<const AxisPair<GamepadButton>> pairs)
+{
+    GetOrAddAxis(axis).ButtonPairs.assign(pairs.begin(), pairs.end());
+}
+
+std::span<const AxisPair<Key>> Input::GetAxisKeyPairs(std::string_view axis) const
+{
+    const Axis* a = FindAxis(axis);
+    return a ? std::span<const AxisPair<Key>>(a->KeyPairs) : std::span<const AxisPair<Key>>();
+}
+
+std::span<const AxisPair<GamepadButton>> Input::GetAxisButtonPairs(std::string_view axis) const
+{
+    const Axis* a = FindAxis(axis);
+    return a ? std::span<const AxisPair<GamepadButton>>(a->ButtonPairs)
+             : std::span<const AxisPair<GamepadButton>>();
+}
+
+std::span<const AxisAnalog> Input::GetAxisAnalogs(std::string_view axis) const
+{
+    const Axis* a = FindAxis(axis);
+    return a ? std::span<const AxisAnalog>(a->Analogs) : std::span<const AxisAnalog>();
+}
+
+std::vector<std::string_view> Input::FindActionsUsing(Key key) const
+{
+    return ActionsUsing(m_Actions, key, &Action::Keys);
+}
+
+std::vector<std::string_view> Input::FindActionsUsing(GamepadButton button) const
+{
+    return ActionsUsing(m_Actions, button, &Action::Buttons);
+}
+
+std::vector<std::string_view> Input::FindActionsUsing(MouseButton button) const
+{
+    return ActionsUsing(m_Actions, button, &Action::MouseButtons);
 }
 
 std::span<const Key> Input::GetActionKeys(std::string_view action) const
@@ -248,17 +308,17 @@ f32 Input::DevicesAxis(const Axis& a) const
     // Digital bindings: any held input per direction counts once, so opposite directions cancel.
     bool negative = false;
     bool positive = false;
-    for (const Pair<Key>& pair : a.KeyPairs) {
+    for (const AxisPair<Key>& pair : a.KeyPairs) {
         negative = negative || m_Keyboard.IsKeyDown(pair.Negative);
         positive = positive || m_Keyboard.IsKeyDown(pair.Positive);
     }
-    for (const Pair<GamepadButton>& pair : a.ButtonPairs) {
+    for (const AxisPair<GamepadButton>& pair : a.ButtonPairs) {
         negative = negative || m_Gamepads.IsButtonDown(pair.Negative);
         positive = positive || m_Gamepads.IsButtonDown(pair.Positive);
     }
     f32 value = (positive ? 1.0f : 0.0f) - (negative ? 1.0f : 0.0f);
     // Analog bindings: the largest magnitude wins (a full key press beats a half-tilted stick).
-    for (const Analog& analog : a.Analogs) {
+    for (const AxisAnalog& analog : a.Analogs) {
         const f32 v = std::clamp(m_Gamepads.GetAxis(analog.Axis) * analog.Scale, -1.0f, 1.0f);
         if (std::abs(v) > std::abs(value))
             value = v;
@@ -306,6 +366,7 @@ const Input::Axis* Input::FindAxis(std::string_view name) const
 
 Input::Action& Input::GetOrAddAction(std::string_view name)
 {
+    assert(SaveData::IsValidKey(name) && "action names are letters, digits and . _ -");
     for (Action& a : m_Actions) {
         if (a.Name == name)
             return a;
@@ -316,6 +377,7 @@ Input::Action& Input::GetOrAddAction(std::string_view name)
 
 Input::Axis& Input::GetOrAddAxis(std::string_view name)
 {
+    assert(SaveData::IsValidKey(name) && "axis names are letters, digits and . _ -");
     for (Axis& a : m_Axes) {
         if (a.Name == name)
             return a;

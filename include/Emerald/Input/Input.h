@@ -14,6 +14,19 @@
 
 namespace Emerald {
 
+// One key or button pair of an axis: `Negative` gives -1, `Positive` +1.
+template <typename T> struct AxisPair {
+    T Negative;
+    T Positive;
+    bool operator==(const AxisPair&) const = default;
+};
+// An analog stick or trigger of an axis, multiplied by `Scale`.
+struct AxisAnalog {
+    GamepadAxis Axis;
+    f32 Scale;
+    bool operator==(const AxisAnalog&) const = default;
+};
+
 // Action-based input: the game names what the player can do ("Fire", "Thrust") and binds keys
 // and gamepad inputs to those names; game code only asks about actions, so controls can be
 // remapped at runtime without touching it. Get it with Application::GetInput():
@@ -33,6 +46,12 @@ namespace Emerald {
 //
 //   // Rebinding, e.g. from an options menu (replaces only the keys; pad bindings stay):
 //   input.RebindAction("Fire", {Key::LeftCtrl});
+//
+// Action and axis names are also their keys in a settings file (InputBindings.h): letters,
+// digits and . _ - (debug builds assert it).
+//
+// Restoring the defaults for an options screen: Unbind the action and call your own binding
+// function again, or keep a copy of GetActionKeys() and friends taken right after it.
 //
 // Pressed/released follow the ButtonStates rules: since the last frame in OnUpdate, since the
 // last fixed step in OnFixedUpdate. Unknown names are simply "not down" / 0. Every connected
@@ -71,6 +90,9 @@ public:
     void RebindAxis(std::string_view axis, Key negative, Key positive);
     void RebindAxis(std::string_view axis, GamepadButton negative, GamepadButton positive);
     void RebindAxis(std::string_view axis, GamepadAxis analog, f32 scale = 1.0f);
+    // ...or with a list, e.g. to change one pair and keep the others (WASD and the arrows).
+    void RebindAxis(std::string_view axis, std::span<const AxisPair<Key>> pairs);
+    void RebindAxis(std::string_view axis, std::span<const AxisPair<GamepadButton>> pairs);
 
     // Removes an action or axis with all its bindings.
     void Unbind(std::string_view name);
@@ -78,6 +100,16 @@ public:
     [[nodiscard]] std::span<const Key> GetActionKeys(std::string_view action) const;
     [[nodiscard]] std::span<const GamepadButton> GetActionButtons(std::string_view action) const;
     [[nodiscard]] std::span<const MouseButton> GetActionMouseButtons(std::string_view action) const;
+    // What is bound to an axis (empty if there is no such axis).
+    [[nodiscard]] std::span<const AxisPair<Key>> GetAxisKeyPairs(std::string_view axis) const;
+    [[nodiscard]] std::span<const AxisPair<GamepadButton>>
+    GetAxisButtonPairs(std::string_view axis) const;
+    [[nodiscard]] std::span<const AxisAnalog> GetAxisAnalogs(std::string_view axis) const;
+    // The actions an input is bound to, in binding order: for conflict warnings or swaps when
+    // rebinding. Axes are not included.
+    [[nodiscard]] std::vector<std::string_view> FindActionsUsing(Key key) const;
+    [[nodiscard]] std::vector<std::string_view> FindActionsUsing(GamepadButton button) const;
+    [[nodiscard]] std::vector<std::string_view> FindActionsUsing(MouseButton button) const;
 
     // --- Queries ---
     // True while any bound key or button is held.
@@ -125,19 +157,11 @@ private:
         std::vector<GamepadButton> Buttons;
         std::vector<MouseButton> MouseButtons;
     };
-    template <typename T> struct Pair {
-        T Negative;
-        T Positive;
-    };
-    struct Analog {
-        GamepadAxis Axis;
-        f32 Scale;
-    };
     struct Axis {
         std::string Name;
-        std::vector<Pair<Key>> KeyPairs;
-        std::vector<Pair<GamepadButton>> ButtonPairs;
-        std::vector<Analog> Analogs;
+        std::vector<AxisPair<Key>> KeyPairs;
+        std::vector<AxisPair<GamepadButton>> ButtonPairs;
+        std::vector<AxisAnalog> Analogs;
     };
 
     // A handful of actions per game: a linear search by name is simple and fast enough.

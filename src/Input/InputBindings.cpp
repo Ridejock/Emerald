@@ -66,20 +66,67 @@ template <typename T, typename NameFn> std::string Join(std::span<const T> items
     return out;
 }
 
-// Reads one saved list into `out`; false if a name is unknown (it is skipped).
+// Reads one saved list into `out`. All or nothing: false (and `out` empty) if any name is
+// unknown, so a list from a newer game or an SDL rename can't leave an action half-bound.
 template <typename T, typename FindFn>
 bool ReadList(const std::string& list, std::string_view key, std::vector<T>& out, FindFn find)
 {
-    bool ok = true;
     for (const std::string_view name : Split(list)) {
         if (const std::optional<T> item = find(name)) {
             out.push_back(*item);
         } else {
-            EM_CORE_WARN("LoadBindings: {}: unknown name '{}', skipped", key, name);
-            ok = false;
+            EM_CORE_WARN("LoadBindings: {}: unknown name '{}', the default bindings are kept", key,
+                         name);
+            out.clear();
+            return false;
         }
     }
-    return ok;
+    return true;
+}
+
+// "<prefix>.<name>", or empty (and logged) if that can't be a save key.
+std::string BaseKey(std::string_view prefix, std::string_view name)
+{
+    std::string key = std::string(prefix) + "." + std::string(name);
+    if (SaveData::IsValidKey(key))
+        return key;
+    EM_CORE_ERROR("SaveBindings: '{}' is not saved: its name must be letters, digits and . _ -",
+                  name);
+    return {};
+}
+
+// Splits pairs into the two parallel lists they are saved as.
+template <typename T, typename NameFn>
+void WritePairs(SaveData& data, const std::string& key, std::span<const AxisPair<T>> pairs,
+                NameFn name)
+{
+    std::vector<T> negative, positive;
+    for (const AxisPair<T>& pair : pairs) {
+        negative.push_back(pair.Negative);
+        positive.push_back(pair.Positive);
+    }
+    data.SetString(key + ".negative", Join(std::span<const T>(negative), name));
+    data.SetString(key + ".positive", Join(std::span<const T>(positive), name));
+}
+
+// Reads both lists back into pairs; false if one is missing, has unknown names, or they differ
+// in length.
+template <typename T, typename FindFn>
+bool ReadPairs(const SaveData& data, const std::string& key, std::vector<AxisPair<T>>& pairs,
+               FindFn find)
+{
+    std::vector<T> negative, positive;
+    if (!ReadList(data.GetString(key + ".negative"), key + ".negative", negative, find) ||
+        !ReadList(data.GetString(key + ".positive"), key + ".positive", positive, find))
+        return false;
+    if (negative.size() != positive.size()) {
+        EM_CORE_WARN("LoadAxisBindings: {}: the lists differ in length, the defaults are kept",
+                     key);
+        return false;
+    }
+    for (usize i = 0; i < negative.size(); ++i)
+        pairs.push_back({negative[i], positive[i]});
+    return true;
 }
 
 } // namespace
@@ -156,17 +203,23 @@ std::optional<MouseButton> FindMouseButton(std::string_view name)
 
 // --- Saving and loading ---
 
-void SaveBindings(const Input& input, SaveData& data, std::span<const std::string_view> actions,
+bool SaveBindings(const Input& input, SaveData& data, std::span<const std::string_view> actions,
                   std::string_view prefix)
 {
+    bool ok = true;
     for (const std::string_view action : actions) {
-        const std::string key = std::string(prefix) + "." + std::string(action);
+        const std::string key = BaseKey(prefix, action);
+        if (key.empty()) {
+            ok = false;
+            continue;
+        }
         data.SetString(key + ".keys", Join(input.GetActionKeys(action), GetKeyName));
         data.SetString(key + ".buttons",
                        Join(input.GetActionButtons(action), GetGamepadButtonName));
         data.SetString(key + ".mouse",
                        Join(input.GetActionMouseButtons(action), GetMouseButtonName));
     }
+    return ok;
 }
 
 bool LoadBindings(Input& input, const SaveData& data, std::span<const std::string_view> actions,
@@ -177,18 +230,64 @@ bool LoadBindings(Input& input, const SaveData& data, std::span<const std::strin
         const std::string base = std::string(prefix) + "." + std::string(action);
         if (const std::string key = base + ".keys"; data.Has(key)) {
             std::vector<Key> keys;
-            ok &= ReadList(data.GetString(key), key, keys, FindKey);
-            input.RebindAction(action, std::span<const Key>(keys));
+            if (ReadList(data.GetString(key), key, keys, FindKey))
+                input.RebindAction(action, std::span<const Key>(keys));
+            else
+                ok = false;
         }
         if (const std::string key = base + ".buttons"; data.Has(key)) {
             std::vector<GamepadButton> buttons;
-            ok &= ReadList(data.GetString(key), key, buttons, FindGamepadButton);
-            input.RebindAction(action, std::span<const GamepadButton>(buttons));
+            if (ReadList(data.GetString(key), key, buttons, FindGamepadButton))
+                input.RebindAction(action, std::span<const GamepadButton>(buttons));
+            else
+                ok = false;
         }
         if (const std::string key = base + ".mouse"; data.Has(key)) {
             std::vector<MouseButton> buttons;
-            ok &= ReadList(data.GetString(key), key, buttons, FindMouseButton);
-            input.RebindAction(action, std::span<const MouseButton>(buttons));
+            if (ReadList(data.GetString(key), key, buttons, FindMouseButton))
+                input.RebindAction(action, std::span<const MouseButton>(buttons));
+            else
+                ok = false;
+        }
+    }
+    return ok;
+}
+
+bool SaveAxisBindings(const Input& input, SaveData& data, std::span<const std::string_view> axes,
+                      std::string_view prefix)
+{
+    bool ok = true;
+    for (const std::string_view axis : axes) {
+        const std::string key = BaseKey(prefix, axis);
+        if (key.empty()) {
+            ok = false;
+            continue;
+        }
+        WritePairs(data, key, input.GetAxisKeyPairs(axis), GetKeyName);
+        WritePairs(data, key + ".pad", input.GetAxisButtonPairs(axis), GetGamepadButtonName);
+    }
+    return ok;
+}
+
+bool LoadAxisBindings(Input& input, const SaveData& data, std::span<const std::string_view> axes,
+                      std::string_view prefix)
+{
+    bool ok = true;
+    for (const std::string_view axis : axes) {
+        const std::string base = std::string(prefix) + "." + std::string(axis);
+        if (data.Has(base + ".negative") || data.Has(base + ".positive")) {
+            std::vector<AxisPair<Key>> pairs;
+            if (ReadPairs(data, base, pairs, FindKey))
+                input.RebindAxis(axis, std::span<const AxisPair<Key>>(pairs));
+            else
+                ok = false;
+        }
+        if (data.Has(base + ".pad.negative") || data.Has(base + ".pad.positive")) {
+            std::vector<AxisPair<GamepadButton>> pairs;
+            if (ReadPairs(data, base + ".pad", pairs, FindGamepadButton))
+                input.RebindAxis(axis, std::span<const AxisPair<GamepadButton>>(pairs));
+            else
+                ok = false;
         }
     }
     return ok;

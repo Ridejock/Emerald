@@ -280,7 +280,17 @@ function(emerald_add_shaders target)
         endforeach()
     endforeach()
 
-    add_custom_target(${target}_shaders ALL DEPENDS ${outputs} SOURCES ${sources})
+    # Listed in the IDE only: shadercross is their one compiler. Without this the Visual Studio
+    # generator hands .hlsl files to FXCompile (fxc, SM 5.0), which rejects the SDL GPU register
+    # spaces (X3721). Set in this directory, where the custom target below is created.
+    set(abs_sources "")
+    foreach(src IN LISTS sources)
+        get_filename_component(src "${src}" ABSOLUTE)
+        list(APPEND abs_sources "${src}")
+    endforeach()
+    set_source_files_properties(${abs_sources} DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+                                PROPERTIES VS_TOOL_OVERRIDE "None")
+    add_custom_target(${target}_shaders ALL DEPENDS ${outputs} SOURCES ${abs_sources})
     add_dependencies(${target} ${target}_shaders)
     list(REMOVE_DUPLICATES shared_targets)
     foreach(shared IN LISTS shared_targets)

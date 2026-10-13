@@ -4,7 +4,9 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <limits>
 #include <string>
+#include <vector>
 
 #include <Emerald/Core/Log.h>
 #include <Emerald/Save/Save.h>
@@ -85,7 +87,7 @@ TEST(SaveFormatRoundTrip)
     data.SetString("note", "line 1\nline 2\r\\end");
     const std::string text = SaveSystem::Serialize(data, 3, 1791300000, "Options");
     CHECK(text.starts_with("EMERALD-SAVE 1\nversion = 3\nsaved = 1791300000\nsummary = Options\n"
-                           "crc32 = "));
+                           "checksum = "));
     CHECK(text.find("\n---\naudio.master = 0.75\n") != std::string::npos); // sorted keys
     CHECK(text.find("note = line 1\\nline 2\\r\\\\end\n") != std::string::npos);
 
@@ -319,4 +321,97 @@ TEST(SaveHighScoreTable)
         CHECK(loaded.Data.GetString(key + ".name") == table[i].Name);
         CHECK(loaded.Data.GetInt(key + ".points") == table[i].Points);
     }
+}
+
+// Saves written before the checksum covered the header (crc32 over the body) still load.
+TEST(SaveOldFormatStillLoads)
+{
+    const SaveSystem saves(TempFolder("oldformat"), 1);
+    const std::string old = "EMERALD-SAVE 1\nversion = 1\nsaved = 1791300000\ncrc32 = 976b7d6c\n"
+                            "---\naudio.master = 0.8\ninput.Fire.keys = Space, Z\n";
+    const LoadResult loaded = saves.Parse(old);
+    CHECK(loaded && loaded.Data.GetFloat("audio.master") == 0.8f);
+    CHECK(loaded.Data.GetString("input.Fire.keys") == "Space, Z");
+    std::string damaged = old;
+    damaged[damaged.size() - 2] = 'X'; // the body is still checked
+    CHECK(saves.Parse(damaged).Error == SaveError::Corrupt);
+}
+
+TEST(SaveChecksumCoversHeader)
+{
+    const SaveSystem saves(TempFolder("header"), 2);
+    const std::string text = SaveSystem::Serialize(Settings(0.5f, true), 2, 1791300000, "Lv 2");
+    CHECK(saves.Parse(text));
+    std::string version = text;
+    version[version.find("version = 2") + 10] = '1';
+    CHECK(saves.Parse(version).Error == SaveError::Corrupt);
+    std::string summary = text;
+    summary[summary.find("Lv 2") + 3] = '3';
+    CHECK(saves.Parse(summary).Error == SaveError::Corrupt);
+
+    // A checksum line that is there but unreadable is damage, not "no checksum".
+    std::string bad = text;
+    bad.replace(bad.find("checksum = ") + 11, 8, "zzzzzzzz");
+    CHECK(saves.Parse(bad).Error == SaveError::Corrupt);
+    CHECK(saves.Parse("EMERALD-SAVE 1\nversion = 1\ncrc32 = nope\n---\nlives = 3\n").Error ==
+          SaveError::Corrupt);
+
+    // Opened in an editor: a BOM and CRLF line endings still verify.
+    std::string crlf = "\xEF\xBB\xBF";
+    for (const char c : text)
+        crlf += c == '\n' ? std::string("\r\n") : std::string(1, c);
+    const LoadResult edited = saves.Parse(crlf);
+    CHECK(edited && edited.Data.GetFloat("audio.master") == 0.5f);
+}
+
+TEST(SaveOlderGameMovesNewerSaveAside)
+{
+    const fs::path folder = TempFolder("downgrade");
+    SaveSystem v3(folder, 3);
+    CHECK(v3.Save("slot_1", Settings(0.3f, false)));
+    SaveSystem v2(folder, 2);
+    CHECK(v2.Save("slot_1", Settings(0.2f, false)));
+    // The v3 save is kept whole, not rotated into the .bak.
+    CHECK(fs::exists(folder / "slot_1.sav.v3"));
+    CHECK(!fs::exists(folder / "slot_1.sav.bak"));
+    CHECK(v3.Parse(ReadText(folder / "slot_1.sav.v3")).Data.GetFloat("audio.master") == 0.3f);
+    CHECK(v2.Load("slot_1").Data.GetFloat("audio.master") == 0.2f);
+    CHECK(v2.ListSlots().size() == 1);
+}
+
+TEST(SaveMissingFileFallsBackToBackup)
+{
+    const fs::path folder = TempFolder("missing");
+    SaveSystem saves(folder, 1);
+    CHECK(saves.Save("slot_1", Settings(0.1f, false)));
+    CHECK(saves.Save("slot_1", Settings(0.2f, false)));
+    fs::remove(folder / "slot_1.sav"); // e.g. quarantined, or a crash between the renames
+    CHECK(saves.Exists("slot_1"));
+    const LoadResult loaded = saves.Load("slot_1");
+    CHECK(loaded && loaded.FromBackup && loaded.Data.GetFloat("audio.master") == 0.1f);
+    const std::vector<SaveSlotInfo> slots = saves.ListSlots();
+    CHECK(slots.size() == 1 && slots[0].Name == "slot_1" && slots[0].Valid && slots[0].FromBackup);
+    // Saving again works and keeps that backup (there was no .sav to rotate).
+    CHECK(saves.Save("slot_1", Settings(0.3f, false)));
+    CHECK(saves.Load("slot_1").Data.GetFloat("audio.master") == 0.3f);
+    CHECK(fs::exists(folder / "slot_1.sav.bak") && !fs::exists(folder / "slot_1.sav.tmp"));
+}
+
+TEST(SaveDataEdgeCases)
+{
+    SaveData data;
+    data.SetInt("lives", 3);
+    data.Rename("lives", "bad key");
+    CHECK(data.GetInt("lives") == 3 && !data.Has("bad key")); // not lost
+    data.SetFloat("x", std::numeric_limits<f32>::quiet_NaN());
+    data.SetFloat("y", std::numeric_limits<f32>::infinity());
+    CHECK(!data.Has("x") && !data.Has("y"));
+    data.SetString("z", "nan");
+    data.SetString("w", "1e60"); // out of f32 range
+    CHECK(data.GetFloat("z", 7.0f) == 7.0f && data.GetFloat("w", 7.0f) == 7.0f);
+
+    for (const char* name : {"con", "NUL", "Aux", "prn", "com1", "LPT9"})
+        CHECK(!SaveSystem::IsValidSlotName(name));
+    for (const char* name : {"settings", "run", "console", "com10", "slot_1"})
+        CHECK(SaveSystem::IsValidSlotName(name));
 }

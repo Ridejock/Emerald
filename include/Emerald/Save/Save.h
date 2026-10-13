@@ -14,7 +14,8 @@ namespace Emerald {
 // The values in one save: text keys mapped to ints, floats, bools or strings. Everything is
 // stored as text, so a save file is readable and diffs well. Keys are letters, digits and . _ -
 // (e.g. "audio.master", "scores.3.name"). The getters return the fallback when a key is missing
-// or doesn't hold that type, so a game can read new keys from old saves without checks.
+// or doesn't hold that type, so a game can read new keys from old saves without checks. Floats
+// must be finite: NaN and infinity are not written, and read back as the fallback.
 class SaveData {
 public:
     void SetInt(std::string_view key, i32 value);
@@ -29,7 +30,8 @@ public:
 
     [[nodiscard]] bool Has(std::string_view key) const;
     void Remove(std::string_view key);
-    // Moves a value to another key (handy in migrations). Does nothing if `from` is missing.
+    // Moves a value to another key (handy in migrations). Does nothing if `from` is missing or
+    // `to` is not a valid key.
     void Rename(std::string_view from, std::string_view to);
     void Clear() { m_Values.clear(); }
     [[nodiscard]] bool IsEmpty() const { return m_Values.empty(); }
@@ -65,18 +67,19 @@ struct LoadResult {
     u32 FileVersion = 0; // the version the file was written with
     SaveError Error = SaveError::None;
     std::string Message;     // what went wrong, for the log or a dialog
-    bool FromBackup = false; // the save was damaged; this is the previous one (<slot>.bak)
+    bool FromBackup = false; // the save was damaged or missing; this is the previous one (.bak)
 
     explicit operator bool() const { return Error == SaveError::None; }
 };
 
 struct SaveSlotInfo {
     std::string Name;    // "slot_1", "settings", ...
-    bool Exists = false; // there is a file
+    bool Exists = false; // there is a file (the save, or only its backup)
     bool Valid = false;  // ...and it reads (the version may still be too new)
     u32 Version = 0;
-    i64 SavedAt = 0;     // Unix time (seconds, UTC)
-    std::string Summary; // the game's one-line description, e.g. "Level 3 - 12:40"
+    i64 SavedAt = 0;         // Unix time (seconds, UTC)
+    std::string Summary;     // the game's one-line description, e.g. "Level 3 - 12:40"
+    bool FromBackup = false; // only the backup is left; Load will use it
 };
 
 // Named save slots in one folder (one file per slot: <folder>/<name>.sav), with a data version
@@ -94,7 +97,11 @@ struct SaveSlotInfo {
 //
 // Saving is atomic: the new file is written to <name>.sav.tmp and flushed to disk, then renamed
 // over <name>.sav, so a crash or a full disk leaves the old save as it was. The previous save is
-// also kept as <name>.bak, and Load falls back to it if <name>.sav is damaged.
+// kept as <name>.sav.bak, and Load falls back to it if <name>.sav is damaged or missing. A save
+// written by a newer data version is never overwritten: Save moves it to <name>.sav.v<N> first.
+//
+// A SaveSystem is used from one thread (normally the main one); Save writes and flushes before
+// it returns, so save at a checkpoint or a menu rather than every frame.
 class SaveSystem {
 public:
     // The file format (the container, not the game's data version).
@@ -121,13 +128,14 @@ public:
 
     [[nodiscard]] bool Exists(std::string_view slot) const;
     [[nodiscard]] SaveSlotInfo GetInfo(std::string_view slot) const;
-    // Every slot in the folder, sorted by name.
+    // Every slot in the folder (also those with only a backup left), sorted by name.
     [[nodiscard]] std::vector<SaveSlotInfo> ListSlots() const;
 
     [[nodiscard]] std::filesystem::path GetPath(std::string_view slot) const;
     [[nodiscard]] const std::filesystem::path& GetFolder() const { return m_Folder; }
     [[nodiscard]] u32 GetVersion() const { return m_Version; }
 
+    // Up to 64 letters, digits, _ and -, and not a Windows device name (con, nul, com1, ...).
     [[nodiscard]] static bool IsValidSlotName(std::string_view slot);
 
     // The file contents without touching the disk (tests, tools). Parse does the migrations.

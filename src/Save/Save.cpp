@@ -1,8 +1,10 @@
 #include "Emerald/Save/Save.h"
 
 #include <algorithm>
+#include <cctype>
 #include <charconv>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
@@ -12,6 +14,7 @@
 #include <SDL3/SDL_error.h>
 #include <SDL3/SDL_filesystem.h>
 #include <SDL3/SDL_iostream.h>
+#include <SDL3/SDL_timer.h>
 
 #include "Emerald/Core/Log.h"
 #include "Emerald/Core/Paths.h"
@@ -23,6 +26,9 @@ namespace Emerald {
 namespace {
 
 constexpr std::string_view kSeparator = "---";
+constexpr std::string_view kBom = "\xEF\xBB\xBF";
+// Over the whole file except its own line. Older files have "crc32" instead (the body only).
+constexpr std::string_view kChecksumKey = "checksum";
 
 bool IsNameChar(char c, bool allowDot)
 {
@@ -57,7 +63,7 @@ bool ParseF32(std::string_view text, f32& value)
     if (copy.empty() || end != copy.c_str() + copy.size())
         return false;
     value = static_cast<f32>(parsed);
-    return true;
+    return std::isfinite(value); // NaN / inf (or out of f32 range) is not a usable value
 }
 
 // Values are one line each: newlines, carriage returns and backslashes are escaped.
@@ -140,9 +146,32 @@ struct ParsedFile {
     SaveData Data;
 };
 
-// Fills `out`, or returns why the text is not a (complete) save.
-std::string ParseFile(std::string_view text, ParsedFile& out)
+std::string FormatCrc(u32 crc)
 {
+    char text[16];
+    std::snprintf(text, sizeof(text), "%08x", crc);
+    return text;
+}
+
+// Without a UTF-8 BOM and with "\r\n" as "\n", so a file opened in an editor still verifies.
+std::string Normalize(std::string_view text)
+{
+    if (text.starts_with(kBom))
+        text.remove_prefix(kBom.size());
+    std::string out;
+    out.reserve(text.size());
+    for (usize i = 0; i < text.size(); ++i) {
+        if (!(text[i] == '\r' && i + 1 < text.size() && text[i + 1] == '\n'))
+            out += text[i];
+    }
+    return out;
+}
+
+// Fills `out`, or returns why the text is not a (complete) save.
+std::string ParseFile(std::string_view original, ParsedFile& out)
+{
+    const std::string normalized = Normalize(original);
+    const std::string_view text = normalized;
     if (text.empty())
         return "the file is empty";
     std::string_view rest = text;
@@ -158,10 +187,14 @@ std::string ParseFile(std::string_view text, ParsedFile& out)
 
     // Header lines up to "---".
     bool hasVersion = false;
-    bool hasCrc = false;
+    bool hasCrc = false; // "crc32": the body only (files before the checksum line)
     u32 crc = 0;
+    bool hasChecksum = false;
+    u32 checksum = 0;
+    std::string covered; // what the checksum covers: the text without its line
     bool hasSeparator = false;
     while (!rest.empty()) {
+        const usize lineStart = text.size() - rest.size();
         const std::string_view line = NextLine(rest);
         if (line == kSeparator) {
             hasSeparator = true;
@@ -176,8 +209,16 @@ std::string ParseFile(std::string_view text, ParsedFile& out)
             ParseI64(value, out.SavedAt); // only informational: a bad one reads as 0
         else if (key == "summary")
             out.Summary = Unescape(value);
-        else if (key == "crc32")
-            hasCrc = ParseU32(value, crc, 16);
+        else if (key == "crc32" || key == kChecksumKey) {
+            // Present but unreadable is damage, not "no checksum".
+            u32& target = key == "crc32" ? crc : checksum;
+            if (!ParseU32(value, target, 16))
+                return "bad " + std::string(key) + " line '" + std::string(line) + "'";
+            (key == "crc32" ? hasCrc : hasChecksum) = true;
+            if (key == kChecksumKey)
+                covered = std::string(text.substr(0, lineStart)) +
+                          std::string(text.substr(text.size() - rest.size()));
+        }
         // Unknown header keys are skipped, so later formats can add some.
     }
     if (!hasSeparator)
@@ -185,8 +226,10 @@ std::string ParseFile(std::string_view text, ParsedFile& out)
     if (!hasVersion)
         return "no valid 'version' in the header";
 
-    // The checksum covers everything after "---", so a cut-off or damaged file is caught. It is
-    // optional so a save can be written or edited by hand (delete the crc32 line).
+    // The checksum catches a cut-off or damaged file. It is optional so a save can be written or
+    // edited by hand (delete the line).
+    if (hasChecksum && Crc32(covered) != checksum)
+        return "checksum mismatch (the file is truncated or damaged)";
     if (hasCrc && Crc32(rest) != crc)
         return "checksum mismatch (the file is truncated or damaged)";
 
@@ -238,6 +281,24 @@ bool WriteFileDurably(const fs::path& path, std::string_view text)
     return written && flushed && closed;
 }
 
+// Antivirus and sync tools can hold a file open for a moment on Windows: try a few times.
+bool RenameWithRetry(const fs::path& from, const fs::path& to)
+{
+    for (i32 attempt = 0; attempt < 3; ++attempt) {
+        if (attempt > 0)
+            SDL_Delay(50);
+        if (SDL_RenamePath(ToUtf8(from).c_str(), ToUtf8(to).c_str()))
+            return true;
+    }
+    return false;
+}
+
+bool ReadInfo(const fs::path& path, ParsedFile& file)
+{
+    std::string text;
+    return ReadFile(path, text) && ParseFile(text, file).empty();
+}
+
 i64 UnixNow()
 {
     using namespace std::chrono;
@@ -268,6 +329,10 @@ void SaveData::SetInt(std::string_view key, i32 value)
 
 void SaveData::SetFloat(std::string_view key, f32 value)
 {
+    if (!std::isfinite(value)) {
+        EM_CORE_ERROR("SaveData: '{}' is not a finite number, not saved", key);
+        return;
+    }
     char text[32];
     std::snprintf(text, sizeof(text), "%.9g", static_cast<f64>(value));
     SetString(key, text);
@@ -340,6 +405,10 @@ void SaveData::Rename(std::string_view from, std::string_view to)
     const auto it = m_Values.find(from);
     if (it == m_Values.end() || from == to)
         return;
+    if (!IsValidKey(to)) {
+        EM_CORE_ERROR("SaveData: invalid key '{}', '{}' is not renamed", to, from);
+        return;
+    }
     std::string value = std::move(it->second);
     m_Values.erase(it);
     SetString(to, value);
@@ -396,6 +465,15 @@ bool SaveSystem::IsValidSlotName(std::string_view slot)
         if (!IsNameChar(c, false))
             return false;
     }
+    // Device names on Windows, whatever the extension.
+    std::string lower(slot);
+    for (char& c : lower)
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    if (lower == "con" || lower == "prn" || lower == "aux" || lower == "nul")
+        return false;
+    if (lower.size() == 4 && (lower.starts_with("com") || lower.starts_with("lpt")) &&
+        lower[3] >= '0' && lower[3] <= '9')
+        return false;
     return true;
 }
 
@@ -411,17 +489,17 @@ std::string SaveSystem::Serialize(const SaveData& data, u32 version, i64 savedAt
     for (const auto& [key, value] : data.GetValues())
         body += key + " = " + Escape(value) + "\n";
 
-    char crc[16];
-    std::snprintf(crc, sizeof(crc), "%08x", Crc32(body));
-
     std::string text = std::string(kMagic) + " " + std::to_string(kFormat) + "\n";
     text += "version = " + std::to_string(version) + "\n";
     text += "saved = " + std::to_string(savedAt) + "\n";
     if (!summary.empty())
         text += "summary = " + Escape(summary) + "\n";
-    text += "crc32 = " + std::string(crc) + "\n";
     text += std::string(kSeparator) + "\n";
-    return text + body;
+    text += body;
+    // The checksum line goes last in the header and covers everything else.
+    const std::string line = std::string(kChecksumKey) + " = " + FormatCrc(Crc32(text)) + "\n";
+    text.insert(text.find("\n" + std::string(kSeparator) + "\n") + 1, line);
+    return text;
 }
 
 LoadResult SaveSystem::Parse(std::string_view text) const
@@ -469,7 +547,25 @@ bool SaveSystem::Save(std::string_view slot, const SaveData& data, std::string_v
     }
 
     const fs::path path = GetPath(slot);
+    const fs::path backup = WithSuffix(path, ".bak");
     const fs::path temp = WithSuffix(path, ".tmp");
+
+    // A save from a newer version of the game (a beta, before a downgrade) is moved aside to
+    // <slot>.sav.v<N>, not overwritten: the newer game can still have it back.
+    ParsedFile existing;
+    const bool existingValid = ReadInfo(path, existing);
+    if (existingValid && existing.Version > m_Version) {
+        const fs::path aside = WithSuffix(path, ".v" + std::to_string(existing.Version));
+        if (!RenameWithRetry(path, aside)) {
+            EM_CORE_ERROR("Save: {} is from data version {} and can't be moved aside ({}); not "
+                          "saved",
+                          ToUtf8(path), existing.Version, SDL_GetError());
+            return false;
+        }
+        EM_CORE_WARN("Save: {} is from data version {} (this game writes {}); kept as {}",
+                     ToUtf8(path), existing.Version, m_Version, ToUtf8(aside));
+    }
+
     if (!WriteFileDurably(temp, Serialize(data, m_Version, UnixNow(), summary))) {
         EM_CORE_ERROR("Save: writing {} failed ({}); the previous save is kept", ToUtf8(temp),
                       SDL_GetError());
@@ -477,15 +573,15 @@ bool SaveSystem::Save(std::string_view slot, const SaveData& data, std::string_v
         return false;
     }
 
-    // Keep the previous save as .bak, but only if it is a good one: a damaged .sav must not
-    // replace the last good backup.
-    if (GetInfo(slot).Valid &&
-        !SDL_CopyFile(ToUtf8(path).c_str(), ToUtf8(WithSuffix(path, ".bak")).c_str()))
+    // The previous save becomes the .bak, but only if it is a good one: a damaged .sav must not
+    // replace the last good backup. A rename replaces the old .bak in one go; a crash before the
+    // next rename leaves just the .bak, which Load falls back to.
+    if (existingValid && existing.Version <= m_Version && !RenameWithRetry(path, backup))
         EM_CORE_WARN("Save: couldn't back up {}: {}", ToUtf8(path), SDL_GetError());
 
     // The atomic step: SDL renames with MoveFileEx(MOVEFILE_REPLACE_EXISTING) on Windows and
     // rename() elsewhere, which replace the old file in one go.
-    if (!SDL_RenamePath(ToUtf8(temp).c_str(), ToUtf8(path).c_str())) {
+    if (!RenameWithRetry(temp, path)) {
         EM_CORE_ERROR("Save: replacing {} failed ({}); the previous save is kept", ToUtf8(path),
                       SDL_GetError());
         fs::remove(temp, ec);
@@ -503,14 +599,13 @@ LoadResult SaveSystem::Load(std::string_view slot) const
         return result;
     }
     const fs::path path = GetPath(slot);
+    const fs::path backup = WithSuffix(path, ".bak");
     std::error_code ec;
-    if (!fs::exists(path, ec)) {
-        result.Error = SaveError::NotFound; // normal on the first run: not logged
-        result.Message = "no save in slot '" + std::string(slot) + "'";
-        return result;
-    }
     std::string text;
-    if (ReadFile(path, text)) {
+    if (!fs::exists(path, ec)) {
+        result.Error = SaveError::NotFound;
+        result.Message = "no save in slot '" + std::string(slot) + "'";
+    } else if (ReadFile(path, text)) {
         result = Parse(text);
     } else {
         result.Error = SaveError::Unreadable;
@@ -519,20 +614,23 @@ LoadResult SaveSystem::Load(std::string_view slot) const
     if (result)
         return result;
 
-    // A damaged save: try the previous one.
-    if (result.Error == SaveError::Corrupt || result.Error == SaveError::Unreadable) {
+    // Missing (removed by a sync tool, or a crash mid-save) or damaged: try the previous one.
+    const bool missing = result.Error == SaveError::NotFound;
+    if (missing || result.Error == SaveError::Corrupt || result.Error == SaveError::Unreadable) {
         std::string backupText;
-        if (ReadFile(WithSuffix(path, ".bak"), backupText)) {
-            LoadResult backup = Parse(backupText);
-            if (backup) {
-                EM_CORE_WARN("Load: {} is damaged ({}: {}); loaded the backup instead",
-                             ToUtf8(path), ToString(result.Error), result.Message);
-                backup.FromBackup = true;
-                return backup;
+        if (fs::exists(backup, ec) && ReadFile(backup, backupText)) {
+            LoadResult fallback = Parse(backupText);
+            if (fallback) {
+                EM_CORE_WARN("Load: {} is {} ({}); loaded the backup instead", ToUtf8(path),
+                             missing ? "missing" : "damaged", result.Message);
+                fallback.FromBackup = true;
+                return fallback;
             }
         }
     }
-    EM_CORE_WARN("Load: slot '{}' failed ({}): {}", slot, ToString(result.Error), result.Message);
+    if (!missing) // a missing save is normal on the first run: not logged
+        EM_CORE_WARN("Load: slot '{}' failed ({}): {}", slot, ToString(result.Error),
+                     result.Message);
     return result;
 }
 
@@ -553,7 +651,8 @@ bool SaveSystem::Delete(std::string_view slot)
 bool SaveSystem::Exists(std::string_view slot) const
 {
     std::error_code ec;
-    return IsValidSlotName(slot) && fs::is_regular_file(GetPath(slot), ec);
+    return IsValidSlotName(slot) && (fs::is_regular_file(GetPath(slot), ec) ||
+                                     fs::is_regular_file(WithSuffix(GetPath(slot), ".bak"), ec));
 }
 
 SaveSlotInfo SaveSystem::GetInfo(std::string_view slot) const
@@ -561,10 +660,18 @@ SaveSlotInfo SaveSystem::GetInfo(std::string_view slot) const
     SaveSlotInfo info;
     info.Name = slot;
     info.Exists = Exists(slot);
-    std::string text;
+    if (!info.Exists)
+        return info;
+    const fs::path path = GetPath(slot);
+    std::error_code ec;
     ParsedFile file;
-    if (info.Exists && ReadFile(GetPath(slot), text) && ParseFile(text, file).empty()) {
-        info.Valid = true;
+    if (fs::is_regular_file(path, ec)) {
+        info.Valid = ReadInfo(path, file);
+    } else {
+        info.Valid = ReadInfo(WithSuffix(path, ".bak"), file); // what Load would fall back to
+        info.FromBackup = true;
+    }
+    if (info.Valid) {
         info.Version = file.Version;
         info.SavedAt = file.SavedAt;
         info.Summary = std::move(file.Summary);
@@ -577,12 +684,19 @@ std::vector<SaveSlotInfo> SaveSystem::ListSlots() const
     std::vector<std::string> names;
     std::error_code ec;
     for (fs::directory_iterator it(m_Folder, ec), end; !ec && it != end; it.increment(ec)) {
-        const fs::path& path = it->path();
-        const std::string name = ToUtf8(path.stem());
-        if (path.extension() == ".sav" && IsValidSlotName(name))
-            names.push_back(name);
+        // <slot>.sav, or <slot>.sav.bak when only the backup is left.
+        std::string name = ToUtf8(it->path().filename());
+        for (const std::string_view suffix : {".sav.bak", ".sav"}) {
+            if (name.ends_with(suffix)) {
+                name.resize(name.size() - suffix.size());
+                if (IsValidSlotName(name))
+                    names.push_back(name);
+                break;
+            }
+        }
     }
     std::sort(names.begin(), names.end());
+    names.erase(std::unique(names.begin(), names.end()), names.end());
     std::vector<SaveSlotInfo> slots;
     for (const std::string& name : names)
         slots.push_back(GetInfo(name));

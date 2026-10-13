@@ -126,9 +126,10 @@ struct AssetInfo {
 //   of failing, so the game keeps running and the problem is visible on screen.
 // - Hot reload (debug builds): every kPollInterval seconds the files' modification times are
 //   checked on the thread pool. A file that changed, and then stayed unchanged for one more
-//   check (so a half-written file is not read), is loaded again on the main thread (GPU uploads
-//   happen there) and replaces the old object in place: handles, and pointers like a Sprite's
-//   texture or an Animator's animation, stay valid. A placeholder whose file appears is loaded
+//   check (so a half-written file is not read; for an atlas or tilemap, all its files), is
+//   loaded again on the main thread (GPU uploads happen there) and replaces the old object in
+//   place: handles, and pointers like a Sprite's texture or an Animator's animation, stay
+//   valid. A placeholder whose file appears is loaded
 //   the same way. If the new version fails to load, the old one stays. A tilemap is watched
 //   through all its files (the .tmj, external .tsj tilesets and their images); its contents are
 //   replaced as a whole, so look up its layers, objects and tilesets through the handle each time

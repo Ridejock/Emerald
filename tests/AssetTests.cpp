@@ -416,6 +416,28 @@ TEST(AssetsHotReloadAtlasKeepsPointers)
     CHECK(animator.GetFrameIndex() < 2);
 }
 
+TEST(AssetsHotReloadWaitsForEveryFile)
+{
+    if (!Assets::kHotReload)
+        return;
+    Fixture f("settle");
+    WriteText(f.Root / "hero.png", "64");
+    WriteText(f.Root / "hero.json", R"({ "a": { "x": 0, "y": 0, "w": 16, "h": 16 } })");
+    Assets& assets = *f.Manager;
+    AssetHandle<TextureAtlas> atlas = assets.Load<TextureAtlas>("hero.json");
+
+    // The JSON is saved once; the image is still being written for a few checks.
+    WriteText(f.Root / "hero.json", R"({ "a": { "x": 0, "y": 0, "w": 8, "h": 8 } })");
+    for (int i = 0; i < 3; ++i) {
+        WriteText(f.Root / "hero.png", std::to_string(100 + i));
+        CHECK(assets.CheckForChanges() == 0); // the JSON settled, the image did not
+        CHECK(atlas->GetTexture().GetWidth() == 64);
+    }
+    CHECK(assets.CheckForChanges() == 1); // now both have
+    CHECK(atlas->GetTexture().GetWidth() == 102);
+    CHECK(assets.CheckForChanges() == 0);
+}
+
 TEST(AssetsHotReloadFonts)
 {
     if (!Assets::kHotReload)

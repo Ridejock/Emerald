@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <chrono>
 #include <system_error>
+#include <unordered_map>
 #include <utility>
 
 #include "Emerald/Core/Log.h"
@@ -108,7 +109,8 @@ AssetId Assets::Acquire(AssetType type, const std::filesystem::path& path, const
     std::string key = std::string(GetAssetTypeName(type)) + ":" + file.generic_string() +
                       std::visit([](const auto& o) { return OptionsKey(o); }, options);
 #if defined(_WIN32)
-    // Windows paths are not case-sensitive: "Ship.png" is the same file as "ship.png".
+    // Windows paths are not case-sensitive: "Ship.png" is the same file as
+    // "ship.png".
     std::transform(key.begin(), key.end(), key.begin(),
                    [](char c) { return c >= 'A' && c <= 'Z' ? static_cast<char>(c + 32) : c; });
 #endif
@@ -322,9 +324,14 @@ void Assets::StampFiles(std::vector<FileStamp>& files)
 
 u32 Assets::ApplyStamps(const std::vector<FileStamp>& stamps)
 {
-    // Which assets have a file that changed since it was loaded and then stayed the same since
-    // the previous check.
-    std::vector<AssetId> ready;
+    // An asset reloads once all its files exist and stayed the same since the previous check,
+    // and one of them differs from what was loaded (an atlas's PNG may still be being written
+    // after its JSON).
+    struct State {
+        bool Settled = true;
+        bool Changed = false;
+    };
+    std::unordered_map<AssetId, State> states;
     for (const FileStamp& stamp : stamps) {
         const auto it = m_Entries.find(stamp.Id);
         if (it == m_Entries.end())
@@ -334,12 +341,15 @@ u32 Assets::ApplyStamps(const std::vector<FileStamp>& stamps)
             continue; // the asset's file list changed while the check ran (a tilemap)
         const bool settled = stamp.Time == entry.SeenTimes[stamp.File];
         entry.SeenTimes[stamp.File] = stamp.Time;
-        if (settled && stamp.Time != entry.LoadedTimes[stamp.File] && stamp.Time)
-            ready.push_back(stamp.Id);
+        State& state = states[stamp.Id];
+        state.Settled = state.Settled && settled && stamp.Time;
+        state.Changed = state.Changed || stamp.Time != entry.LoadedTimes[stamp.File];
     }
-    // An atlas or tilemap can be listed more than once (several of its files changed).
-    std::sort(ready.begin(), ready.end());
-    ready.erase(std::unique(ready.begin(), ready.end()), ready.end());
+    std::vector<AssetId> ready;
+    for (const auto& [id, state] : states)
+        if (state.Settled && state.Changed)
+            ready.push_back(id);
+    std::sort(ready.begin(), ready.end()); // reload in a stable order
 
     u32 reloaded = 0;
     for (const AssetId id : ready) {

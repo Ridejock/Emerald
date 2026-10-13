@@ -68,10 +68,10 @@ jobs:
             libegl1-mesa-dev libgl1-mesa-dev libdrm-dev libgbm-dev \
             libasound2-dev libpulse-dev libudev-dev libdbus-1-dev
 
-      # Configuring Emerald builds the tool (in the cache folder) when it isn't there yet.
+      # Only the tool target (the sandbox is what asks for it), into the cache folder.
       - name: Build shadercross
         if: steps.cache.outputs.cache-hit != 'true'
-        run: cmake -S . -B build/tool -G Ninja -DEMERALD_BUILD_TESTS=OFF -DEMERALD_BUILD_SANDBOX=OFF && cmake --build build/tool --target emerald_shadercross
+        run: cmake -S . -B build/tool -G Ninja -DEMERALD_BUILD_TESTS=OFF && cmake --build build/tool --target emerald_shadercross
 
       - name: Save shadercross
         if: steps.cache.outputs.cache-hit != 'true'

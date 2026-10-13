@@ -38,6 +38,7 @@ Dependencies, build options, per-platform setup, presets and the sandbox command
 | `EMERALD_BUILD_BENCH` | `OFF` | Build the micro-benchmarks (math, particles, collision, entities) |
 | `EMERALD_PROFILE` | `OFF` | Fetch Tracy and turn the `EM_PROFILE_*` macros on (see [Profiling](testing-and-profiling.md#profiling-tracy)) |
 | `EMERALD_ASAN` | `OFF` | Build everything with AddressSanitizer (see [AddressSanitizer](testing-and-profiling.md#addresssanitizer)); not with MinGW GCC, which has no ASan runtime |
+| `EMERALD_UBSAN` / `EMERALD_TSAN` | `OFF` | UndefinedBehaviorSanitizer / ThreadSanitizer (GCC/Clang; see [AddressSanitizer](testing-and-profiling.md#addresssanitizer)); TSan not together with ASan |
 | `EMERALD_WARNINGS_AS_ERRORS` | `OFF` | `/WX` / `-Werror` on Emerald's own targets only (dependencies unaffected); CI turns it on |
 
 The engine exports `EMERALD_WITH_IMGUI` / `EMERALD_MATH_SIMD` / `EMERALD_PROFILE` (0 or 1) as public compile
@@ -100,6 +101,8 @@ cmake --build --preset debug
 | `debug-full` | Debug build with `EMERALD_USE_IMGUI=ON` |
 | `profile` | Optimized with debug info (`RelWithDebInfo`) and `EMERALD_PROFILE=ON` (Tracy) |
 | `debug-asan` | Debug build with `EMERALD_ASAN=ON` (AddressSanitizer) |
+| `debug-ubsan` | Debug build with `EMERALD_UBSAN=ON` (UndefinedBehaviorSanitizer; GCC/Clang) |
+| `debug-tsan` | Debug build with `EMERALD_TSAN=ON` (ThreadSanitizer; GCC/Clang) |
 
 Options can also be passed directly, e.g. `cmake --preset release -DEMERALD_USE_IMGUI=ON`.
 

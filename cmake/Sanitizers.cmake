@@ -1,5 +1,9 @@
 # AddressSanitizer (EMERALD_ASAN, the debug-asan preset): finds out-of-bounds accesses,
 # use-after-free and (on Linux) leaks at run time, at about 2x the cost.
+# UndefinedBehaviorSanitizer (EMERALD_UBSAN, debug-ubsan): signed overflow, bad shifts, misaligned
+# or null access, out-of-range float-to-int casts...; the first report stops the program.
+# ThreadSanitizer (EMERALD_TSAN, debug-tsan): data races between threads (ThreadPool, hot reload).
+# UBSan and TSan are GCC / Clang only; TSan can't be combined with ASan.
 #
 # The flags go on everything built from here down (SDL and the other dependencies too), and on
 # the Emerald target's interface, so a game that links Emerald is instrumented the same way.
@@ -45,9 +49,29 @@ if(EMERALD_ASAN)
     endif()
 endif()
 
-# Puts the ASan flags on a target's interface, so whatever links it is instrumented too.
+if((EMERALD_UBSAN OR EMERALD_TSAN) AND MSVC)
+    message(FATAL_ERROR "EMERALD_UBSAN / EMERALD_TSAN: GCC or Clang only (MSVC has neither)")
+endif()
+if(EMERALD_TSAN AND EMERALD_ASAN)
+    message(FATAL_ERROR "EMERALD_TSAN can't be combined with EMERALD_ASAN")
+endif()
+if(EMERALD_UBSAN)
+    set(emerald_ubsan -fsanitize=undefined,float-cast-overflow -fno-sanitize-recover=all)
+    list(APPEND EMERALD_ASAN_COMPILE_FLAGS ${emerald_ubsan} -fno-omit-frame-pointer)
+    list(APPEND EMERALD_ASAN_LINK_FLAGS ${emerald_ubsan})
+    add_compile_options(${emerald_ubsan} -fno-omit-frame-pointer)
+    add_link_options(${emerald_ubsan})
+endif()
+if(EMERALD_TSAN)
+    list(APPEND EMERALD_ASAN_COMPILE_FLAGS -fsanitize=thread -fno-omit-frame-pointer)
+    list(APPEND EMERALD_ASAN_LINK_FLAGS -fsanitize=thread)
+    add_compile_options(-fsanitize=thread -fno-omit-frame-pointer)
+    add_link_options(-fsanitize=thread)
+endif()
+
+# Puts the sanitizer flags (ASan, UBSan, TSan) on a target's interface, so whatever links it is instrumented too.
 function(emerald_asan_target target)
-    if(EMERALD_ASAN)
+    if(EMERALD_ASAN OR EMERALD_UBSAN OR EMERALD_TSAN)
         target_compile_options(${target} INTERFACE ${EMERALD_ASAN_COMPILE_FLAGS})
         target_link_options(${target} INTERFACE ${EMERALD_ASAN_LINK_FLAGS})
     endif()

@@ -38,7 +38,7 @@ cmake --build --preset debug
 ```
 
 Per-platform notes (Linux needs SDL3's development packages; on Windows use a Developer PowerShell),
-the other presets (`release`, `debug-full` with ImGui, `profile`, `debug-asan`), build options and the
+the other presets (`release`, `debug-full` with ImGui, `profile`, `debug-asan`, `debug-ubsan`, `debug-tsan`), build options and the
 dependency list are in [Building and running](docs/building.md).
 
 A few sandbox flags:
@@ -110,7 +110,7 @@ shaders/           The engine's HLSL shaders (Renderer2D lines, Sprite, lit spri
 sandbox/           Example application (src/, its own shaders/, assets/ for the demo font, hero sheet, tilemap room, dialogue deck, particle effects and audio)
 tests/             Unit tests (ctest)
 bench/             Math, particle, collision and entity micro-benchmarks (EMERALD_BUILD_BENCH)
-cmake/             Dependency setup (FetchContent), shader compilation (Shaders.cmake) and AddressSanitizer flags (Sanitizers.cmake)
+cmake/             Dependency setup (FetchContent), shader compilation (Shaders.cmake) and sanitizer flags (Sanitizers.cmake: ASan, UBSan, TSan)
 tools/shadercross/ Host-tool project that builds SDL_shadercross
 tools/sprites/     Script that generates the sandbox's pixel-art hero sheet
 tools/check_assets.py  Asset checker (palette, atlases, Tiled maps) for CI

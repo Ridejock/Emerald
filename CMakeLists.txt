@@ -36,6 +36,8 @@ option(EMERALD_BUILD_TESTS   "Build the unit tests (run with ctest)" ${PROJECT_I
 option(EMERALD_BUILD_BENCH   "Build the math micro-benchmark" OFF)
 option(EMERALD_PROFILE       "Profile with Tracy (Core/Profile.h; the profile preset)" OFF)
 option(EMERALD_ASAN          "Build with AddressSanitizer (the debug-asan preset)" OFF)
+option(EMERALD_UBSAN         "Build with UndefinedBehaviorSanitizer, GCC/Clang (debug-ubsan)" OFF)
+option(EMERALD_TSAN          "Build with ThreadSanitizer, GCC/Clang (the debug-tsan preset)" OFF)
 option(EMERALD_WARNINGS_AS_ERRORS "Treat warnings in Emerald's own targets as errors (CI)" OFF)
 
 # AddressSanitizer: before the dependencies, so they are built with it too (MSVC refuses to link
@@ -174,7 +176,7 @@ endif()
 if(EMERALD_PROFILE)
     target_link_libraries(Emerald PUBLIC Tracy::TracyClient)
 endif()
-emerald_asan_target(Emerald) # games linking Emerald get the ASan flags too
+emerald_asan_target(Emerald) # games linking Emerald get the sanitizer flags too
 
 emerald_set_warnings(Emerald)
 

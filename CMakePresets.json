@@ -47,6 +47,22 @@
       "cacheVariables": {
         "EMERALD_ASAN": "ON"
       }
+    },
+    {
+      "name": "debug-ubsan",
+      "displayName": "Debug (UndefinedBehaviorSanitizer; GCC/Clang)",
+      "inherits": "debug",
+      "cacheVariables": {
+        "EMERALD_UBSAN": "ON"
+      }
+    },
+    {
+      "name": "debug-tsan",
+      "displayName": "Debug (ThreadSanitizer; GCC/Clang)",
+      "inherits": "debug",
+      "cacheVariables": {
+        "EMERALD_TSAN": "ON"
+      }
     }
   ],
   "buildPresets": [
@@ -54,7 +70,9 @@
     { "name": "release", "configurePreset": "release" },
     { "name": "debug-full", "configurePreset": "debug-full" },
     { "name": "profile", "configurePreset": "profile" },
-    { "name": "debug-asan", "configurePreset": "debug-asan" }
+    { "name": "debug-asan", "configurePreset": "debug-asan" },
+    { "name": "debug-ubsan", "configurePreset": "debug-ubsan" },
+    { "name": "debug-tsan", "configurePreset": "debug-tsan" }
   ],
   "testPresets": [
     {
@@ -67,6 +85,18 @@
     { "name": "release", "inherits": "base", "configurePreset": "release" },
     { "name": "debug-full", "inherits": "base", "configurePreset": "debug-full" },
     { "name": "profile", "inherits": "base", "configurePreset": "profile" },
-    { "name": "debug-asan", "inherits": "base", "configurePreset": "debug-asan" }
+    { "name": "debug-asan", "inherits": "base", "configurePreset": "debug-asan" },
+    {
+      "name": "debug-ubsan",
+      "inherits": "base",
+      "configurePreset": "debug-ubsan",
+      "environment": { "UBSAN_OPTIONS": "print_stacktrace=1:halt_on_error=1" }
+    },
+    {
+      "name": "debug-tsan",
+      "inherits": "base",
+      "configurePreset": "debug-tsan",
+      "environment": { "TSAN_OPTIONS": "halt_on_error=1:second_deadlock_stack=1" }
+    }
   ]
 }

@@ -48,15 +48,12 @@ ctest --preset debug            # output on failure, 10 min timeout per test
 build/debug/bin/EmeraldAssetTests HotReload   # only the cases whose name contains "HotReload"
 ```
 
-ThreadSanitizer run (GCC/Clang; a separate build dir without the sandbox, so no shaders and no
-shadercross are built):
+ThreadSanitizer and UndefinedBehaviorSanitizer runs (GCC/Clang; see
+[Sanitizers](#addresssanitizer)):
 
 ```sh
-cmake -S . -B build/tsan -G Ninja -DCMAKE_BUILD_TYPE=Debug -DEMERALD_BUILD_SANDBOX=OFF \
-      -DCMAKE_C_FLAGS=-fsanitize=thread -DCMAKE_CXX_FLAGS=-fsanitize=thread \
-      -DCMAKE_EXE_LINKER_FLAGS=-fsanitize=thread
-cmake --build build/tsan --target EmeraldThreadPoolTests EmeraldMemoryTests
-ctest --test-dir build/tsan -R "ThreadPool|Memory" --output-on-failure
+cmake --preset debug-tsan && cmake --build --preset debug-tsan && ctest --preset debug-tsan
+cmake --preset debug-ubsan && cmake --build --preset debug-ubsan && ctest --preset debug-ubsan
 ```
 
 Benchmark (release build recommended; numbers vary a lot between machines):
@@ -122,6 +119,16 @@ cmake --preset debug-asan
 cmake --build --preset debug-asan
 ctest --test-dir build/debug-asan --output-on-failure
 ```
+
+**UBSan and TSan** (GCC and Clang only; MSVC has neither): `debug-ubsan` (`EMERALD_UBSAN`) adds
+UndefinedBehaviorSanitizer with `float-cast-overflow` (signed overflow, bad shifts, misaligned or
+null access, float-to-int casts out of range) and stops at the first report. `debug-tsan`
+(`EMERALD_TSAN`) adds ThreadSanitizer for data races (the ThreadPool, the hot-reload file checks
+on it). Like ASan, the flags go on everything and on the `Emerald` target's interface. Their test
+presets set `UBSAN_OPTIONS` / `TSAN_OPTIONS` (stack traces, stop at the first report). On kernels
+with high ASLR entropy TSan fails to start ("unexpected memory mapping"):
+`sudo sysctl vm.mmap_rnd_bits=28` fixes it until the next reboot. Linux CI runs both with GCC
+and Clang.
 
 - **GCC / Clang:** `-fsanitize=address -fno-omit-frame-pointer`. On Linux with Mesa's drivers the
   sandbox reports about 50 KB of leaks from inside the unloaded GPU driver ("unknown module") at

@@ -99,6 +99,12 @@ function(_emerald_setup_shadercross)
         set(prebuilt FALSE)
         set(exe "${tool_dir}/bin/shadercross${CMAKE_EXECUTABLE_SUFFIX}")
         set(tool_args -DCMAKE_BUILD_TYPE=Release)
+        if(MSVC)
+            # SPIRV-Cross builds as C++11 (MSVC: C++14) but uses [[fallthrough]] in spirv_msl.cpp:
+            # C5051, harmless. Silenced for the tool only; passed here rather than in
+            # tools/shadercross so the tool's recipe hash (and an existing build) stays the same.
+            list(APPEND tool_args -DCMAKE_CXX_FLAGS_INIT=/wd5051)
+        endif()
         if(CMAKE_GENERATOR MATCHES "Ninja|Makefiles")
             set(tool_c "${CMAKE_C_COMPILER}")
             set(tool_cxx "${CMAKE_CXX_COMPILER}")

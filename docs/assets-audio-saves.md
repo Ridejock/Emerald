@@ -34,7 +34,10 @@ GetAudio().Play(*m_Boom);
 - **Reference counted.** Handles copy like `std::shared_ptr`. When the last handle to an asset
   is gone, the asset is unloaded at the start of the next frame, so a texture dropped mid-frame is
   still there when that frame is drawn. Handles must be released before the manager is destroyed;
-  members of your Application are.
+  members of your Application are. A `Sprite` holds a raw texture pointer, not a handle, so keep
+  the handle while the sprite is in use; in a scene, `Keep(handle)` does that until the scene is
+  destroyed and returns the asset:
+  `m_Ship = Sprite::FromTexture(Keep(assets.Load<Texture>("ship.png")));`
 - **Missing or broken files never crash.** The error is logged and you get a placeholder that is
   easy to spot on screen:
   - textures: a magenta/black checkerboard;
@@ -54,7 +57,8 @@ How hot reload works:
 2. Back on the main thread, `Assets::Update` (called by Application before each frame) compares
    the times. A file counts as changed once its time differs from when it was loaded and has stayed
    the same for one more check. That way a file the editor is still writing is not read half
-   done.
+   done. An asset with several files (an atlas's JSON and PNG, a tilemap) waits until all of
+   them have settled.
 3. The asset is loaded again on the main thread, since GPU uploads happen there. The new version
    then replaces the old one *in place*, inside the same object, so nothing pointing at it
    breaks:

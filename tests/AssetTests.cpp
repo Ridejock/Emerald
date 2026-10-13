@@ -16,6 +16,7 @@
 #include <Emerald/Core/Log.h>
 #include <Emerald/Core/ThreadPool.h>
 #include <Emerald/Math/Common.h>
+#include <Emerald/Scene/SceneStack.h>
 
 #include "Test.h"
 
@@ -241,6 +242,21 @@ TEST(AssetsReferenceCounting)
     const std::vector<AssetInfo> list = assets.List();
     CHECK(list.size() == 1 && list[0].RefCount == 1 && list[0].Type == AssetType::Texture &&
           !list[0].Placeholder && list[0].Path == (f.Root / "a.png").lexically_normal().string());
+}
+
+TEST(AssetsSceneKeepHoldsHandles)
+{
+    Fixture f("keep");
+    WriteText(f.Root / "a.png", "8");
+    Assets& assets = *f.Manager;
+    auto scene = std::make_unique<Scene>("Game");
+    const Texture& texture = scene->Keep(assets.Load<Texture>("a.png"));
+    CHECK(texture.GetWidth() == 8);
+    assets.Update(0.0f);
+    CHECK(assets.GetCount() == 1); // the scene still holds it
+    scene.reset();
+    assets.Update(0.0f);
+    CHECK(assets.GetCount() == 0); // gone with the scene
 }
 
 TEST(AssetsMissingFilesGivePlaceholders)

@@ -17,6 +17,7 @@ struct SDL_GPURenderPass;
 
 namespace Emerald {
 
+template <typename T> class AssetHandle;
 class Input;
 class Renderer2D;
 class SceneStack;
@@ -65,8 +66,19 @@ public:
     // The top scene while no transition runs: the one whose input is live.
     [[nodiscard]] bool HasFocus() const;
 
+    // Keeps `handle` (so its asset stays loaded) until the scene is destroyed, and returns the
+    // asset. For assets used through raw pointers, such as a Sprite's texture:
+    //   m_Ship = Sprite::FromTexture(Keep(assets.Load<Texture>("ship.png")));
+    template <typename T> const T& Keep(AssetHandle<T> handle)
+    {
+        const T& asset = *handle;
+        m_Kept.push_back(std::make_shared<AssetHandle<T>>(std::move(handle)));
+        return asset;
+    }
+
 private:
     friend class SceneStack;
+    std::vector<std::shared_ptr<void>> m_Kept; // Keep()'s handles, whatever their type
     std::string m_Name;
     SceneStack* m_Stack = nullptr;
 };

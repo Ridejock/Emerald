@@ -10,7 +10,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+# Not as a subproject: the game decides its build type.
+if(PROJECT_IS_TOP_LEVEL AND NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE Debug CACHE STRING "Build type" FORCE)
 endif()
 
@@ -62,7 +63,6 @@ add_library(EmeraldMath INTERFACE)
 add_library(Emerald::Math ALIAS EmeraldMath)
 target_include_directories(EmeraldMath INTERFACE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-    $<INSTALL_INTERFACE:include>
 )
 target_compile_features(EmeraldMath INTERFACE cxx_std_20)
 # Public, so every target including the math headers agrees on the implementation.
@@ -129,7 +129,6 @@ add_library(Emerald::Emerald ALIAS Emerald)
 
 target_include_directories(Emerald PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-    $<INSTALL_INTERFACE:include>
 )
 
 target_link_libraries(Emerald

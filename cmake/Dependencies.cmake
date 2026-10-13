@@ -3,17 +3,27 @@ include(FetchContent)
 
 set(FETCHCONTENT_QUIET OFF)
 
+# Sets a dependency's cache option. Top level: always (so a stale cache can't change it). As a
+# subproject: only if the game hasn't set it, so Emerald never overwrites the game's choice.
+function(emerald_dependency_option name value)
+    if(PROJECT_IS_TOP_LEVEL)
+        set(${name} ${value} CACHE BOOL "" FORCE)
+    elseif(NOT DEFINED ${name})
+        set(${name} ${value} CACHE BOOL "")
+    endif()
+endfunction()
+
 # --- SDL3 -------------------------------------------------------------------
-set(SDL_SHARED       OFF CACHE BOOL "" FORCE)
-set(SDL_STATIC       ON  CACHE BOOL "" FORCE)
-set(SDL_TEST_LIBRARY OFF CACHE BOOL "" FORCE)
-set(SDL_TESTS        OFF CACHE BOOL "" FORCE)
-set(SDL_EXAMPLES     OFF CACHE BOOL "" FORCE)
+emerald_dependency_option(SDL_SHARED OFF)
+emerald_dependency_option(SDL_STATIC ON)
+emerald_dependency_option(SDL_TEST_LIBRARY OFF)
+emerald_dependency_option(SDL_TESTS OFF)
+emerald_dependency_option(SDL_EXAMPLES OFF)
 # Gamepads: joystick + HIDAPI (direct PS4/PS5/Switch drivers) are SDL's defaults; forced on so a
-# cached or inherited setting cannot silently drop controller support from the static build.
-set(SDL_JOYSTICK       ON  CACHE BOOL "" FORCE)
-set(SDL_HIDAPI         ON  CACHE BOOL "" FORCE)
-set(SDL_HIDAPI_JOYSTICK ON CACHE BOOL "" FORCE)
+# cached setting cannot silently drop controller support from the static build.
+emerald_dependency_option(SDL_JOYSTICK ON)
+emerald_dependency_option(SDL_HIDAPI ON)
+emerald_dependency_option(SDL_HIDAPI_JOYSTICK ON)
 FetchContent_Declare(SDL3
     GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
     GIT_TAG        release-3.4.16
@@ -22,9 +32,9 @@ FetchContent_Declare(SDL3
 )
 
 # --- spdlog -----------------------------------------------------------------
-set(SPDLOG_BUILD_EXAMPLE OFF CACHE BOOL "" FORCE)
-set(SPDLOG_BUILD_TESTS   OFF CACHE BOOL "" FORCE)
-set(SPDLOG_INSTALL       OFF CACHE BOOL "" FORCE)
+emerald_dependency_option(SPDLOG_BUILD_EXAMPLE OFF)
+emerald_dependency_option(SPDLOG_BUILD_TESTS OFF)
+emerald_dependency_option(SPDLOG_INSTALL OFF)
 FetchContent_Declare(spdlog
     GIT_REPOSITORY https://github.com/gabime/spdlog.git
     GIT_TAG        v1.17.0
@@ -49,8 +59,8 @@ FetchContent_Declare(dr_libs
 
 # --- nlohmann/json (header-only; the small release archive, pinned by hash) ---------------
 # Used to read TextureAtlas descriptions.
-set(JSON_BuildTests OFF CACHE INTERNAL "")
-set(JSON_Install    OFF CACHE INTERNAL "")
+emerald_dependency_option(JSON_BuildTests OFF)
+emerald_dependency_option(JSON_Install OFF)
 FetchContent_Declare(nlohmann_json
     URL      https://github.com/nlohmann/json/releases/download/v3.12.0/json.tar.xz
     URL_HASH SHA256=42f6e95cad6ec532fd372391373363b62a14af6d771056dbfc86160e6dfff7aa
@@ -110,8 +120,8 @@ set_target_properties(EnTT PROPERTIES INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${EM
 # SYSTEM includes, so its warnings do not count against ours). The viewer must be the same
 # version: download it prebuilt from https://github.com/wolfpld/tracy/releases/tag/v0.14.1.
 if(EMERALD_PROFILE)
-    set(TRACY_ENABLE    ON CACHE BOOL "" FORCE)
-    set(TRACY_ON_DEMAND ON CACHE BOOL "" FORCE) # only collect while a viewer is connected
+    emerald_dependency_option(TRACY_ENABLE ON)
+    emerald_dependency_option(TRACY_ON_DEMAND ON) # only collect while a viewer is connected
     FetchContent_Declare(tracy
         URL      https://github.com/wolfpld/tracy/archive/refs/tags/v0.14.1.tar.gz
         URL_HASH SHA256=bf4af567e9c7524d07f3caa745fad02fb33bd5694f11910750382d1efbb251c1

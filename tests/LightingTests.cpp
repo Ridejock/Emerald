@@ -106,9 +106,10 @@ public:
     }
     bool Init(SDL_GPUDevice*, SDL_GPUTextureFormat) override { return true; }
     void Shutdown() override {}
-    void Apply(SDL_GPUCommandBuffer*, SDL_GPUTexture*, SDL_GPUTexture*, u32, u32, f32) override
+    bool Apply(SDL_GPUCommandBuffer*, SDL_GPUTexture*, SDL_GPUTexture*, u32, u32, f32) override
     {
         m_Log->push_back(m_Name);
+        return true;
     }
     [[nodiscard]] std::string_view GetName() const override { return m_Name; }
 

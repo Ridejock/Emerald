@@ -179,15 +179,15 @@ void CrtEffect::RunPass(SDL_GPUCommandBuffer* commandBuffer, SDL_GPUGraphicsPipe
     SDL_EndGPURenderPass(pass);
 }
 
-void CrtEffect::Apply(SDL_GPUCommandBuffer* commandBuffer, SDL_GPUTexture* source,
+bool CrtEffect::Apply(SDL_GPUCommandBuffer* commandBuffer, SDL_GPUTexture* source,
                       SDL_GPUTexture* target, u32 width, u32 height, f32 deltaSeconds)
 {
     if (!m_Device || !source || !target)
-        return;
+        return false;
     if (!m_History[0].Texture || m_History[0].Width != width || m_History[0].Height != height)
         CreateTargets(width, height);
     if (!m_History[0].Texture)
-        return;
+        return false;
 
     // 1. Phosphor: this frame over the faded previous one.
     const Target& history = m_History[m_Current];
@@ -222,6 +222,7 @@ void CrtEffect::Apply(SDL_GPUCommandBuffer* commandBuffer, SDL_GPUTexture* sourc
     SDL_GPUTexture* const sources[] = {history.Texture, m_Bloom[1].Texture, m_Bloom[3].Texture};
     const Target output{.Texture = target, .Width = width, .Height = height};
     RunPass(commandBuffer, m_CompositePipeline, output, sources, &uniforms, sizeof(uniforms));
+    return true;
 }
 
 f32 CrtEffect::AfterglowDecay(f32 halfLifeSeconds, f32 deltaSeconds)

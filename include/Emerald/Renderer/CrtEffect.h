@@ -56,7 +56,7 @@ public:
     bool Init(SDL_GPUDevice* device, SDL_GPUTextureFormat outputFormat) override;
     void Shutdown() override;
     // Reads `source` (the previous chain step or the scene), writes `target`.
-    void Apply(SDL_GPUCommandBuffer* commandBuffer, SDL_GPUTexture* source, SDL_GPUTexture* target,
+    bool Apply(SDL_GPUCommandBuffer* commandBuffer, SDL_GPUTexture* source, SDL_GPUTexture* target,
                u32 width, u32 height, f32 deltaSeconds) override;
     [[nodiscard]] std::string_view GetName() const override { return "CRT"; }
 

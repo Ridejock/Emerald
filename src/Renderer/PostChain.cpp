@@ -178,7 +178,19 @@ void PostChain::Apply(SDL_GPUCommandBuffer* commandBuffer, SDL_GPUTexture* targe
     for (usize i = 0; i < m_Effects.size(); ++i) {
         const bool last = i + 1 == m_Effects.size();
         SDL_GPUTexture* dest = last ? target : ((i % 2 == 0) ? m_Ping.Texture : m_Scene.Texture);
-        m_Effects[i]->Apply(commandBuffer, source, dest, width, height, deltaSeconds);
+        if (!m_Effects[i]->Apply(commandBuffer, source, dest, width, height, deltaSeconds)) {
+            // It could not run: pass the image on unchanged, so `target` is always written.
+            SDL_GPUBlitInfo blit{};
+            blit.source.texture = source;
+            blit.source.w = width;
+            blit.source.h = height;
+            blit.destination.texture = dest;
+            blit.destination.w = width;
+            blit.destination.h = height;
+            blit.load_op = SDL_GPU_LOADOP_DONT_CARE;
+            blit.filter = SDL_GPU_FILTER_NEAREST;
+            SDL_BlitGPUTexture(commandBuffer, &blit);
+        }
         source = dest;
     }
 }
@@ -231,11 +243,11 @@ void TintEffect::Shutdown()
     m_Device = nullptr;
 }
 
-void TintEffect::Apply(SDL_GPUCommandBuffer* commandBuffer, SDL_GPUTexture* source,
+bool TintEffect::Apply(SDL_GPUCommandBuffer* commandBuffer, SDL_GPUTexture* source,
                        SDL_GPUTexture* target, u32, u32, f32)
 {
     if (!m_Pipeline || !source || !target)
-        return;
+        return false;
     struct Uniforms {
         f32 Color[3];
         f32 Vignette;
@@ -251,6 +263,7 @@ void TintEffect::Apply(SDL_GPUCommandBuffer* commandBuffer, SDL_GPUTexture* sour
     SDL_PushGPUFragmentUniformData(commandBuffer, 0, &uniforms, sizeof(uniforms));
     SDL_DrawGPUPrimitives(pass, 3, 1, 0, 0);
     SDL_EndGPURenderPass(pass);
+    return true;
 }
 
 } // namespace Emerald

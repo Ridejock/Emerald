@@ -21,7 +21,9 @@ public:
     virtual bool Init(SDL_GPUDevice* device, SDL_GPUTextureFormat format) = 0;
     virtual void Shutdown() = 0;
     // `width` x `height` is the size of both textures (the swapchain's for the last effect).
-    virtual void Apply(SDL_GPUCommandBuffer* commandBuffer, SDL_GPUTexture* source,
+    // Returns false if it could not run (nothing written); the chain then copies `source` to
+    // `target` so the frame still shows the image.
+    virtual bool Apply(SDL_GPUCommandBuffer* commandBuffer, SDL_GPUTexture* source,
                        SDL_GPUTexture* target, u32 width, u32 height, f32 deltaSeconds) = 0;
     [[nodiscard]] virtual std::string_view GetName() const = 0;
 };
@@ -98,7 +100,7 @@ public:
 
     bool Init(SDL_GPUDevice* device, SDL_GPUTextureFormat format) override;
     void Shutdown() override;
-    void Apply(SDL_GPUCommandBuffer* commandBuffer, SDL_GPUTexture* source, SDL_GPUTexture* target,
+    bool Apply(SDL_GPUCommandBuffer* commandBuffer, SDL_GPUTexture* source, SDL_GPUTexture* target,
                u32 width, u32 height, f32 deltaSeconds) override;
     [[nodiscard]] std::string_view GetName() const override { return "Tint"; }
 

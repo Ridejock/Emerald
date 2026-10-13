@@ -174,7 +174,7 @@ private:
     void InitImGui();
     void ShutdownImGui();
     void ProcessEvent(const SDL_Event& event);
-    bool RenderFrame(); // false: nothing drawn (the window is minimized or hidden)
+    FrameStatus RenderFrame();
     // The dev options' parts of the loop: start recording / replaying (after OnStart), screenshot
     // and capture requests for the coming frame, and what is left after it was drawn.
     void StartInputSession();
@@ -212,6 +212,7 @@ private:
     bool m_ImGuiVisible = true; // F1
 #endif
     bool m_Running = false;
+    u32 m_FailedFrames = 0; // GPU failures in a row (Run quits after kMaxFailedFrames)
     u64 m_FrameCount = 0;
     DevOptions m_Dev;
     bool m_DevFailed = false;               // e.g. the --replay file could not be read

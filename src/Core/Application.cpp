@@ -23,6 +23,9 @@ namespace Emerald {
 
 namespace {
 
+// Frames in a row that may fail to render before Run gives up (well under a second).
+constexpr u32 kMaxFailedFrames = 30;
+
 // --capture's file for a frame (1 = the first): dir/frame_000001.png.
 std::filesystem::path CaptureFile(const std::filesystem::path& dir, u64 frame)
 {
@@ -156,6 +159,7 @@ int Application::Run()
     OnStart();
     StartInputSession(); // after OnStart: the game has bound its actions
 
+    int exitCode = 0;
     u64 last = SDL_GetTicksNS();
     while (m_Running) {
         // Everything allocated from the frame arena last frame is gone from here on.
@@ -213,10 +217,22 @@ int Application::Run()
         RequestCaptures();
         {
             EM_PROFILE_SCOPE("Render"); // includes waiting for the swapchain (vsync)
-            if (!RenderFrame()) {
-                // Minimized: there is no vsync to wait on, so don't spin a core. Wake up early
-                // for an event (e.g. the window being restored).
+            const FrameStatus frame = RenderFrame();
+            m_FailedFrames = frame == FrameStatus::Failed ? m_FailedFrames + 1 : 0;
+            if (frame != FrameStatus::Ready) {
+                // Minimized (or failing): there is no vsync to wait on, so don't spin a core.
+                // Wake up early for an event (e.g. the window being restored).
                 SDL_WaitEventTimeout(nullptr, 10);
+            }
+            if (m_FailedFrames >= kMaxFailedFrames) {
+                // E.g. the GPU device was lost: SDL has no callback for that, only failures.
+                EM_CORE_ERROR("{} frames in a row failed to render, exiting", m_FailedFrames);
+                SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Emerald - rendering failed",
+                                         "The GPU stopped rendering frames (see the log). The "
+                                         "application will close.",
+                                         m_Window->GetNativeWindow());
+                exitCode = 1;
+                m_Running = false;
             }
         }
         FinishCaptures();
@@ -240,7 +256,7 @@ int Application::Run()
     EM_CORE_INFO("Main loop ended after {} frames (frame arena peak {} of {} bytes, {} frames "
                  "overflowed)",
                  m_FrameCount, arena.PeakBytes, arena.Capacity, arena.OverflowFrames);
-    return 0;
+    return exitCode;
 }
 
 void Application::ProcessEvent(const SDL_Event& event)
@@ -315,7 +331,7 @@ void Application::ProcessEvent(const SDL_Event& event)
     m_Scenes.OnEvent(event);
 }
 
-bool Application::RenderFrame()
+FrameStatus Application::RenderFrame()
 {
 #if EMERALD_WITH_IMGUI
     ImGui_ImplSDLGPU3_NewFrame();
@@ -329,8 +345,8 @@ bool Application::RenderFrame()
     ImDrawData* drawData = ImGui::GetDrawData();
 #endif
 
-    if (!m_Renderer->BeginFrame())
-        return false; // minimized: nothing to draw this frame
+    if (const FrameStatus status = m_Renderer->BeginFrame(); status != FrameStatus::Ready)
+        return status; // e.g. minimized: nothing to draw this frame
 
     // Copy passes (uploads) must happen before the render pass: first record the app's 2D shapes
     // and upload them, then ImGui's vertex/index data.
@@ -367,8 +383,7 @@ bool Application::RenderFrame()
 #endif
     if (pass)
         m_Renderer->EndRenderPass();
-    m_Renderer->EndFrame();
-    return true;
+    return m_Renderer->EndFrame() ? FrameStatus::Ready : FrameStatus::Failed;
 }
 
 void Application::StartInputSession()

@@ -20,6 +20,13 @@ namespace Emerald {
 // nullopt if there is none. The last one wins.
 [[nodiscard]] std::optional<std::string_view> FindGpuArg(std::span<char* const> args);
 
+// What BeginFrame / RenderFrame managed to do this frame.
+enum class FrameStatus : u8 {
+    Ready,   // drawing (BeginFrame) / drawn and submitted (RenderFrame)
+    Skipped, // nothing to draw into, e.g. the window is minimized: not an error
+    Failed,  // a GPU call failed (logged)
+};
+
 // Thin wrapper around an SDL_GPUDevice that renders into one window's swapchain.
 //
 // A frame with SDL GPU always looks like this:
@@ -45,9 +52,10 @@ public:
               std::optional<std::string_view> driver = std::nullopt);
     void Shutdown();
 
-    // Returns false if there is nothing to draw into this frame (e.g. the window is minimized).
-    // In that case the frame is already finished; do not call the other frame functions.
-    bool BeginFrame();
+    // Anything but Ready: there is nothing to draw into this frame (Skipped, e.g. the window is
+    // minimized, or Failed). The frame is then already finished; do not call the other frame
+    // functions.
+    FrameStatus BeginFrame();
     // Starts a render pass that clears the swapchain texture to `clearColor`.
     SDL_GPURenderPass* BeginRenderPass(const SDL_FColor& clearColor);
     // Starts a render pass into any texture (e.g. an offscreen one for post-processing), cleared
@@ -56,7 +64,8 @@ public:
                                        bool clear = true);
     void EndRenderPass();
     // Submits the command buffer; the swapchain texture is presented when the GPU is done.
-    void EndFrame();
+    // Returns false if the submit failed (logged).
+    bool EndFrame();
 
     // Creates a GPU buffer and uploads `data` into it: CPU -> transfer buffer -> copy pass -> GPU
     // buffer. The upload runs on its own command buffer, submitted before any later frame.

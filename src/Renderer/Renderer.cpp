@@ -190,12 +190,12 @@ SDL_GPUTextureFormat Renderer::GetSwapchainFormat() const
     return SDL_GetGPUSwapchainTextureFormat(m_Device, m_Window);
 }
 
-bool Renderer::BeginFrame()
+FrameStatus Renderer::BeginFrame()
 {
     m_CommandBuffer = SDL_AcquireGPUCommandBuffer(m_Device);
     if (!m_CommandBuffer) {
         EM_CORE_ERROR("SDL_AcquireGPUCommandBuffer failed: {}", SDL_GetError());
-        return false;
+        return FrameStatus::Failed;
     }
 
     // Blocks until a swapchain image is free (this is where vsync throttles the loop).
@@ -204,7 +204,7 @@ bool Renderer::BeginFrame()
         EM_CORE_ERROR("SDL_WaitAndAcquireGPUSwapchainTexture failed: {}", SDL_GetError());
         SDL_CancelGPUCommandBuffer(m_CommandBuffer);
         m_CommandBuffer = nullptr;
-        return false;
+        return FrameStatus::Failed;
     }
 
     // A null texture is not an error: the window is minimized/occluded. Submit the (empty)
@@ -212,7 +212,7 @@ bool Renderer::BeginFrame()
     if (!m_SwapchainTexture) {
         SDL_SubmitGPUCommandBuffer(m_CommandBuffer);
         m_CommandBuffer = nullptr;
-        return false;
+        return FrameStatus::Skipped;
     }
 
     m_RenderTarget = m_SwapchainTexture;
@@ -222,7 +222,7 @@ bool Renderer::BeginFrame()
         else
             m_ScreenshotPath.reset();
     }
-    return true;
+    return FrameStatus::Ready;
 }
 
 SDL_GPURenderPass* Renderer::BeginRenderPass(const SDL_FColor& clearColor)
@@ -249,8 +249,9 @@ void Renderer::EndRenderPass()
     m_RenderPass = nullptr;
 }
 
-void Renderer::EndFrame()
+bool Renderer::EndFrame()
 {
+    bool submitted = false;
     if (m_RenderTarget != m_SwapchainTexture) {
         // Screenshot frame: copy the offscreen image to the CPU and to the swapchain.
         SDL_GPUCopyPass* copy = SDL_BeginGPUCopyPass(m_CommandBuffer);
@@ -277,14 +278,18 @@ void Renderer::EndFrame()
 
         // A fence lets the CPU wait until the GPU has actually finished the download.
         m_CaptureFence = SDL_SubmitGPUCommandBufferAndAcquireFence(m_CommandBuffer);
+        submitted = m_CaptureFence != nullptr;
         FinishScreenshot();
-    } else if (!SDL_SubmitGPUCommandBuffer(m_CommandBuffer)) {
-        EM_CORE_ERROR("SDL_SubmitGPUCommandBuffer failed: {}", SDL_GetError());
+    } else {
+        submitted = SDL_SubmitGPUCommandBuffer(m_CommandBuffer);
     }
+    if (!submitted)
+        EM_CORE_ERROR("SDL_SubmitGPUCommandBuffer failed: {}", SDL_GetError());
 
     m_CommandBuffer = nullptr;
     m_SwapchainTexture = nullptr;
     m_RenderTarget = nullptr;
+    return submitted;
 }
 
 SDL_GPUBuffer* Renderer::CreateBuffer(SDL_GPUBufferUsageFlags usage, const void* data, u32 size)

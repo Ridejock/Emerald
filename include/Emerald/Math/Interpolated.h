@@ -29,8 +29,13 @@ namespace Emerald {
 // frame's alpha (Application::GetRenderAlpha, Scene::GetRenderAlpha):
 //
 //   Interpolated<Vec2> m_Position;
-//   void OnFixedUpdate(f32 dt) { m_Position.BeginStep(); m_Position.Set(m_Position.Current + v *
-//   dt); } void OnRender2D(Renderer2D& r) { r.DrawSprite(ship, m_Position.Get(GetRenderAlpha())); }
+//
+//   void OnFixedUpdate(f32 dt)
+//   {
+//       m_Position.BeginStep(); // first: the last step becomes Previous
+//       m_Position.Set(m_Position.Current + m_Velocity * dt);
+//   }
+//   void OnRender2D(Renderer2D& r) { r.DrawSprite(ship, m_Position.Get(GetRenderAlpha())); }
 //   void Respawn() { m_Position.Snap(spawn); } // a jump: no slide across the screen
 //
 // T needs Lerp(T, T, f32) (f32, Vec2, Vec3, ...). For angles use InterpolatedAngle.

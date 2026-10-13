@@ -75,6 +75,19 @@ jobs:
       - name: Test
         run: ctest --preset ${{ matrix.preset }}
 
+      # The Visual Studio generator must list the .hlsl files as None, not FXCompile (fxc rejects
+      # the SDL GPU register spaces). Configure only; no build.
+      - name: Check Visual Studio project
+        if: matrix.preset == 'debug'
+        run: |
+          cmake -S . -B build/vs -G "Visual Studio 17 2022" -A x64 -DEMERALD_BUILD_TESTS=OFF > vs-configure.txt 2>&1 \
+            || { cat vs-configure.txt; exit 1; }
+          if grep -rl "FXCompile" build/vs --include=*.vcxproj; then
+            echo "::error::.hlsl files are set to FXCompile in the Visual Studio project"
+            exit 1
+          fi
+          grep -rhoE '<None Include="[^"]+\.hlsl"' build/vs --include=*.vcxproj | sort -u
+
       - name: Upload logs
         if: failure()
         uses: actions/upload-artifact@v4

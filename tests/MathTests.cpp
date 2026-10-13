@@ -11,6 +11,9 @@
 
 using namespace Emerald;
 
+// MSVC reports the real standard only with /Zc:__cplusplus (emerald_set_warnings).
+static_assert(__cplusplus >= 202002L, "C++20, and __cplusplus says so");
+
 namespace {
 
 // Deterministic pseudo-random values in [lo, hi).

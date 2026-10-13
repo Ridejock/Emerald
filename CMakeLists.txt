@@ -49,11 +49,21 @@ include(cmake/Shaders.cmake)
 add_subdirectory(src/Vendor/vorbis)
 
 # Warning flags for Emerald's own targets (not third-party code). /utf-8: sources are UTF-8
-# (otherwise a non-ASCII comment warns, C4819, on e.g. CJK code pages).
+# (otherwise a non-ASCII comment warns, C4819, on e.g. CJK code pages). /Zc:__cplusplus: the real
+# value (202002L) instead of 199711L. With warnings as errors, linker (LNK) and librarian
+# warnings fail too.
 function(emerald_set_warnings target)
     if(MSVC)
-        target_compile_options(${target} PRIVATE /W4 /permissive- /utf-8
+        target_compile_options(${target} PRIVATE /W4 /permissive- /utf-8 /Zc:__cplusplus
                                $<$<BOOL:${EMERALD_WARNINGS_AS_ERRORS}>:/WX>)
+        if(EMERALD_WARNINGS_AS_ERRORS)
+            get_target_property(type ${target} TYPE)
+            if(type STREQUAL "STATIC_LIBRARY")
+                set_property(TARGET ${target} APPEND PROPERTY STATIC_LIBRARY_OPTIONS /WX)
+            else()
+                target_link_options(${target} PRIVATE /WX)
+            endif()
+        endif()
     else()
         target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic
                                $<$<BOOL:${EMERALD_WARNINGS_AS_ERRORS}>:-Werror>)

@@ -214,6 +214,7 @@ int Application::Run()
             m_Mouse.EndFixedStep();
         }
         m_FrameSeconds = static_cast<f32>(elapsedNs) / 1e9f;
+        m_Scenes.SetRenderAlpha(GetRenderAlpha()); // for this frame's update and drawing
         m_Session.BeginUpdate();
         {
             EM_PROFILE_SCOPE("Update");

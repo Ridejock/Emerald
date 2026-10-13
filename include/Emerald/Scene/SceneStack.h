@@ -65,6 +65,9 @@ public:
     [[nodiscard]] SceneStack* GetStack() const { return m_Stack; }
     // The top scene while no transition runs: the one whose input is live.
     [[nodiscard]] bool HasFocus() const;
+    // How far this frame is between the last two fixed steps, for drawing interpolated things
+    // (Interpolated.h, PreviousTransform): the stack's GetRenderAlpha(), 1 off the stack.
+    [[nodiscard]] f32 GetRenderAlpha() const;
 
     // Keeps `handle` (so its asset stays loaded) until the scene is destroyed, and returns the
     // asset. For assets used through raw pointers, such as a Sprite's texture:
@@ -137,6 +140,9 @@ public:
     // --- The loop (Application calls these after its own hooks) ---
     void OnEvent(const SDL_Event& event);
     void FixedUpdate(f32 dt);
+    // Set by Application each frame after the fixed steps (ApplicationSpec::InterpolateRendering).
+    void SetRenderAlpha(f32 alpha) { m_RenderAlpha = alpha; }
+    [[nodiscard]] f32 GetRenderAlpha() const { return m_RenderAlpha; }
     // The scenes, then the transition, then the queued changes.
     void Update(f32 dt);
     void Render(SDL_GPURenderPass* pass);
@@ -176,6 +182,7 @@ private:
     template <typename Fn> void ForEach(usize first, Fn&& fn);
 
     Input* m_Input = nullptr;
+    f32 m_RenderAlpha = 1.0f;
     std::vector<std::unique_ptr<Scene>> m_Scenes; // bottom first
     std::deque<Request> m_Pending;
     Request m_Current; // the change the running transition is for

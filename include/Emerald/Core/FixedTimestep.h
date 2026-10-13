@@ -1,5 +1,7 @@
 #pragma once
 
+#include <algorithm>
+
 #include "Emerald/Core/Defines.h"
 
 namespace Emerald {
@@ -57,10 +59,14 @@ public:
     // Fraction of a step that is accumulated but not simulated yet, in [0, 1).
     [[nodiscard]] f32 GetAlpha() const
     {
-        return static_cast<f32>(static_cast<f64>(m_AccumulatorNs) / static_cast<f64>(m_StepNs));
+        const f64 alpha = static_cast<f64>(m_AccumulatorNs) / static_cast<f64>(m_StepNs);
+        // Just under a whole step could round up to 1.0f.
+        return std::min(static_cast<f32>(alpha), kAlmostOne);
     }
 
 private:
+    static constexpr f32 kAlmostOne = 0.99999994f; // the largest f32 below 1
+
     u64 m_StepNs;
     u32 m_MaxSteps;
     u64 m_AccumulatorNs = 0;

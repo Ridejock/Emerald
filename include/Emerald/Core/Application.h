@@ -60,6 +60,10 @@ struct ApplicationSpec {
     // Wait for the display (vsync) at the start of a frame, before reading input, rather than
     // when rendering after the update. Input is then up to a frame fresher when it is drawn.
     bool WaitForDisplayBeforeInput = true;
+    // Render interpolation (Interpolated.h, PreviousTransform): with it, opted-in things are
+    // drawn between their last two fixed steps (GetRenderAlpha). Off: they are drawn at their
+    // latest step. Anything that didn't opt in draws the same either way.
+    bool InterpolateRendering = true;
     // Log file written in addition to the console. Relative paths are relative to the executable's
     // directory; the file is truncated on each run. Empty = no log file.
     std::filesystem::path LogFile = Log::DefaultFile;
@@ -131,6 +135,14 @@ public:
     // How far the current frame is between the last fixed step and the next one (0..1), for
     // interpolating positions when drawing. Most simple games can ignore it.
     [[nodiscard]] f32 GetFixedUpdateAlpha() const { return m_FixedTimestep.GetAlpha(); }
+    // The alpha to draw interpolated things with: GetFixedUpdateAlpha(), or 1 (the latest step)
+    // with ApplicationSpec::InterpolateRendering off. Scenes have it as Scene::GetRenderAlpha().
+    [[nodiscard]] f32 GetRenderAlpha() const
+    {
+        return m_Spec.InterpolateRendering ? m_FixedTimestep.GetAlpha() : 1.0f;
+    }
+    void SetInterpolateRendering(bool on) { m_Spec.InterpolateRendering = on; }
+    [[nodiscard]] bool IsInterpolatingRendering() const { return m_Spec.InterpolateRendering; }
 
     // Worker threads for background/parallel work (see ThreadPool.h).
     [[nodiscard]] ThreadPool& GetThreadPool() { return *m_ThreadPool; }

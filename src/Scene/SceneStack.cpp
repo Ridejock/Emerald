@@ -14,6 +14,11 @@ bool Scene::HasFocus() const
     return m_Stack && m_Stack->GetTop() == this && !m_Stack->IsTransitioning();
 }
 
+f32 Scene::GetRenderAlpha() const
+{
+    return m_Stack ? m_Stack->GetRenderAlpha() : 1.0f;
+}
+
 // --- Requests ---------------------------------------------------------------------------------
 
 void SceneStack::Push(std::unique_ptr<Scene> scene, Transition transition)

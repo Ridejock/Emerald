@@ -3,7 +3,9 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdio>
+#include <random>
 #include <utility>
 #include <vector>
 
@@ -271,6 +273,34 @@ TEST(FixedTimestepAverageRate)
     }
     CHECK(total >= 1199 && total <= 1200);
     CHECK(framesWithoutStep > 0);
+}
+
+TEST(FixedTimestepAlphaInRange)
+{
+    // Uneven frames (vsync misses, 144 / 60 / 165 Hz mixes, hitches, a step minus 1 ns): the
+    // render alpha is always in [0, 1).
+    FixedTimestep timestep(120.0, 8);
+    const u64 step = timestep.GetStepNanoseconds();
+    std::mt19937 random(7);
+    std::uniform_int_distribution<u64> frame(0, 3 * step);
+    bool ok = true;
+    for (u32 i = 0; i < 20000; ++i) {
+        u64 ns = frame(random);
+        if (i % 97 == 0)
+            ns = step - 1; // just under a step: must not round up to 1
+        if (i % 1013 == 0)
+            ns = 500'000'000; // a hitch past the step cap
+        (void)timestep.Advance(ns);
+        const f32 alpha = timestep.GetAlpha();
+        ok = ok && alpha >= 0.0f && alpha < 1.0f;
+    }
+    CHECK(ok);
+    FixedTimestep exact(100.0, 8);
+    CHECK(exact.Advance(15'000'000) == 1);
+    CHECK(std::fabs(exact.GetAlpha() - 0.5f) < 1e-6f);
+    FixedTimestep almost(120.0, 8);
+    CHECK(almost.Advance(almost.GetStepNanoseconds() - 1) == 0);
+    CHECK(almost.GetAlpha() < 1.0f);
 }
 
 TEST(FixedTimestepClampsSlowFrames)

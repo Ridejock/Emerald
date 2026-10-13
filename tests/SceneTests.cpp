@@ -319,3 +319,16 @@ TEST(ScenesExitAllOnDestruction)
     }
     CHECK(Same(log, {"Never:destroyed", "B:exit", "B:destroyed", "A:exit", "A:destroyed"}));
 }
+
+TEST(ScenesRenderAlpha)
+{
+    Log_ log;
+    Probe offStack("Off", log);
+    CHECK(offStack.GetRenderAlpha() == 1.0f); // not on a stack: the latest step
+    SceneStack stack;
+    stack.Push(Make("A", log));
+    stack.Update(0.016f);
+    CHECK(stack.GetTop()->GetRenderAlpha() == 1.0f);
+    stack.SetRenderAlpha(0.25f); // what Application does each frame
+    CHECK(stack.GetTop()->GetRenderAlpha() == 0.25f);
+}

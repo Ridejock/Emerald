@@ -107,20 +107,19 @@ template <typename F> void ThreadPool::ParallelFor(usize count, F&& fn)
             fn(i);
     };
 
-    std::vector<std::future<void>> futures;
-    futures.reserve(chunkCount);
-    usize begin = 0;
-    for (; begin + chunkSize < count; begin += chunkSize) {
-        const usize end = begin + chunkSize;
-        futures.push_back(Submit([&runChunk, begin, end] { runChunk(begin, end); }));
-    }
-
-    // The caller does the last chunk instead of just waiting.
     std::exception_ptr error;
+    std::vector<std::future<void>> futures;
+    usize begin = 0;
     try {
+        futures.reserve(chunkCount);
+        for (; begin + chunkSize < count; begin += chunkSize) {
+            const usize end = begin + chunkSize;
+            futures.push_back(Submit([&runChunk, begin, end] { runChunk(begin, end); }));
+        }
+        // The caller does the last chunk instead of just waiting.
         runChunk(begin, count);
     } catch (...) {
-        error = std::current_exception();
+        error = std::current_exception(); // e.g. Submit ran out of memory: still wait below
     }
     // Wait for every chunk (they reference fn) before returning or rethrowing.
     for (std::future<void>& future : futures) {

@@ -36,6 +36,7 @@ option(EMERALD_BUILD_TESTS   "Build the unit tests (run with ctest)" ${PROJECT_I
 option(EMERALD_BUILD_BENCH   "Build the math micro-benchmark" OFF)
 option(EMERALD_PROFILE       "Profile with Tracy (Core/Profile.h; the profile preset)" OFF)
 option(EMERALD_ASAN          "Build with AddressSanitizer (the debug-asan preset)" OFF)
+option(EMERALD_WARNINGS_AS_ERRORS "Treat warnings in Emerald's own targets as errors (CI)" OFF)
 
 # AddressSanitizer: before the dependencies, so they are built with it too (MSVC refuses to link
 # instrumented and plain STL code together).
@@ -47,12 +48,15 @@ include(cmake/Shaders.cmake)
 # Vorbis decode TU without ASan (see src/Vendor/vorbis/CMakeLists.txt).
 add_subdirectory(src/Vendor/vorbis)
 
-# Warning flags for Emerald's own targets (not third-party code).
+# Warning flags for Emerald's own targets (not third-party code). /utf-8: sources are UTF-8
+# (otherwise a non-ASCII comment warns, C4819, on e.g. CJK code pages).
 function(emerald_set_warnings target)
     if(MSVC)
-        target_compile_options(${target} PRIVATE /W4 /permissive-)
+        target_compile_options(${target} PRIVATE /W4 /permissive- /utf-8
+                               $<$<BOOL:${EMERALD_WARNINGS_AS_ERRORS}>:/WX>)
     else()
-        target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic)
+        target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic
+                               $<$<BOOL:${EMERALD_WARNINGS_AS_ERRORS}>:-Werror>)
     endif()
 endfunction()
 

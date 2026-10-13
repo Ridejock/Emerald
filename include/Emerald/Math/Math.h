@@ -6,7 +6,9 @@
 //   Vec3.h   - Vec3 with Dot/Cross/Normalize
 //   Vec4.h   - Vec4, SSE-accelerated when EMERALD_MATH_SIMD is on
 //   Mat4.h   - column-major Mat4: transforms, Ortho/Perspective/LookAt, Transpose, Inverse
+//   Interpolated.h - Interpolated<T> / LerpAngle for drawing between fixed steps
 #include "Emerald/Math/Common.h"
+#include "Emerald/Math/Interpolated.h"
 #include "Emerald/Math/Mat4.h"
 #include "Emerald/Math/Vec2.h"
 #include "Emerald/Math/Vec3.h"

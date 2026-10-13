@@ -5,6 +5,8 @@
 #include <random>
 #include <vector>
 
+#include <Emerald/Math/Interpolated.h>
+
 #include "Test.h"
 
 using namespace Emerald;
@@ -318,4 +320,41 @@ TEST(ScalarAndSimdAgree)
 #else
     std::printf("    no SSE2 on this target: only the scalar implementation exists\n");
 #endif
+}
+
+// --- Render interpolation (Interpolated.h) ------------------------------------------------------
+
+TEST(InterpolatedBlend)
+{
+    Interpolated<Vec2> p(Vec2(0.0f, 0.0f));
+    p.BeginStep();
+    p.Set({10.0f, -4.0f});
+    CHECK_NEAR(p.Get(0.0f), Vec2(0.0f, 0.0f));
+    CHECK_NEAR(p.Get(0.5f), Vec2(5.0f, -2.0f));
+    CHECK_NEAR(p.Get(1.0f), Vec2(10.0f, -4.0f));
+    // The next step starts from where this one ended.
+    p.BeginStep();
+    p.Set({20.0f, -4.0f});
+    CHECK_NEAR(p.Get(0.0f), Vec2(10.0f, -4.0f));
+    // A teleport doesn't slide.
+    p.Snap({100.0f, 100.0f});
+    CHECK_NEAR(p.Get(0.0f), Vec2(100.0f, 100.0f));
+    CHECK_NEAR(p.Get(0.5f), Vec2(100.0f, 100.0f));
+    Interpolated<f32> f(1.0f);
+    f.Set(3.0f);
+    f.Snap();
+    CHECK_NEAR(f.Get(0.25f), 3.0f);
+}
+
+TEST(InterpolatedAngleWrap)
+{
+    const f32 deg = Pi / 180.0f;
+    InterpolatedAngle a(350.0f * deg);
+    a.BeginStep();
+    a.Set(10.0f * deg);
+    CHECK_NEAR(a.Get(0.5f), 360.0f * deg); // through 0, not 180
+    CHECK_NEAR(a.Get(1.0f), 10.0f * deg);
+    CHECK_NEAR(LerpAngle(10.0f * deg, 350.0f * deg, 0.5f), 0.0f);
+    CHECK_NEAR(LerpAngle(0.0f, 90.0f * deg, 0.5f), 45.0f * deg);
+    CHECK_NEAR(LerpAngle(0.0f, 4.0f * Pi + 0.2f, 0.5f), 0.1f); // whole turns ignored
 }

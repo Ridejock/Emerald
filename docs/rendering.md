@@ -38,6 +38,9 @@ The code lives in `include/Emerald/Renderer/` and `src/Renderer/` and is intenti
   swapchain texture is null) or `Failed` (logged). For anything but `Ready` the loop waits up to
   10 ms for an event instead of spinning (the simulation keeps running); after 30 failed frames in
   a row (e.g. a lost GPU device) `Run()` shows a message box and returns 1.
+  The vsync wait happens at the top of the frame (`Renderer::WaitForSwapchain()`), before input
+  is read, so what is drawn reflects input up to a frame newer. Set
+  `ApplicationSpec::WaitForDisplayBeforeInput = false` to wait in `BeginFrame()` instead.
   `CreateBuffer()` shows the upload path (transfer buffer → copy pass → GPU buffer) and
   `RequestScreenshot()` reads the next frame back into a PNG.
 - **`LoadShader()`** – loads `bin/shaders/<Name>.<spv|dxil|msl>` for whichever format the device
@@ -52,10 +55,12 @@ render pass (`ImGui_ImplSDLGPU3_PrepareDrawData` before the pass, `RenderDrawDat
 One frame in `Application::Run()`:
 
 ```
+wait for display         Renderer::WaitForSwapchain (vsync waits here; skipped after a
+                         Skipped/Failed frame; ApplicationSpec::WaitForDisplayBeforeInput)
 events -> Input          OnEvent
 fixed steps (0..N)       OnFixedUpdate(dt)       game logic at ApplicationSpec::FixedUpdateRate
                          OnUpdate(frameTime)
-BeginFrame               (acquire command buffer + swapchain; vsync waits here)
+BeginFrame               (acquire command buffer + swapchain; no wait, it is ready)
                          OnRender2D(renderer2D)  record 2D shapes and sprites (CPU only)
 copy passes              Renderer2D upload (lines + sprites), ImGui upload
 render pass              OnRender(pass), then the 2D shapes/sprites, then ImGui on top

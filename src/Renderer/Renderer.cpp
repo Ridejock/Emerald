@@ -164,6 +164,13 @@ void Renderer::Shutdown()
     m_Window = nullptr;
 }
 
+bool Renderer::WaitForSwapchain()
+{
+    if (!m_Device || !m_Window)
+        return false;
+    return SDL_WaitForGPUSwapchain(m_Device, m_Window);
+}
+
 bool Renderer::SetVSync(bool vsync)
 {
     if (!m_Device)

@@ -160,8 +160,15 @@ int Application::Run()
     StartInputSession(); // after OnStart: the game has bound its actions
 
     int exitCode = 0;
+    FrameStatus lastFrame = FrameStatus::Ready;
     u64 last = SDL_GetTicksNS();
     while (m_Running) {
+        // Not after a skipped/failed frame: there is no swapchain to wait on (e.g. minimized).
+        if (m_Spec.WaitForDisplayBeforeInput && lastFrame == FrameStatus::Ready) {
+            EM_PROFILE_SCOPE("Wait for display");
+            m_Renderer->WaitForSwapchain();
+        }
+
         // Everything allocated from the frame arena last frame is gone from here on.
         m_FrameArena->Reset();
 
@@ -216,8 +223,9 @@ int Application::Run()
         }
         RequestCaptures();
         {
-            EM_PROFILE_SCOPE("Render"); // includes waiting for the swapchain (vsync)
+            EM_PROFILE_SCOPE("Render"); // waits for vsync here unless WaitForDisplayBeforeInput
             const FrameStatus frame = RenderFrame();
+            lastFrame = frame;
             m_FailedFrames = frame == FrameStatus::Failed ? m_FailedFrames + 1 : 0;
             if (frame != FrameStatus::Ready) {
                 // Minimized (or failing): there is no vsync to wait on, so don't spin a core.

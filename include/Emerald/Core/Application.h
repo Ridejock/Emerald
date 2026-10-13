@@ -57,6 +57,9 @@ struct ApplicationSpec {
     // A longer frame (a breakpoint, dragging the window, a load hitch) counts as this long for
     // OnUpdate, the scenes, tweens and timers, so they don't jump ahead all at once.
     f32 MaxFrameSeconds = 0.25f;
+    // Wait for the display (vsync) at the start of a frame, before reading input, rather than
+    // when rendering after the update. Input is then up to a frame fresher when it is drawn.
+    bool WaitForDisplayBeforeInput = true;
     // Log file written in addition to the console. Relative paths are relative to the executable's
     // directory; the file is truncated on each run. Empty = no log file.
     std::filesystem::path LogFile = Log::DefaultFile;

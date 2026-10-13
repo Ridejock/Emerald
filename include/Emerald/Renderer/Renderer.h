@@ -79,6 +79,9 @@ public:
     // mode the window supports (mailbox, else immediate). Takes effect from the next frame.
     bool SetVSync(bool vsync);
     [[nodiscard]] bool IsVSync() const { return m_VSync; }
+    // Blocks until the next frame's swapchain texture is available (with vsync: the display
+    // is ready for another frame), so BeginFrame then doesn't wait.
+    bool WaitForSwapchain();
 
     [[nodiscard]] SDL_GPUDevice* GetDevice() const { return m_Device; }
     // The active backend, e.g. "vulkan", "direct3d12" or "metal" (empty before Init).

@@ -89,7 +89,7 @@ network). The client is built on demand (`TRACY_ON_DEMAND`): nothing is collecte
 connects, so a profile build can run without one.
 
 Every frame is marked, and the main loop shows as zones: `Events`, `Assets`, `FixedUpdate` (each
-step), `Update` and `Render` (which includes waiting for the swapchain), plus the entity systems
+step), `Update` and `Render`, `Wait for display` (the vsync wait at the top of the frame), plus the entity systems
 (`UpdateMovement`, `UpdateAnimation`, `CollisionSystem::Update`, `DrawSprites`), `StepPlatformer`
 and the sandbox swarm's `Swarm::Simulate`. Thread pool workers carry their names. Add zones in a
 game with `Emerald/Core/Profile.h`:

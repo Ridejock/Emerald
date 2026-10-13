@@ -1,6 +1,7 @@
-# Windows tests: configure, build (zero MSVC warnings in Emerald's own code) and run the tests,
-# in the debug and debug-asan presets (no ImGui: the editor tools compile out) and debug-full
-# (ImGui on: the editor tools, their tests and the sandbox's panels).
+# Windows tests: configure, build (warnings in Emerald's own code are errors) and run the tests,
+# in the debug and debug-asan presets (no ImGui: the editor tools compile out), debug-full
+# (ImGui on: the editor tools, their tests and the sandbox's panels) and release (no hot reload,
+# NDEBUG).
 name: Windows
 
 on:
@@ -8,6 +9,14 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A newer push to the same branch or PR cancels the run in progress.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 # Emerald keeps its built shader compiler in a per-machine cache folder (cmake/Shaders.cmake);
 # a fixed one here so the cache step below knows where it is.
@@ -21,7 +30,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        preset: [debug, debug-asan, debug-full]
+        preset: [debug, debug-asan, debug-full, release]
     name: ${{ matrix.preset }}
     defaults:
       run:
@@ -44,11 +53,12 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: C:/emerald-cache/shadercross/*/bin
-          key: shadercross-bin-windows-${{ hashFiles('tools/shadercross/**') }}
-          restore-keys: shadercross-bin-windows-
+          # The MSVC version too: a runner image update rebuilds the tool with the new compiler.
+          key: shadercross-bin-windows-${{ env.VCToolsVersion }}-${{ hashFiles('tools/shadercross/**') }}
+          restore-keys: shadercross-bin-windows-${{ env.VCToolsVersion }}-
 
       - name: Configure
-        run: cmake --preset ${{ matrix.preset }}
+        run: cmake --preset ${{ matrix.preset }} -DEMERALD_WARNINGS_AS_ERRORS=ON
 
       - name: Build
         id: build
@@ -62,19 +72,15 @@ jobs:
           path: C:/emerald-cache/shadercross/*/bin
           key: ${{ steps.shadercross.outputs.cache-primary-key }}
 
-      # Zero warnings in Emerald's code. Fetched libraries (_deps) and the shadercross tool
-      # (in emerald-cache, e.g. C5051 in SPIRV-Cross) are not ours to fix.
-      - name: Check for warnings
-        run: |
-          grep -E "warning C[0-9]+" build-log.txt \
-            | grep -viE "[\\/]_deps[\\/]|emerald-cache" \
-            | sort -u > warnings.txt || true
-          if [ -s warnings.txt ]; then
-            echo "::error::MSVC warnings in Emerald:"
-            cat warnings.txt
-            exit 1
-          fi
-          echo "No MSVC warnings in Emerald."
-
       - name: Test
-        run: ctest --test-dir build/${{ matrix.preset }} --output-on-failure
+        run: ctest --preset ${{ matrix.preset }}
+
+      - name: Upload logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs-${{ matrix.preset }}
+          path: |
+            build-log.txt
+            build/${{ matrix.preset }}/Testing/Temporary/LastTest.log
+          if-no-files-found: ignore

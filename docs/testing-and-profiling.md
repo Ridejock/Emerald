@@ -44,7 +44,8 @@ Unit tests, ThreadSanitizer and benchmarks, Tracy and AddressSanitizer.
 
 ```sh
 cmake --build --preset debug
-ctest --test-dir build/debug --output-on-failure
+ctest --preset debug            # output on failure, 10 min timeout per test
+build/debug/bin/EmeraldAssetTests HotReload   # only the cases whose name contains "HotReload"
 ```
 
 ThreadSanitizer run (GCC/Clang; a separate build dir without the sandbox, so no shaders and no

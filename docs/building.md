@@ -37,7 +37,8 @@ Dependencies, build options, per-platform setup, presets and the sandbox command
 | `EMERALD_BUILD_TESTS` | `ON` | Build the unit tests and register them with CTest |
 | `EMERALD_BUILD_BENCH` | `OFF` | Build the micro-benchmarks (math, particles, collision, entities) |
 | `EMERALD_PROFILE` | `OFF` | Fetch Tracy and turn the `EM_PROFILE_*` macros on (see [Profiling](testing-and-profiling.md#profiling-tracy)) |
-| `EMERALD_ASAN` | `OFF` | Build everything with AddressSanitizer (see [AddressSanitizer](testing-and-profiling.md#addresssanitizer)) |
+| `EMERALD_ASAN` | `OFF` | Build everything with AddressSanitizer (see [AddressSanitizer](testing-and-profiling.md#addresssanitizer)); not with MinGW GCC, which has no ASan runtime |
+| `EMERALD_WARNINGS_AS_ERRORS` | `OFF` | `/WX` / `-Werror` on Emerald's own targets only (dependencies unaffected); CI turns it on |
 
 The engine exports `EMERALD_WITH_IMGUI` / `EMERALD_MATH_SIMD` / `EMERALD_PROFILE` (0 or 1) as public compile
 definitions. `EMERALD_WITH_ENTT` is still exported and is always 1: EnTT is now a regular dependency.

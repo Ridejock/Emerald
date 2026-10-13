@@ -237,6 +237,60 @@ TEST(ActionsAxis)
     CHECK(input.GetAxis("Rotate") == 1.0f);
 }
 
+TEST(ActionsLockoutPrevention)
+{
+    Keyboard keyboard;
+    Gamepads pads;
+    Input input(keyboard, pads);
+    input.BindAction("Fire", {Key::Space});
+    input.BindAction("Fire", {GamepadButton::South});
+    const std::span<const Key> noKeys;
+    const std::span<const GamepadButton> noButtons;
+    const std::span<const MouseButton> noMouse;
+
+    // The keys may go while the pad still fires; the pad's button then is the last one.
+    CHECK(input.TryRebindAction("Fire", noKeys));
+    CHECK(input.GetActionKeys("Fire").empty() && input.IsActionBound("Fire"));
+    CHECK(!input.TryRebindAction("Fire", noButtons));
+    CHECK(input.GetActionButtons("Fire").size() == 1 && input.IsActionBound("Fire"));
+    CHECK(input.TryRebindAction("Fire", noMouse)); // no mouse buttons: the pad still fires
+    const std::array<Key, 1> j{Key::J};
+    CHECK(input.TryRebindAction("Fire", std::span<const Key>(j)));
+    CHECK(input.GetActionKeys("Fire").size() == 1);
+    // An unknown action can't be bound to nothing either.
+    CHECK(!input.TryRebindAction("Nope", noKeys) && !input.IsActionBound("Nope"));
+}
+
+TEST(ActionsSnapshotRestore)
+{
+    Keyboard keyboard;
+    Gamepads pads;
+    Input input(keyboard, pads);
+    input.BindAction("Jump", {Key::Space});
+    input.BindAction("Fire", {Key::J});
+    input.BindAxis("MoveX", Key::A, Key::D);
+    const Input::Snapshot defaults = input.SaveSnapshot();
+
+    input.RebindAction("Jump", {Key::Z});
+    input.RebindAction("Fire", {Key::K});
+    input.RebindAxis("MoveX", Key::Left, Key::Right);
+    input.BindAction("Later", {Key::L});
+
+    // Only the named ones go back; "Later" wasn't in the snapshot, so it goes.
+    const std::array<std::string_view, 2> some{"Jump", "Later"};
+    input.RestoreSnapshot(defaults, some);
+    CHECK(input.GetActionKeys("Jump").size() == 1 && input.GetActionKeys("Jump")[0] == Key::Space);
+    CHECK(input.GetActionKeys("Fire")[0] == Key::K);
+    CHECK(!input.IsActionBound("Later"));
+
+    // Everything.
+    input.RestoreSnapshot(defaults);
+    CHECK(input.GetActionKeys("Fire")[0] == Key::J);
+    CHECK(input.GetAxisKeyPairs("MoveX").size() == 1 &&
+          input.GetAxisKeyPairs("MoveX")[0].Negative == Key::A);
+    CHECK(input.GetNames().Actions.size() == 2);
+}
+
 TEST(ActionsRebind)
 {
     Keyboard keyboard;

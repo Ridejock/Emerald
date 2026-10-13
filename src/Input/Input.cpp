@@ -123,6 +123,74 @@ void Input::Unbind(std::string_view name)
     std::erase_if(m_Axes, [&](const Axis& a) { return a.Name == name; });
 }
 
+bool Input::TryRebindAction(std::string_view action, std::span<const Key> keys)
+{
+    const Action* a = FindAction(action);
+    if (keys.empty() && !(a && (!a->Buttons.empty() || !a->MouseButtons.empty())))
+        return false; // the last binding: keep it
+    RebindAction(action, keys);
+    return true;
+}
+
+bool Input::TryRebindAction(std::string_view action, std::span<const GamepadButton> buttons)
+{
+    const Action* a = FindAction(action);
+    if (buttons.empty() && !(a && (!a->Keys.empty() || !a->MouseButtons.empty())))
+        return false; // the last binding: keep it
+    RebindAction(action, buttons);
+    return true;
+}
+
+bool Input::TryRebindAction(std::string_view action, std::span<const MouseButton> buttons)
+{
+    const Action* a = FindAction(action);
+    if (buttons.empty() && !(a && (!a->Keys.empty() || !a->Buttons.empty())))
+        return false; // the last binding: keep it
+    RebindAction(action, buttons);
+    return true;
+}
+
+bool Input::IsActionBound(std::string_view action) const
+{
+    const Action* a = FindAction(action);
+    return a && (!a->Keys.empty() || !a->Buttons.empty() || !a->MouseButtons.empty());
+}
+
+Input::Snapshot Input::SaveSnapshot() const
+{
+    Snapshot snapshot;
+    snapshot.m_Actions = m_Actions;
+    snapshot.m_Axes = m_Axes;
+    return snapshot;
+}
+
+void Input::RestoreSnapshot(const Snapshot& snapshot, std::span<const std::string_view> names)
+{
+    if (names.empty()) {
+        m_Actions = snapshot.m_Actions;
+        m_Axes = snapshot.m_Axes;
+        return;
+    }
+    // Each name in place (binding order is kept), or appended if it is new again.
+    const auto restore = [&](auto& current, const auto& saved, std::string_view name) {
+        const auto was = std::ranges::find_if(saved, [&](const auto& b) { return b.Name == name; });
+        const auto now =
+            std::ranges::find_if(current, [&](const auto& b) { return b.Name == name; });
+        if (was == saved.end()) {
+            if (now != current.end())
+                current.erase(now);
+        } else if (now != current.end()) {
+            *now = *was;
+        } else {
+            current.push_back(*was);
+        }
+    };
+    for (const std::string_view name : names) {
+        restore(m_Actions, snapshot.m_Actions, name);
+        restore(m_Axes, snapshot.m_Axes, name);
+    }
+}
+
 void Input::RebindAxis(std::string_view axis, std::span<const AxisPair<Key>> pairs)
 {
     GetOrAddAxis(axis).KeyPairs.assign(pairs.begin(), pairs.end());

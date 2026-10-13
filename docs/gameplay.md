@@ -348,6 +348,14 @@ gamepad button pairs as parallel lists (`input.MoveX.negative = A, Left` /
 `GetAxisKeyPairs` and friends read them, `RebindAxis(axis, pairs)` replaces them, and
 `FindActionsUsing(key)` lists the actions an input is bound to (conflicts and swaps).
 
+**Restore defaults and lockout prevention:** `input.SaveSnapshot()` right after binding the
+defaults keeps a copy of every binding; `input.RestoreSnapshot(defaults, kRebindable)` puts just
+those actions (and axes) back, or everything without a list. `TryRebindAction` is
+`RebindAction` that refuses (returns false, changes nothing) when the action would be left with
+nothing on any device, and `IsActionBound(action)` tells whether anything triggers it. For a
+change to several actions (a swap), take a snapshot, make the changes, and restore it if
+`IsActionBound` is false for one of them.
+
 `Emerald::Mouse` (`Mouse.h`, `input.GetMouse()`) has the buttons (`Left`, `Middle`, `Right`, `X1`,
 `X2`), `GetPosition()`, `HasMoved()` (this frame, e.g. to switch aiming from a stick back to the
 mouse), `IsInWindow()` and `GetWheel()`: the wheel in notches (`y > 0` scrolls up, `x > 0`

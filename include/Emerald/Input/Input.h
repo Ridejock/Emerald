@@ -50,14 +50,42 @@ struct AxisAnalog {
 // Action and axis names are also their keys in a settings file (InputBindings.h): letters,
 // digits and . _ - (debug builds assert it).
 //
-// Restoring the defaults for an options screen: Unbind the action and call your own binding
-// function again, or keep a copy of GetActionKeys() and friends taken right after it.
+// Options screens: take a snapshot right after binding the defaults, and "restore defaults"
+// puts the rebindable actions back from it. TryRebindAction refuses a rebind that would leave the
+// action with nothing on any device; for a change to several actions (a swap), take a snapshot
+// first, check IsActionBound for each afterwards, and restore it if one lost everything:
+//
+//   m_Defaults = input.SaveSnapshot();                      // after BindControls(input)
+//   input.RestoreSnapshot(m_Defaults, kRebindable);         // the Defaults button
+//   if (!input.TryRebindAction("Fire", std::span<const Key>{})) ShowWhy(); // the last one stays
 //
 // Pressed/released follow the ButtonStates rules: since the last frame in OnUpdate, since the
 // last fixed step in OnFixedUpdate. Unknown names are simply "not down" / 0. Every connected
 // gamepad drives the actions (single player); see Gamepads.h for deadzones, labels and pads.
 class Input {
+private:
+    struct Action {
+        std::string Name;
+        std::vector<Key> Keys;
+        std::vector<GamepadButton> Buttons;
+        std::vector<MouseButton> MouseButtons;
+    };
+    struct Axis {
+        std::string Name;
+        std::vector<AxisPair<Key>> KeyPairs;
+        std::vector<AxisPair<GamepadButton>> ButtonPairs;
+        std::vector<AxisAnalog> Analogs;
+    };
+
 public:
+    // Every action and axis with its bindings at one moment (SaveSnapshot); only Input reads it.
+    class Snapshot {
+    private:
+        friend class Input;
+        std::vector<Action> m_Actions;
+        std::vector<Axis> m_Axes;
+    };
+
     // Without a mouse (e.g. in tests), mouse bindings are simply never down.
     Input(const Keyboard& keyboard, Gamepads& gamepads, const Mouse* mouse = nullptr)
         : m_Keyboard(keyboard), m_Gamepads(gamepads), m_Mouse(mouse ? *mouse : m_NoMouse)
@@ -96,6 +124,17 @@ public:
 
     // Removes an action or axis with all its bindings.
     void Unbind(std::string_view name);
+    // RebindAction, refused (false, nothing changes) when the action would then have nothing
+    // bound on any device: keys, gamepad buttons or mouse buttons.
+    bool TryRebindAction(std::string_view action, std::span<const Key> keys);
+    bool TryRebindAction(std::string_view action, std::span<const GamepadButton> buttons);
+    bool TryRebindAction(std::string_view action, std::span<const MouseButton> buttons);
+    // Something on some device triggers the action.
+    [[nodiscard]] bool IsActionBound(std::string_view action) const;
+    // Every binding now, and back to it: `names` (actions and axes) only, or everything when
+    // empty. A name the snapshot doesn't have is unbound.
+    [[nodiscard]] Snapshot SaveSnapshot() const;
+    void RestoreSnapshot(const Snapshot& snapshot, std::span<const std::string_view> names = {});
     // What is bound to an action (empty if there is no such action).
     [[nodiscard]] std::span<const Key> GetActionKeys(std::string_view action) const;
     [[nodiscard]] std::span<const GamepadButton> GetActionButtons(std::string_view action) const;
@@ -151,19 +190,6 @@ public:
     [[nodiscard]] const Gamepads& GetGamepads() const { return m_Gamepads; }
 
 private:
-    struct Action {
-        std::string Name;
-        std::vector<Key> Keys;
-        std::vector<GamepadButton> Buttons;
-        std::vector<MouseButton> MouseButtons;
-    };
-    struct Axis {
-        std::string Name;
-        std::vector<AxisPair<Key>> KeyPairs;
-        std::vector<AxisPair<GamepadButton>> ButtonPairs;
-        std::vector<AxisAnalog> Analogs;
-    };
-
     // A handful of actions per game: a linear search by name is simple and fast enough.
     [[nodiscard]] const Action* FindAction(std::string_view name) const;
     [[nodiscard]] const Axis* FindAxis(std::string_view name) const;

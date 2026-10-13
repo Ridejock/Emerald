@@ -1,4 +1,5 @@
-# Third-party dependencies, fetched and pinned via FetchContent.
+# Third-party dependencies, fetched via FetchContent and pinned to exact contents: archives by
+# URL + SHA256 (a commit archive where there is no release archive), git by commit SHA.
 include(FetchContent)
 
 set(FETCHCONTENT_QUIET OFF)
@@ -24,21 +25,21 @@ emerald_dependency_option(SDL_EXAMPLES OFF)
 emerald_dependency_option(SDL_JOYSTICK ON)
 emerald_dependency_option(SDL_HIDAPI ON)
 emerald_dependency_option(SDL_HIDAPI_JOYSTICK ON)
+# SDL's own release archive (3.4.16), pinned by hash.
 FetchContent_Declare(SDL3
-    GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
-    GIT_TAG        release-3.4.16
-    GIT_SHALLOW    TRUE
-    GIT_PROGRESS   TRUE
+    URL      https://github.com/libsdl-org/SDL/releases/download/release-3.4.16/SDL3-3.4.16.tar.gz
+    URL_HASH SHA256=7322236cd12090c3eb40b9728be4d49c76f66ad17d04369584d4ecad5cf77c68
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
 
 # --- spdlog -----------------------------------------------------------------
 emerald_dependency_option(SPDLOG_BUILD_EXAMPLE OFF)
 emerald_dependency_option(SPDLOG_BUILD_TESTS OFF)
 emerald_dependency_option(SPDLOG_INSTALL OFF)
-FetchContent_Declare(spdlog
-    GIT_REPOSITORY https://github.com/gabime/spdlog.git
-    GIT_TAG        v1.17.0
-    GIT_SHALLOW    TRUE
+FetchContent_Declare(spdlog # v1.17.0
+    URL      https://github.com/gabime/spdlog/archive/79524ddd08a4ec981b7fea76afd08ee05f83755d.tar.gz
+    URL_HASH SHA256=c6dee844e35a54cc80e3ab76aae2310763e0b49c7397549dfa4d4657d9737138
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
 
 # --- stb (header-only, no releases: pinned to a commit) ----------------------
@@ -79,10 +80,10 @@ target_include_directories(emerald_dr_libs SYSTEM INTERFACE ${dr_libs_SOURCE_DIR
 
 # --- Dear ImGui (optional) --------------------------------------------------
 if(EMERALD_USE_IMGUI)
-    FetchContent_Declare(imgui
-        GIT_REPOSITORY https://github.com/ocornut/imgui.git
-        GIT_TAG        v1.92.9b-docking
-        GIT_SHALLOW    TRUE
+    FetchContent_Declare(imgui # v1.92.9b-docking
+        URL      https://github.com/ocornut/imgui/archive/b48d1afbe8ee8b238e2961dc363a949dd7304e23.tar.gz
+        URL_HASH SHA256=747c5a465a05c4ef5b4a09e2e0e3d0ce2bc76b31420f0f5af33df470907cf893
+        DOWNLOAD_EXTRACT_TIMESTAMP TRUE
     )
     FetchContent_MakeAvailable(imgui)
 
@@ -106,10 +107,10 @@ endif()
 # --- EnTT --------------------------------------------------------------------
 # The entity layer (Entity/World.h) is built on it. Its include directory is marked SYSTEM, so
 # warnings from inside EnTT's headers do not count against ours (-Wpedantic, /W4).
-FetchContent_Declare(EnTT
-    GIT_REPOSITORY https://github.com/skypjack/entt.git
-    GIT_TAG        v3.16.0
-    GIT_SHALLOW    TRUE
+FetchContent_Declare(EnTT # v3.16.0
+    URL      https://github.com/skypjack/entt/archive/b4e58bdd364ad72246c123a0c28538eab3252672.tar.gz
+    URL_HASH SHA256=3e996cf255b09527faf995c7c36e3daf92cefa0fb37540a4b9c359af557e19cd
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
 FetchContent_MakeAvailable(EnTT)
 get_target_property(EMERALD_ENTT_INCLUDES EnTT INTERFACE_INCLUDE_DIRECTORIES)

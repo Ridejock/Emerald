@@ -153,5 +153,6 @@ slow frame or a breakpoint slows the game briefly instead of making it spiral. `
 runs once per frame with the real frame time, capped at `MaxFrameSeconds` (default 0.25 s): after a
 long stall, `OnUpdate`, the scenes, tweens and timers move on by at most that much (the cap is
 applied before input recording, so replays see the same times). `GetFixedDeltaSeconds()` and `GetFixedUpdateAlpha()`
-(0..1, for interpolating when drawing) are available too, and `GetWindowSize()` /
+(0..1, for interpolating when drawing; `GetRenderAlpha()` honours `InterpolateRendering`, see
+[Render interpolation](rendering.md#render-interpolation)) are available too, and `GetWindowSize()` /
 `GetWindowSizeInPixels()` return the client area in window coordinates / pixels (`Vec2i`).

@@ -224,6 +224,9 @@ costs an ordering pass every frame and is not needed yet. Store a parent `Entity
 component if something has to follow another entity.
 
 **Systems** (`Entity/Systems.h`): the scene calls them, in the order it wants.
+- `StorePreviousTransforms(world)`: copies `Transform` into `PreviousTransform` (opt-in render
+  interpolation; call it first in each fixed step). `World::SnapTransform(e)` after a teleport.
+  See [Render interpolation](rendering.md#render-interpolation).
 - `UpdateMovement(world, dt)`: moves `Transform` by `Velocity`.
 - `UpdateAnimation(world, dt)`: advances every `Animator`. Its `OnFinished` / loop callbacks may
   destroy the entity.
@@ -234,10 +237,11 @@ component if something has to follow another entity.
   `CollisionEvent{A, B, Hit}` (normal from A to B, depth) sorted by id, so results are
   deterministic. `GetCandidateCount()` and `GetBroadphase()` are there for debugging. Colliders
   ignore the transform's rotation and scale.
-- `DrawSprites(world, r, {.SortByY, .Visible})`: draws every `Transform` + `SpriteRenderer`, sorted by
+- `DrawSprites(world, r, {.SortByY, .Visible, .Alpha})`: draws every `Transform` + `SpriteRenderer`, sorted by
   `Layer`, then by y (lower on screen is in front), then by id so equal keys don't flicker. If
   an `Animator` is present its current frame is drawn. `Visible` (e.g. the camera's world rect)
-  culls off-screen entities. It returns the number of sprites drawn. Keep each layer on one
+  culls off-screen entities. `Alpha` (`Scene::GetRenderAlpha()`) blends entities that have a
+  `PreviousTransform`; the others are drawn at their `Transform`. It returns the number of sprites drawn. Keep each layer on one
   texture to keep the draw calls low.
 
 **Per app:** `Application::GetWorld()` is a world for apps that don't use scenes (the old

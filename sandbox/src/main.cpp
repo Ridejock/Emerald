@@ -555,8 +555,9 @@ private:
         input.BindAction("Jump", {Key::Space}); // the platformer (down + jump drops through)
         input.BindAction("Jump", {Key::Z});
         input.BindAction("Jump", {GamepadButton::South});
-        input.BindAction("Overlay", {Key::O});    // the platformer's collision overlay
-        input.BindAction("QuickSave", {Key::F5}); // the dialogue demo's save / load
+        input.BindAction("Overlay", {Key::O});     // the platformer's collision overlay
+        input.BindAction("Interpolate", {Key::I}); // the platformer: render interpolation on/off
+        input.BindAction("QuickSave", {Key::F5});  // the dialogue demo's save / load
         input.BindAction("QuickLoad", {Key::F9});
         // The UI widgets (OptionsScene.h): the default UI actions, but Escape quits the sandbox,
         // so back is Backspace or M (rebinding replaces only the keys; East stays).

@@ -8,7 +8,8 @@
 //
 // A / D, arrows, d-pad or left stick run; Space / Z / gamepad South (Cross) jumps (hold for
 // higher); down + jump drops through a one-way platform; R / Back respawns; O shows the
-// collision; M / Start pauses; T fades to the camera demo.
+// collision; I toggles render interpolation (the hero and the camera are drawn between fixed
+// steps: compare on a 144 Hz+ monitor); M / Start pauses; T fades to the camera demo.
 //
 // Game feel is tuned live with the Tweak variables below (PlatformerFeel; F1 shows the ImGui
 // panels in builds with ImGui, and the Tweaks window's Save writes sandbox/assets/tweaks.json,
@@ -88,6 +89,7 @@ public:
         m_Map = shared.App.GetAssets().Load<Emerald::Tilemap>("tilemaps/platformer.tmj");
         m_Camera.SetZoom(3.0f);
         m_Camera.GetFollowParams() = {.DeadZone = {20.0f, 12.0f}, .Damping = 6.0f};
+        m_Camera.SetPixelSnap(true); // whole screen pixels after the interpolation blend
         m_ShowCollision = shared.Options.Collision;
         if (const Emerald::MapObject* spawn = m_Map->FindObject("spawn"))
             m_Checkpoint = spawn->Position;
@@ -99,6 +101,7 @@ public:
     // Physics at the fixed rate: the same input always gives the same path.
     void OnFixedUpdate(f32 dt) override
     {
+        m_Feet.BeginStep(); // render interpolation: where the last step left the hero
         const Emerald::Input& input = m_Shared.App.GetInput();
         const Emerald::PlatformerInput in{.Move = input.GetAxis("MoveX"),
                                           .JumpPressed = input.WasActionPressed("Jump"),
@@ -134,6 +137,7 @@ public:
 
         if (m_Body.Velocity.x != 0.0f)
             m_FacingLeft = m_Body.Velocity.x < 0.0f;
+        m_Feet.Set(m_Body.GetFeet());
         UpdateAnimation(dt);
         AddTrail();
         m_Camera.SetViewSize(m_Shared.GetViewSize());
@@ -153,6 +157,8 @@ public:
             Respawn();
         if (input.WasActionPressed("Overlay"))
             m_ShowCollision = !m_ShowCollision;
+        if (input.WasActionPressed("Interpolate"))
+            m_Shared.App.SetInterpolateRendering(!m_Shared.App.IsInterpolatingRendering());
     }
 
     void OnRender2D(Emerald::Renderer2D& r) override
@@ -160,6 +166,7 @@ public:
         const Vec2 size = m_Shared.GetViewSize();
         m_Camera.SetViewSize(size);
         m_Camera.SetTargetSize(m_Shared.GetTargetSize());
+        m_Camera.SetRenderAlpha(GetRenderAlpha()); // 1 with interpolation off
         DrawWorld(r);
         r.Begin(Emerald::Mat4::OrthoPixelSpace(size.x, size.y));
         DrawLabels(r, size);
@@ -181,6 +188,9 @@ public:
             if (ImGui::Button("Respawn"))
                 Respawn();
             ImGui::Checkbox("Collision overlay", &m_ShowCollision);
+            bool interpolate = m_Shared.App.IsInterpolatingRendering();
+            if (ImGui::Checkbox("Render interpolation (I)", &interpolate))
+                m_Shared.App.SetInterpolateRendering(interpolate);
             ImGui::Text("Position %.2f, %.2f  velocity %.1f, %.1f",
                         static_cast<f64>(m_Body.Position.x), static_cast<f64>(m_Body.Position.y),
                         static_cast<f64>(m_Body.Velocity.x), static_cast<f64>(m_Body.Velocity.y));
@@ -201,6 +211,8 @@ private:
     {
         m_Body = {.Position = m_Checkpoint - Vec2(0.0f, 7.0f), .HalfSize = {5.0f, 7.0f}};
         m_Camera.SetPosition(m_Checkpoint);
+        m_Camera.Snap(); // a jump: no slide back from where the hero fell
+        m_Feet.Snap(m_Body.GetFeet());
         m_TrailCount = 0;
     }
 
@@ -271,10 +283,11 @@ private:
             return;
         const Emerald::SpriteOptions options{
             .Origin = {0.5f, 1.0f}, .FlipX = m_FacingLeft, .PixelSnap = true};
+        const Vec2 feet = m_Feet.Get(GetRenderAlpha());
         if (m_Body.Grounded)
-            r.DrawSprite(m_Animator, m_Body.GetFeet(), options);
+            r.DrawSprite(m_Animator, feet, options);
         else
-            r.DrawSprite(m_Shared.Hero->Get("hero_jump_1"), m_Body.GetFeet(), options);
+            r.DrawSprite(m_Shared.Hero->Get("hero_jump_1"), feet, options);
     }
 
     // The map's "label" objects as crisp screen-space text above each part of the level.
@@ -341,6 +354,10 @@ private:
                          std::to_string(static_cast<i32>(m_Body.Velocity.y)) + " px/s",
                      {16.0f, y}, text);
         r.DrawString(font,
+                     m_Shared.App.IsInterpolatingRendering() ? "interpolation ON (I)"
+                                                             : "interpolation OFF (I)",
+                     {160.0f, y}, m_Shared.App.IsInterpolatingRendering() ? on : off);
+        r.DrawString(font,
                      "Platformer: A/D run, Space/Cross jump (hold: higher), down+jump drops "
                      "through, R respawn, O collision, M pause, T camera demo",
                      {12.0f, size.y - 20.0f}, {1.0f, 1.0f, 1.0f, 0.9f});
@@ -350,7 +367,8 @@ private:
     Emerald::AssetHandle<Emerald::Tilemap> m_Map;
     Emerald::Camera2D m_Camera;
     Emerald::PlatformerBody m_Body;
-    PlatformerFeel m_Feel;                                         // F1: the Tweaks window
+    Emerald::Interpolated<Vec2> m_Feet; // the hero's feet at the last two steps (drawing)
+    PlatformerFeel m_Feel;              // F1: the Tweaks window
     Emerald::PlatformerTunables m_Tunables = m_Feel.GetTunables(); // this step's
     Vec2 m_Checkpoint{64.0f, 64.0f};                               // feet position to respawn at
     Emerald::Animator m_Animator;

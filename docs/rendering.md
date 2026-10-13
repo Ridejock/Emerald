@@ -168,7 +168,63 @@ void OnRender2D(Emerald::Renderer2D& r) override
   frame-rate independent. `Enabled = false` keeps it still (e.g. a "screen shake" option). The
   shaken view is clamped to the bounds too.
 
-The camera has no interpolation between fixed steps: update it where the things it follows move.
+Update the camera where the things it follows move (normally the fixed step). For drawing between
+steps, see [Render interpolation](#render-interpolation) below.
+
+## Render interpolation
+
+The simulation runs at a fixed rate (`ApplicationSpec::FixedUpdateRate`, e.g. 120 Hz) and the display
+at its own (60, 75, 144, 165 Hz...). When one isn't a multiple of the other, frames alternate
+between 1 and 2 steps of movement and motion judders. Render interpolation draws things between
+their last two fixed steps instead: `alpha` is how far the frame is into the next step (0..1),
+from the fixed-step accumulator. Drawing is then up to one step (8.3 ms at 120 Hz) behind the
+simulation. Gameplay and collision always use the latest step; only drawing blends.
+
+It is **opt-in per thing**: anything that doesn't opt in draws exactly as before.
+`ApplicationSpec::InterpolateRendering` (default true; `Application::SetInterpolateRendering` at
+run time) is the global switch for the opted-in things: off, they draw at their latest step.
+
+- **The alpha**: `Scene::GetRenderAlpha()` (or `Application::GetRenderAlpha()`), set each frame
+  after the fixed steps; 1 when the switch is off or the scene isn't on a stack.
+- **Your own objects**: `Interpolated<T>` (`Math/Interpolated.h`) keeps `Previous` and `Current`.
+  `BeginStep()` at the start of each fixed step, `Set()` the new value, `Get(alpha)` to draw,
+  `Snap()` after a teleport or spawn. `InterpolatedAngle` / `LerpAngle` blend angles the short way.
+- **Entities**: add `PreviousTransform` and call `StorePreviousTransforms(world)` first in each fixed
+  step; `DrawSprites(world, r, {.Alpha = GetRenderAlpha()})` blends those entities (position, the
+  rotation the short way, scale). New ones draw at their Transform until the next step, so spawns
+  don't slide in. `World::SnapTransform(entity)` after a teleport. A move longer than
+  `DrawSpritesOptions::SnapDistance` (512 units) in one step is drawn unblended, with a warning
+  once in debug builds.
+- **The camera**: `Camera2D::Update` remembers where each step left it. `SetRenderAlpha(alpha)`
+  before drawing makes its results (matrices, conversions, `GetEyePosition()`) use the blended
+  position; `GetEyePosition(alpha)` asks directly; `Snap()` after a cut or respawn. With
+  `SetPixelSnap(true)` the eye lands on whole target pixels after the blend, and the shake is added
+  on top (it is per frame, not per step), so pixel art doesn't shimmer against the camera.
+
+```cpp
+void OnFixedUpdate(f32 dt) override
+{
+    StorePreviousTransforms(m_World);        // entities with a PreviousTransform
+    m_Feet.BeginStep();                      // Interpolated<Vec2> m_Feet
+    StepPlatformer(m_Body, in, tunables, map, dt);
+    m_Feet.Set(m_Body.GetFeet());
+    m_Camera.Follow(m_Body.GetFeet(), dt);
+    m_Camera.Update(dt);
+}
+void OnRender2D(Renderer2D& r) override
+{
+    const f32 alpha = GetRenderAlpha();
+    m_Camera.SetRenderAlpha(alpha);
+    r.Begin(m_Camera);
+    DrawSprites(m_World, r, {.Alpha = alpha});
+    r.DrawSprite(hero, m_Feet.Get(alpha));
+    r.End();
+}
+void Respawn() { m_Feet.Snap(spawn); m_Camera.SetPosition(spawn); m_Camera.Snap(); }
+```
+
+Replays stay deterministic: frame times are recorded, so the alpha of every frame is the same on
+replay. The sandbox platformer (I toggles it) shows the hero and the camera interpolated.
 
 ## Textures and sprites
 

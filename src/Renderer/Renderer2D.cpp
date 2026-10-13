@@ -19,12 +19,19 @@
 
 namespace Emerald {
 
+namespace {
+// (cos, sin) of an angle, without the trig for the common unrotated case.
+Vec2 CosSin(f32 angle)
+{
+    return angle == 0.0f ? Vec2(1.0f, 0.0f) : Vec2(std::cos(angle), std::sin(angle));
+}
+} // namespace
+
 Vec2 Transform2D::Apply(const Vec2& point) const
 {
     const Vec2 p = point * Scale;
-    const f32 c = std::cos(Rotation);
-    const f32 s = std::sin(Rotation);
-    return Position + Vec2(p.x * c - p.y * s, p.x * s + p.y * c);
+    const Vec2 cs = CosSin(Rotation);
+    return Position + Vec2(p.x * cs.x - p.y * cs.y, p.x * cs.y + p.y * cs.x);
 }
 
 Renderer2D::~Renderer2D()
@@ -292,11 +299,17 @@ void Renderer2D::DrawPolyline(std::span<const Vec2> points, const Vec4& color,
         return;
     UseCommand(CommandType::Lines);
     const u32 packed = PackColor(color);
+    // Transform2D::Apply, with the rotation's trig done once for all the points.
+    const Vec2 cs = CosSin(transform.Rotation);
+    const auto apply = [&](const Vec2& point) {
+        const Vec2 p = point * transform.Scale;
+        return transform.Position + Vec2(p.x * cs.x - p.y * cs.y, p.x * cs.y + p.y * cs.x);
+    };
     // A line list needs both end points of every segment, so inner points appear twice.
-    Vec2 previous = transform.Apply(points[0]);
+    Vec2 previous = apply(points[0]);
     const Vec2 first = previous;
     for (usize i = 1; i < points.size(); ++i) {
-        const Vec2 current = transform.Apply(points[i]);
+        const Vec2 current = apply(points[i]);
         m_Vertices.push_back({previous, packed});
         m_Vertices.push_back({current, packed});
         previous = current;
@@ -394,8 +407,9 @@ void Renderer2D::DrawSprite(const Sprite& sprite, const Vec2& position,
         std::swap(uv0.y, uv1.y);
 
     // Corners around the origin, rotated, then moved into place (like Transform2D).
-    const f32 c = std::cos(options.Rotation);
-    const f32 s = std::sin(options.Rotation);
+    const Vec2 cs = CosSin(options.Rotation);
+    const f32 c = cs.x;
+    const f32 s = cs.y;
     const auto corner = [&](f32 fx, f32 fy) {
         const Vec2 local = Vec2(fx * size.x, fy * size.y) - pivot;
         return at + Vec2(local.x * c - local.y * s, local.x * s + local.y * c);

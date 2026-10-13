@@ -41,6 +41,12 @@ struct Viewport {
 // Shake is trauma based: AddTrauma() bumps a 0..1 value that decays linearly; the shake is
 // trauma^2 times the maximum, driven by smooth noise over time, so it looks the same at any
 // frame rate. Results (matrices, conversions) include the shake and respect the bounds.
+//
+// Render interpolation (opt-in): Update() also remembers where each fixed step left the camera.
+// With SetRenderAlpha(scene.GetRenderAlpha()) each frame before drawing, the results use the
+// position between the last two steps; Snap() after a jump (respawn, new room) so it doesn't
+// slide there. SetPixelSnap(true) puts the eye on whole target pixels after blending, before the
+// shake, so pixel art doesn't shimmer against the camera.
 class Camera2D {
 public:
     struct FollowParams {
@@ -81,11 +87,22 @@ public:
     void Follow(const Vec2& target, f32 dt);
     void AddTrauma(f32 amount); // trauma stays in [0, 1]
     [[nodiscard]] f32 GetTrauma() const { return m_Trauma; }
-    // Advances the shake and decays trauma.
+    // Advances the shake and decays trauma. Call it once at the end of each fixed step.
     void Update(f32 dt);
+
+    // --- Render interpolation (see above) ---
+    void SetRenderAlpha(f32 alpha) { m_RenderAlpha = alpha; }
+    void ClearRenderAlpha() { m_RenderAlpha.reset(); } // back to the latest position
+    // No blending from where the camera was: after SetPosition for a cut, a respawn, a new room.
+    void Snap();
+    void SetPixelSnap(bool snap) { m_PixelSnap = snap; }
+    [[nodiscard]] bool GetPixelSnap() const { return m_PixelSnap; }
 
     // --- Results (with shake, inside the bounds) ---
     [[nodiscard]] Vec2 GetEyePosition() const; // where the camera really looks
+    // The eye between the last two fixed steps (0: the previous, 1: the latest), whatever
+    // SetRenderAlpha says.
+    [[nodiscard]] Vec2 GetEyePosition(f32 alpha) const;
     [[nodiscard]] f32 GetEyeRotation() const;
     [[nodiscard]] Viewport GetViewport() const;
     // The viewport rounded outwards, for Renderer2D::Begin's clip rectangle.
@@ -104,8 +121,14 @@ private:
     // Half size of the visible world box for a rotation.
     [[nodiscard]] Vec2 GetHalfExtents(f32 rotation) const;
     [[nodiscard]] Vec2 ClampToBounds(const Vec2& position, f32 rotation) const;
+    // The eye for a (blended) position: pixel snap, shake, bounds.
+    [[nodiscard]] Vec2 Eye(Vec2 position) const;
 
     Vec2 m_Position;
+    Vec2 m_PreviousPosition; // after the step before the last (interpolation)
+    Vec2 m_StepPosition;     // after the last step
+    std::optional<f32> m_RenderAlpha;
+    bool m_PixelSnap = false;
     f32 m_Zoom = 1.0f;
     f32 m_Rotation = 0.0f;
     Vec2 m_ViewSize;

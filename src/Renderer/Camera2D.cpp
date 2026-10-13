@@ -39,7 +39,8 @@ Vec2 Rotate(const Vec2& v, f32 radians)
 } // namespace
 
 Camera2D::Camera2D(const Vec2& viewSize)
-    : m_Position(viewSize * 0.5f), m_ViewSize(viewSize), m_TargetSize(viewSize)
+    : m_Position(viewSize * 0.5f), m_PreviousPosition(m_Position), m_StepPosition(m_Position),
+      m_ViewSize(viewSize), m_TargetSize(viewSize)
 {
 }
 
@@ -96,6 +97,14 @@ void Camera2D::Update(f32 dt)
     m_ShakeTime += dt;
     m_Trauma = Max(m_Trauma - m_Shake.Decay * dt, 0.0f);
     m_Position = ClampToBounds(m_Position, m_Rotation); // zoom or rotation may have changed
+    // The end of a step: what render interpolation blends between.
+    m_PreviousPosition = m_StepPosition;
+    m_StepPosition = m_Position;
+}
+
+void Camera2D::Snap()
+{
+    m_PreviousPosition = m_StepPosition = m_Position;
 }
 
 f32 Camera2D::GetEyeRotation() const
@@ -108,11 +117,28 @@ f32 Camera2D::GetEyeRotation() const
 
 Vec2 Camera2D::GetEyePosition() const
 {
-    Vec2 eye = m_Position;
+    return m_RenderAlpha ? GetEyePosition(*m_RenderAlpha) : Eye(m_Position);
+}
+
+Vec2 Camera2D::GetEyePosition(f32 alpha) const
+{
+    return Eye(Lerp(m_PreviousPosition, m_StepPosition, Clamp(alpha, 0.0f, 1.0f)));
+}
+
+Vec2 Camera2D::Eye(Vec2 position) const
+{
+    // Blended (by the caller), then on whole pixels, then the shake on top: the shake is per
+    // frame, not per step, so it isn't interpolated.
+    const f32 ppu = GetPixelsPerUnit();
+    const auto round = [&](Vec2 v) {
+        return m_PixelSnap && ppu > 0.0f ? Vec2(std::round(v.x * ppu), std::round(v.y * ppu)) / ppu
+                                         : v;
+    };
+    Vec2 eye = round(position);
     if (m_Shake.Enabled && m_Trauma > 0.0f) {
         const f32 t = m_ShakeTime * m_Shake.Frequency;
         const f32 amount = m_Shake.MaxOffset * m_Trauma * m_Trauma / m_Zoom;
-        eye += Vec2(Noise(t, 1), Noise(t, 2)) * amount;
+        eye += round(Vec2(Noise(t, 1), Noise(t, 2)) * amount);
     }
     return ClampToBounds(eye, GetEyeRotation());
 }

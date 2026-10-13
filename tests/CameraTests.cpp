@@ -164,3 +164,52 @@ TEST(CameraRenderer2DBatch)
     CHECK_NEAR(batch.ViewProjection, camera.GetViewProjection());
     CHECK(batch.Clip.x == 0 && batch.Clip.y == 60 && batch.Clip.w == 1920 && batch.Clip.h == 1080);
 }
+
+TEST(CameraRenderInterpolation)
+{
+    Camera2D camera({320.0f, 180.0f});
+    camera.SetPosition({100.0f, 50.0f});
+    camera.Snap();
+    camera.SetPosition({110.0f, 50.0f}); // one fixed step moves it 10 units
+    camera.Update(1.0f / 120.0f);
+    CHECK_NEAR(camera.GetEyePosition(0.0f), Vec2(100.0f, 50.0f));
+    CHECK_NEAR(camera.GetEyePosition(0.5f), Vec2(105.0f, 50.0f));
+    CHECK_NEAR(camera.GetEyePosition(1.0f), Vec2(110.0f, 50.0f));
+
+    // Opt-in: without SetRenderAlpha the results are the latest position, as before.
+    CHECK_NEAR(camera.GetEyePosition(), Vec2(110.0f, 50.0f));
+    camera.SetRenderAlpha(0.5f);
+    CHECK_NEAR(camera.GetEyePosition(), Vec2(105.0f, 50.0f));
+    CHECK_NEAR(camera.WorldToScreen({105.0f, 50.0f}), Vec2(160.0f, 90.0f)); // the matrices too
+
+    // Whole pixels after the blend: 0.3 of the way is 103 (2 target pixels per unit: 103.0).
+    camera.SetTargetSize({640.0f, 360.0f});
+    camera.SetPixelSnap(true);
+    camera.SetRenderAlpha(0.33f);
+    CHECK_NEAR(camera.GetEyePosition(), Vec2(103.5f, 50.0f));
+
+    // Snap: a cut doesn't slide.
+    camera.SetPosition({300.0f, 50.0f});
+    camera.Snap();
+    CHECK_NEAR(camera.GetEyePosition(), Vec2(300.0f, 50.0f));
+    camera.ClearRenderAlpha();
+    CHECK_NEAR(camera.GetEyePosition(), Vec2(300.0f, 50.0f));
+}
+
+TEST(CameraInterpolationShakeOnTop)
+{
+    // Shake is added after the blend and pixel snap: the same offset at any alpha.
+    Camera2D camera({320.0f, 180.0f});
+    camera.SetPosition({100.0f, 50.0f});
+    camera.Snap();
+    camera.SetPosition({110.0f, 50.0f});
+    camera.AddTrauma(1.0f);
+    camera.Update(0.1f);
+    const Vec2 shake0 = camera.GetEyePosition(0.0f) - Vec2(100.0f, 50.0f);
+    const Vec2 shake1 = camera.GetEyePosition(1.0f) - Vec2(110.0f, 50.0f);
+    CHECK(Length(shake0) > 0.01f);
+    CHECK_NEAR(shake0, shake1);
+    camera.SetPixelSnap(true); // 1 pixel per unit: everything lands on whole units
+    const Vec2 eye = camera.GetEyePosition(0.37f);
+    CHECK_NEAR(eye, Vec2(std::round(eye.x), std::round(eye.y)));
+}

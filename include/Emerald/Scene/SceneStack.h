@@ -115,7 +115,9 @@ struct Transition {
 //   GetScenes().Pop();                                              // back to the game
 //
 // Changes are requests: they are queued and applied at the end of Update, never while a scene's
-// hook is running, so a scene can pop itself from its own OnUpdate. With a transition, the
+// hook is running, so a scene can pop itself from its own OnUpdate. A request from OnFixedUpdate
+// waits too: the frame's remaining fixed steps and OnUpdate still run on the old stack, and a
+// pushed scene is entered and drawn this frame but first updated the next. With a transition, the
 // queue waits until it is over. Hooks run bottom to top. The top scene gets input; the others,
 // and every scene during a transition, see the Input as blocked (Input::SetBlocked).
 class SceneStack {

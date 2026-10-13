@@ -51,6 +51,10 @@ GetStack()->Push(std::make_unique<PauseScene>(m_App));
 - **Deferred changes:** requests are queued and applied at the end of the stack's `Update`, after
   every scene has updated. A scene can pop itself or push the next one from inside its own hooks;
   nothing is destroyed while one of its hooks runs. Requests made during a transition wait for it.
+  So a request from `OnFixedUpdate` takes effect only after the frame's `Update`: the frame's
+  remaining fixed steps and `OnUpdate` still run on the old stack (guard with a flag if the scene
+  must stop stepping, e.g. after game over), and a pushed scene's `OnEnter` and first draw come
+  this frame, before its first `OnFixedUpdate` / `OnUpdate` (next frame).
 - **Below the top:** with `DrawBelow` the scene under this one is drawn first (a pause menu over
   the game); with `UpdateBelow` it keeps updating too (a HUD over a running game). The flags chain:
   the stack draws downwards for as long as each scene above has `DrawBelow`. `IsDrawn(i)` and
@@ -199,6 +203,10 @@ class GameScene : public Emerald::Scene {
   report `IsValid() == false`. `Flush()` destroys them (their components' destructors run there),
   so call it once per frame at a safe point, e.g. the end of `OnUpdate`. `Clear()` destroys
   everything now.
+- **Handles to marked entities:** until `Flush`, `Get`, `TryGet` and `Has` still see the
+  components, so code that keeps a handle (a homing target, a parent) should test `IsValid()`,
+  not `TryGet()`. After `Flush`, `TryGet` is null and `Has` false (also when the slot is reused:
+  ids are versioned); `Get` must not be called.
 - Stats: `GetCount()`, `GetPendingDestroyCount()`, `GetSpawnedTotal()`, `GetDestroyedTotal()`.
 - Inside `Each` you may spawn, add components and destroy anything. Don't remove components
   from *other* entities of the same view while iterating.

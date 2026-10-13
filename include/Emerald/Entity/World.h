@@ -32,6 +32,9 @@ class World;
 
 // A handle: the entity's id plus its world, cheap to copy. Ids are versioned, so a handle to a
 // destroyed entity stays invalid even when its slot is reused. Default-constructed: invalid.
+// Destroyed but not yet flushed ("doomed"): IsValid() is false and Each skips it, but Get, TryGet
+// and Has still see its components until Flush. So a kept handle (a target, a parent) checks
+// IsValid, not TryGet. After Flush, TryGet is null and Has false; Get must not be called.
 class Entity {
 public:
     Entity() = default;

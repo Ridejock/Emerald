@@ -330,7 +330,11 @@ as before for maps without slopes.
 
 **Entities.** `PlatformerBody` is a plain struct, so it can be a component as it is
 (`entity.Add<PlatformerBody>(...)`). A system would also need each entity's input, so it is left
-to the game. The phase 2 test game will add one if it needs several bodies.
+to the game. The phase 2 test game will add one if it needs several bodies. The body is not a
+`Transform`: its `Position` is the box's center and it is the truth. Copy it into the
+`Transform` after stepping (the feet or the center, as the sprite's origin wants), never back.
+To teleport, set the body, then the `Transform`, then `World::SnapTransform` (render
+interpolation).
 
 **The sandbox's platformer scene.** It's in the title menu, after the entity swarm in the T
 cycle, and behind `--platformer`. The level, `sandbox/assets/tilemaps/platformer.tmj` (96 x 22

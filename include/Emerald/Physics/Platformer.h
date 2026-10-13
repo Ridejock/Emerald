@@ -15,6 +15,11 @@
 //
 // Everything is plain float math on the body's own state, so the same inputs at the same fixed
 // step always give the same path, bit for bit (PlatformerTests checks this).
+//
+// The body is not a Transform: Position is the box's center and it is the truth. For an entity,
+// keep the body as a component and copy it out after stepping (Transform.Position =
+// body.GetFeet() or body.Position, whatever the sprite's origin wants), never back in. To
+// teleport, set body.Position (and Velocity), then the Transform, then World::SnapTransform.
 
 #include "Emerald/Core/Defines.h"
 #include "Emerald/Math/Vec2.h"

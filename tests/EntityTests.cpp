@@ -66,7 +66,8 @@ TEST(EntitiesDestroyIsDeferred)
     a.Destroy(); // twice: once
     CHECK(!a.IsValid() && b.IsValid());
     CHECK(world.GetPendingDestroyCount() == 1 && world.GetCount() == 2);
-    CHECK(a.Get<Tracked>().Value == 7); // still in memory until Flush
+    CHECK(a.Get<Tracked>().Value == 7);             // still in memory until Flush
+    CHECK(a.TryGet<Tracked>() && a.Has<Tracked>()); // so kept handles test IsValid instead
     CHECK(Tracked::Alive == 2);
     usize seen = 0;
     world.Each<Tracked>([&](Entity, Tracked&) { ++seen; });
@@ -77,6 +78,8 @@ TEST(EntitiesDestroyIsDeferred)
     // Its slot gets reused, but the old handle stays invalid (versioned ids).
     Entity c = world.Spawn();
     CHECK(c.IsValid() && !a.IsValid() && c != a);
+    c.Add<Tracked>(9);
+    CHECK(!a.TryGet<Tracked>() && !a.Has<Tracked>()); // not c's component
     world.Clear();
     CHECK(world.GetCount() == 0 && Tracked::Alive == 0 && !b.IsValid() && !c.IsValid());
     CHECK(world.GetSpawnedTotal() == 3 && world.GetDestroyedTotal() == 3);

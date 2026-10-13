@@ -177,7 +177,7 @@ else if (loaded.Error != Emerald::SaveError::NotFound)
   version = 1
   saved = 1791297947
   summary = second
-  checksum = 1c0f3a9e
+  checksum = 8abb5a2e
   ---
   audio.master = 0.25
   player.name = Ervin

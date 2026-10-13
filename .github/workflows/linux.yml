@@ -1,0 +1,157 @@
+# Linux tests (Ubuntu 24.04, GCC and Clang): configure, build (warnings in Emerald's own code are
+# errors) and run the tests in the debug, release, debug-ubsan (UndefinedBehaviorSanitizer) and
+# debug-tsan (ThreadSanitizer) presets. GCC debug also runs the sandbox for a few frames on
+# software Vulkan (lavapipe, under Xvfb) and uploads its screenshot.
+name: Linux
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A newer push to the same branch or PR cancels the run in progress.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Emerald keeps its built shader compiler in a per-machine cache folder (cmake/Shaders.cmake);
+# a fixed one here so the cache steps know where it is.
+env:
+  EMERALD_CACHE_DIR: /home/runner/emerald-cache
+  DEBIAN_FRONTEND: noninteractive
+
+jobs:
+  # The shader compiler (shadercross + DirectXShaderCompiler) takes long to build: once per
+  # compiler, before the test jobs, which then only restore it. Only its finished bin/ folder is
+  # kept, keyed by the OS, the compiler version and the tool's recipe hash.
+  shadercross:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [gcc, clang]
+    name: shadercross (${{ matrix.compiler }})
+    outputs:
+      gcc-key: ${{ steps.key.outputs.gcc }}
+      clang-key: ${{ steps.key.outputs.clang }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Compiler
+        id: key
+        run: |
+          if [ "${{ matrix.compiler }}" = gcc ]; then cxx=g++; else cxx=clang++; fi
+          version=$($cxx -dumpversion)
+          key="shadercross-bin-linux-${{ matrix.compiler }}-$version-${{ hashFiles('tools/shadercross/**') }}"
+          { echo "CC=${{ matrix.compiler }}"; echo "CXX=$cxx"; echo "KEY=$key"; } >> "$GITHUB_ENV"
+          echo "${{ matrix.compiler }}=$key" >> "$GITHUB_OUTPUT"
+
+      - name: Restore shadercross
+        id: cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: /home/runner/emerald-cache/shadercross/*/bin
+          key: ${{ env.KEY }}
+
+      - name: Packages
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build pkg-config \
+            libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxfixes-dev libxi-dev \
+            libxss-dev libxtst-dev libxkbcommon-dev libwayland-dev wayland-protocols \
+            libegl1-mesa-dev libgl1-mesa-dev libdrm-dev libgbm-dev \
+            libasound2-dev libpulse-dev libudev-dev libdbus-1-dev
+
+      # Configuring Emerald builds the tool (in the cache folder) when it isn't there yet.
+      - name: Build shadercross
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: cmake -S . -B build/tool -G Ninja -DEMERALD_BUILD_TESTS=OFF -DEMERALD_BUILD_SANDBOX=OFF && cmake --build build/tool --target emerald_shadercross
+
+      - name: Save shadercross
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: /home/runner/emerald-cache/shadercross/*/bin
+          key: ${{ env.KEY }}
+
+  test:
+    needs: shadercross
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [gcc, clang]
+        preset: [debug, release, debug-ubsan, debug-tsan]
+    name: ${{ matrix.compiler }} ${{ matrix.preset }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build pkg-config \
+            libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxfixes-dev libxi-dev \
+            libxss-dev libxtst-dev libxkbcommon-dev libwayland-dev wayland-protocols \
+            libegl1-mesa-dev libgl1-mesa-dev libdrm-dev libgbm-dev \
+            libasound2-dev libpulse-dev libudev-dev libdbus-1-dev \
+            mesa-vulkan-drivers xvfb
+
+      - name: Compiler
+        run: |
+          if [ "${{ matrix.compiler }}" = gcc ]; then echo "CC=gcc" >> "$GITHUB_ENV"; echo "CXX=g++" >> "$GITHUB_ENV"; else echo "CC=clang" >> "$GITHUB_ENV"; echo "CXX=clang++" >> "$GITHUB_ENV"; fi
+
+      - name: Restore shadercross
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: /home/runner/emerald-cache/shadercross/*/bin
+          key: ${{ matrix.compiler == 'gcc' && needs.shadercross.outputs.gcc-key || needs.shadercross.outputs.clang-key }}
+          fail-on-cache-miss: true
+
+      # ThreadSanitizer can't map its shadow memory with the runner kernel's ASLR entropy.
+      - name: Allow TSan
+        if: matrix.preset == 'debug-tsan'
+        run: sudo sysctl vm.mmap_rnd_bits=28
+
+      - name: Configure
+        run: cmake --preset ${{ matrix.preset }} -DEMERALD_WARNINGS_AS_ERRORS=ON
+
+      - name: Build
+        run: cmake --build --preset ${{ matrix.preset }} 2>&1 | tee build-log.txt; exit ${PIPESTATUS[0]}
+
+      - name: Test
+        run: ctest --preset ${{ matrix.preset }}
+
+      # A few frames of the sandbox on software Vulkan; the last one is saved.
+      - name: Sandbox smoke run (lavapipe)
+        if: matrix.compiler == 'gcc' && matrix.preset == 'debug'
+        run: |
+          xvfb-run -a -s "-screen 0 1280x720x24" \
+            ./build/debug/bin/Sandbox --gpu vulkan --frames 30 --screenshot sandbox.png 2>&1 | tee sandbox-log.txt
+          test -s sandbox.png
+
+      - name: Upload screenshot
+        if: always() && matrix.compiler == 'gcc' && matrix.preset == 'debug'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: sandbox-lavapipe
+          path: |
+            sandbox.png
+            sandbox-log.txt
+          if-no-files-found: ignore
+
+      - name: Upload logs
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: logs-${{ matrix.compiler }}-${{ matrix.preset }}
+          path: |
+            build-log.txt
+            build/${{ matrix.preset }}/Testing/Temporary/LastTest.log
+          if-no-files-found: ignore

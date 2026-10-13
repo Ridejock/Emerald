@@ -1,5 +1,7 @@
 #include "Emerald/Entity/World.h"
 
+#include "Emerald/Entity/Components.h"
+
 namespace Emerald {
 
 Entity World::Spawn()
@@ -7,6 +9,16 @@ Entity World::Spawn()
     ++m_Count;
     ++m_SpawnedTotal;
     return {this, m_Registry.create()};
+}
+
+void World::SnapTransform(Entity entity)
+{
+    if (entity.GetWorld() != this || !entity.IsValid())
+        return;
+    PreviousTransform* previous = m_Registry.try_get<PreviousTransform>(entity.GetId());
+    const Transform* current = m_Registry.try_get<Transform>(entity.GetId());
+    if (previous && current)
+        *previous = {.Value = *current, .Valid = true};
 }
 
 void World::Destroy(Entity entity)

@@ -80,6 +80,10 @@ public:
     void Flush();
     // Destroys every entity now (not from inside Each).
     void Clear();
+    // Render interpolation: draws the entity at its Transform right away, with no blend from
+    // where it was (after a teleport, respawn, or warp). Nothing happens without a
+    // PreviousTransform.
+    void SnapTransform(Entity entity);
 
     // Calls fn(Entity, Ts&...) for every living entity that has all of Ts (components with data;
     // test tags with Has). The order is unspecified.

@@ -4,7 +4,9 @@
 #include <iterator>
 #include <tuple>
 
+#include "Emerald/Core/Log.h"
 #include "Emerald/Core/Profile.h"
+#include "Emerald/Math/Interpolated.h"
 #include "Emerald/Renderer/Renderer2D.h"
 
 namespace Emerald {
@@ -87,6 +89,44 @@ std::span<const CollisionEvent> CollisionSystem::Update(World& world)
     return m_Events;
 }
 
+// --- Render interpolation ---------------------------------------------------------------------
+
+void StorePreviousTransforms(World& world)
+{
+    world.Each<Transform, PreviousTransform>(
+        [](Entity, const Transform& t, PreviousTransform& p) { p = {.Value = t, .Valid = true}; });
+}
+
+namespace {
+
+// The Transform to draw: between the previous and the latest step, or the latest when there is
+// no previous one, alpha is 1, or the move was a jump.
+Transform Blend(const Transform& current, const PreviousTransform* previous, f32 alpha,
+                f32 snapDistance)
+{
+    if (!previous || !previous->Valid || alpha >= 1.0f)
+        return current;
+    const Transform& p = previous->Value;
+    if (Length(current.Position - p.Position) > snapDistance) {
+#if !defined(NDEBUG)
+        static bool logged = false;
+        if (!logged) {
+            EM_CORE_WARN("DrawSprites: an entity moved {} units in one step; drawn without "
+                         "interpolation (call World::SnapTransform after teleports)",
+                         Length(current.Position - p.Position));
+            logged = true;
+        }
+#endif
+        return current;
+    }
+    const f32 t = Max(alpha, 0.0f);
+    return {.Position = Lerp(p.Position, current.Position, t),
+            .Rotation = LerpAngle(p.Rotation, current.Rotation, t),
+            .Scale = Lerp(p.Scale, current.Scale, t)};
+}
+
+} // namespace
+
 // --- Sprites ----------------------------------------------------------------------------------
 
 u32 DrawSprites(World& world, Renderer2D& r, const DrawSpritesOptions& options)
@@ -95,8 +135,8 @@ u32 DrawSprites(World& world, Renderer2D& r, const DrawSpritesOptions& options)
     struct Item {
         i32 Layer;
         f32 Y;
-        u32 Id; // ties: the same order every frame
-        const Transform* Where;
+        u32 Id;          // ties: the same order every frame
+        Transform Where; // blended (render interpolation)
         const SpriteRenderer* What;
         const Animator* Animation; // null: What->Image
     };
@@ -106,9 +146,11 @@ u32 DrawSprites(World& world, Renderer2D& r, const DrawSpritesOptions& options)
     // Room for the sprites only (an upper bound: the smaller pool), not every entity.
     items.reserve(registry.view<Transform, SpriteRenderer>().size_hint());
 
-    world.Each<Transform, SpriteRenderer>([&](Entity e, const Transform& t,
+    world.Each<Transform, SpriteRenderer>([&](Entity e, const Transform& latest,
                                               const SpriteRenderer& s) {
         const Animator* animator = registry.try_get<Animator>(e.GetId());
+        const Transform t = Blend(latest, registry.try_get<PreviousTransform>(e.GetId()),
+                                  options.Alpha, options.SnapDistance);
         if (options.Visible) {
             // A circle around the position that surely holds the sprite, whatever its origin.
             const Vec2 region = animator ? animator->GetSprite().Region.Size : s.Image.Region.Size;
@@ -120,7 +162,7 @@ u32 DrawSprites(World& world, Renderer2D& r, const DrawSpritesOptions& options)
                 return;
         }
         items.push_back(
-            {s.Layer, options.SortByY ? t.Position.y : 0.0f, e.ToU32(), &t, &s, animator});
+            {s.Layer, options.SortByY ? t.Position.y : 0.0f, e.ToU32(), t, &s, animator});
     });
 
     std::sort(items.begin(), items.end(), [](const Item& a, const Item& b) {
@@ -128,12 +170,12 @@ u32 DrawSprites(World& world, Renderer2D& r, const DrawSpritesOptions& options)
     });
     for (const Item& item : items) {
         SpriteOptions o = item.What->Options;
-        o.Rotation += item.Where->Rotation;
-        o.Scale = o.Scale * item.Where->Scale;
+        o.Rotation += item.Where.Rotation;
+        o.Scale = o.Scale * item.Where.Scale;
         if (o.Size.x > 0.0f)
-            o.Size = o.Size * item.Where->Scale;
+            o.Size = o.Size * item.Where.Scale;
         const Sprite sprite = item.Animation ? item.Animation->GetSprite() : item.What->Image;
-        r.DrawSprite(sprite, item.Where->Position, o);
+        r.DrawSprite(sprite, item.Where.Position, o);
     }
     return static_cast<u32>(items.size());
 }

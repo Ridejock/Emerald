@@ -17,6 +17,16 @@ namespace Emerald {
 // that follows another copies its position in the game's update.
 using Transform = Transform2D;
 
+// Opt-in render interpolation: with this, DrawSprites draws the entity between its Transform at
+// the last two fixed steps (DrawSpritesOptions::Alpha), so motion is smooth when the display
+// rate isn't a multiple of the fixed rate. StorePreviousTransforms fills it at the start of each
+// fixed step. A new one draws at the Transform until then (spawns don't slide in); after a
+// teleport call World::SnapTransform. Static things don't need it.
+struct PreviousTransform {
+    Transform Value{};
+    bool Valid = false; // false: not stored yet, drawn at the Transform
+};
+
 // Moved by UpdateMovement: units per second and radians per second.
 struct Velocity {
     Vec2 Linear{};

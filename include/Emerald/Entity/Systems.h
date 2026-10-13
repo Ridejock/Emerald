@@ -5,6 +5,7 @@
 //
 //   void OnFixedUpdate(f32 dt) override
 //   {
+//       StorePreviousTransforms(m_World); // first: for render interpolation (PreviousTransform)
 //       UpdateMovement(m_World, dt);
 //       for (const CollisionEvent& hit : m_Collisions.Update(m_World))
 //           ...;                    // e.g. hit.A.Destroy() - deferred, so it is safe here
@@ -17,7 +18,8 @@
 //   void OnRender2D(Renderer2D& r) override
 //   {
 //       r.Begin(m_Camera);
-//       DrawSprites(m_World, r, {.Visible = m_Camera.GetVisibleBounds()});
+//       DrawSprites(m_World, r, {.Visible = m_Camera.GetVisibleBounds(),
+//                                .Alpha = GetRenderAlpha()});
 //       r.End();
 //   }
 
@@ -36,6 +38,10 @@
 namespace Emerald {
 
 class Renderer2D;
+
+// PreviousTransform = Transform, for every entity that has both. Call it at the start of each
+// fixed step, before anything moves.
+void StorePreviousTransforms(World& world);
 
 // Transform += Velocity * dt (position and rotation).
 void UpdateMovement(World& world, f32 dt);
@@ -83,10 +89,17 @@ struct DrawSpritesOptions {
     std::optional<Rect2D> Visible{};
     // For the per-frame sort list, e.g. Application::GetFrameAllocator(); null: the heap.
     std::pmr::memory_resource* Scratch = nullptr;
+    // Render interpolation, for entities with a PreviousTransform: 0 draws them at the previous
+    // step, 1 (the default) at the latest. Pass Scene::GetRenderAlpha().
+    f32 Alpha = 1.0f;
+    // A move longer than this in one step is a jump, not motion: drawn at the latest step (and
+    // logged once in debug builds; call World::SnapTransform after teleports instead).
+    f32 SnapDistance = 512.0f;
 };
 
 // Draws every Transform + SpriteRenderer, sorted by layer (then y), into the current batch: call
-// it between Renderer2D::Begin and End. Returns how many sprites it drew.
+// it between Renderer2D::Begin and End. Entities with a PreviousTransform are drawn blended by
+// options.Alpha. Returns how many sprites it drew.
 u32 DrawSprites(World& world, Renderer2D& r, const DrawSpritesOptions& options = {});
 
 } // namespace Emerald

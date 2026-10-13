@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 
+#include <Emerald/Core/Log.h>
 #include <Emerald/Entity/Components.h>
 #include <Emerald/Entity/Systems.h>
 #include <Emerald/Entity/World.h>
@@ -257,4 +258,56 @@ TEST(EntitiesDrawSpritesSortedAndCulled)
     r.Begin(Mat4::OrthoPixelSpace(640.0f, 360.0f));
     CHECK(DrawSprites(world, r) == 5);
     r.End();
+}
+
+TEST(EntitiesRenderInterpolation)
+{
+    Log::Init({}); // the big-jump warning
+    World world;
+    const Texture texture = Texture::CreateWithoutGpu(16, 16);
+    const Sprite sprite = Sprite::FromTexture(texture);
+    const SpriteOptions centered{.Origin = {0.5f, 0.5f}};
+    // Where the first sprite drawn lands (the middle of its quad).
+    const auto drawnAt = [&](f32 alpha) {
+        Renderer2D r;
+        r.Begin(Mat4::OrthoPixelSpace(640.0f, 360.0f));
+        DrawSprites(world, r, {.Alpha = alpha});
+        r.End();
+        const auto v = r.GetSpriteVertices();
+        Vec2 sum{};
+        for (u32 i = 0; i < 6; ++i)
+            sum += v[i].Position;
+        return sum / 6.0f;
+    };
+
+    Entity ship = world.Spawn();
+    ship.Add<Transform>(Transform{.Position = {100.0f, 100.0f}});
+    ship.Add<SpriteRenderer>(SpriteRenderer{.Image = sprite, .Options = centered});
+    ship.Add<PreviousTransform>();
+    // Just spawned: drawn where it is at any alpha, no slide from (0, 0).
+    CHECK_NEAR(drawnAt(0.0f), Vec2(100.0f, 100.0f));
+
+    // A fixed step: store, then move 10 units.
+    StorePreviousTransforms(world);
+    ship.Get<Transform>().Position.x += 10.0f;
+    CHECK_NEAR(drawnAt(0.0f), Vec2(100.0f, 100.0f));
+    CHECK_NEAR(drawnAt(0.5f), Vec2(105.0f, 100.0f));
+    CHECK_NEAR(drawnAt(1.0f), Vec2(110.0f, 100.0f));
+
+    // A teleport with SnapTransform: no blend.
+    StorePreviousTransforms(world);
+    ship.Get<Transform>().Position = {300.0f, 40.0f};
+    world.SnapTransform(ship);
+    CHECK_NEAR(drawnAt(0.25f), Vec2(300.0f, 40.0f));
+
+    // A jump without SnapTransform, further than SnapDistance: drawn at the latest step.
+    StorePreviousTransforms(world);
+    ship.Get<Transform>().Position = {-900.0f, 40.0f};
+    CHECK_NEAR(drawnAt(0.5f), Vec2(-900.0f, 40.0f));
+
+    // No PreviousTransform: always the latest Transform, as before.
+    ship.Remove<PreviousTransform>();
+    StorePreviousTransforms(world);
+    ship.Get<Transform>().Position = {50.0f, 50.0f};
+    CHECK_NEAR(drawnAt(0.0f), Vec2(50.0f, 50.0f));
 }

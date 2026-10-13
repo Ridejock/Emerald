@@ -6,6 +6,10 @@
 
 set(EMERALD_ASAN_COMPILE_FLAGS "")
 set(EMERALD_ASAN_LINK_FLAGS "")
+if(EMERALD_ASAN AND MINGW AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    message(FATAL_ERROR "EMERALD_ASAN: MinGW GCC ships no AddressSanitizer runtime; use MSVC or "
+                        "a clang-based MinGW environment (e.g. MSYS2 CLANG64)")
+endif()
 if(EMERALD_ASAN)
     if(MSVC)
         set(EMERALD_ASAN_COMPILE_FLAGS /fsanitize=address)

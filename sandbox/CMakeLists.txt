@@ -10,53 +10,16 @@ emerald_add_shaders(Sandbox
 
 emerald_set_warnings(Sandbox)
 
-# With hot reload (debug builds) the sandbox reads its assets straight from this source folder,
-# so editing e.g. assets/sprites/hero.png shows up in the running sandbox. Release builds use
-# the copy next to the executable.
-target_compile_definitions(Sandbox PRIVATE SANDBOX_SOURCE_ASSETS="${CMAKE_CURRENT_SOURCE_DIR}/assets")
+# With hot reload (Debug builds) the sandbox reads its assets straight from this source folder,
+# so editing e.g. assets/sprites/hero.png shows up in the running sandbox. Other builds use the
+# copy next to the executable (and don't carry the source path).
+target_compile_definitions(Sandbox PRIVATE
+    $<$<CONFIG:Debug>:SANDBOX_SOURCE_ASSETS="${CMAKE_CURRENT_SOURCE_DIR}/assets">)
 
-# The text demo's font (Press Start 2P, SIL Open Font License; see assets/fonts/) goes next to the
-# executable, where the sandbox looks for it with Paths::GetBasePath().
-add_custom_command(TARGET Sandbox POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:Sandbox>/assets/fonts
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            ${CMAKE_CURRENT_SOURCE_DIR}/assets/fonts/PressStart2P-Regular.ttf
-            ${CMAKE_CURRENT_SOURCE_DIR}/assets/fonts/PressStart2P-OFL.txt
-            $<TARGET_FILE_DIR:Sandbox>/assets/fonts/
-    # The animated hero sheet (made by tools/sprites/make_hero.py).
-    COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:Sandbox>/assets/sprites
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            ${CMAKE_CURRENT_SOURCE_DIR}/assets/sprites/hero.png
-            ${CMAKE_CURRENT_SOURCE_DIR}/assets/sprites/hero.json
-            $<TARGET_FILE_DIR:Sandbox>/assets/sprites/
-    # The tilemap room and the platformer level (made by tools/tilemaps/make_tilemaps.py and
-    # make_platformer.py; open the files in Tiled).
-    COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:Sandbox>/assets/tilemaps
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            ${CMAKE_CURRENT_SOURCE_DIR}/assets/tilemaps/room.tmj
-            ${CMAKE_CURRENT_SOURCE_DIR}/assets/tilemaps/dungeon.tsj
-            ${CMAKE_CURRENT_SOURCE_DIR}/assets/tilemaps/dungeon.png
-            ${CMAKE_CURRENT_SOURCE_DIR}/assets/tilemaps/props.png
-            ${CMAKE_CURRENT_SOURCE_DIR}/assets/tilemaps/platformer.tmj
-            ${CMAKE_CURRENT_SOURCE_DIR}/assets/tilemaps/platformer.tsj
-            ${CMAKE_CURRENT_SOURCE_DIR}/assets/tilemaps/platformer.png
-            $<TARGET_FILE_DIR:Sandbox>/assets/tilemaps/
-    COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:Sandbox>/assets/audio
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            ${CMAKE_CURRENT_SOURCE_DIR}/assets/audio/loop_a.ogg
-            ${CMAKE_CURRENT_SOURCE_DIR}/assets/audio/loop_b.ogg
-            $<TARGET_FILE_DIR:Sandbox>/assets/audio/
-    # The dialogue demo's conversation (DialogueScene.h).
-    COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:Sandbox>/assets/dialogue
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            ${CMAKE_CURRENT_SOURCE_DIR}/assets/dialogue/keeper.json
-            $<TARGET_FILE_DIR:Sandbox>/assets/dialogue/
-    # The particle effects (ParticlesScene.h; edit them with the particle editor).
-    COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:Sandbox>/assets/particles
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            ${CMAKE_CURRENT_SOURCE_DIR}/assets/particles/sparks.json
-            ${CMAKE_CURRENT_SOURCE_DIR}/assets/particles/fire.json
-            ${CMAKE_CURRENT_SOURCE_DIR}/assets/particles/fountain.json
-            ${CMAKE_CURRENT_SOURCE_DIR}/assets/particles/smoke.json
-            $<TARGET_FILE_DIR:Sandbox>/assets/particles/
+# The whole assets folder goes next to the executable on every build (not only when Sandbox
+# relinks), so an edited or new file is never stale or missing there.
+add_custom_target(SandboxAssets ALL
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+            ${CMAKE_CURRENT_SOURCE_DIR}/assets $<TARGET_FILE_DIR:Sandbox>/assets
     VERBATIM)
+add_dependencies(Sandbox SandboxAssets)

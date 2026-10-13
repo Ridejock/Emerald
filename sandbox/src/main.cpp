@@ -569,10 +569,12 @@ private:
     void LoadAssets()
     {
         Emerald::Assets& assets = GetAssets();
+        std::filesystem::path root = Emerald::Paths::GetBasePath() / "assets";
+#ifdef SANDBOX_SOURCE_ASSETS // Debug builds
         if constexpr (Emerald::Assets::kHotReload)
-            assets.SetRoot(SANDBOX_SOURCE_ASSETS);
-        else
-            assets.SetRoot(Emerald::Paths::GetBasePath() / "assets");
+            root = SANDBOX_SOURCE_ASSETS;
+#endif
+        assets.SetRoot(root);
 
         // A short generated "blip" for the jump, rising in pitch (files would use
         // Emerald::LoadSound("x.mp3")).

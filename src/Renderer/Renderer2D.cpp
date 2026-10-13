@@ -552,13 +552,15 @@ void Renderer2D::Render(SDL_GPUCommandBuffer* commandBuffer, SDL_GPURenderPass* 
     m_LastFrameSprites = m_SpritesUploaded ? GetSpriteCount() : 0;
     m_LastFrameDrawCalls = 0;
     SDL_GPUGraphicsPipeline* bound = nullptr;
+    // The same for every lit draw this frame.
+    const LightingUniforms lights = LightingUniforms::Make(m_Ambient, m_Lights);
+    const SDL_Rect full{0, 0, static_cast<i32>(targetWidth), static_cast<i32>(targetHeight)};
 
     for (const Batch& batch : m_Batches) {
         if (batch.CommandCount == 0)
             continue;
         // The scissor rectangle stays set for later draws, so set it for every batch: the
         // clip rectangle (kept inside the target, as Metal requires), or the whole target.
-        const SDL_Rect full{0, 0, static_cast<i32>(targetWidth), static_cast<i32>(targetHeight)};
         SDL_Rect scissor = full;
         if (batch.Clip.w > 0 && batch.Clip.h > 0 &&
             !SDL_GetRectIntersection(&batch.Clip, &full, &scissor))
@@ -595,7 +597,6 @@ void Renderer2D::Render(SDL_GPUCommandBuffer* commandBuffer, SDL_GPURenderPass* 
                         {command.NormalTexture ? command.NormalTexture : command.GpuTexture,
                          command.NormalSampler ? command.NormalSampler : command.Sampler}};
                     SDL_BindGPUFragmentSamplers(renderPass, 0, textures, 2);
-                    const LightingUniforms lights = LightingUniforms::Make(m_Ambient, m_Lights);
                     SDL_PushGPUFragmentUniformData(commandBuffer, 0, &lights, sizeof(lights));
                 } else {
                     // Sampler slot 0 = register(t0/s0, space2) in Sprite.frag.hlsl.
@@ -609,6 +610,9 @@ void Renderer2D::Render(SDL_GPUCommandBuffer* commandBuffer, SDL_GPURenderPass* 
             ++m_LastFrameDrawCalls;
         }
     }
+    // Leave the whole target drawable for whatever records into this pass next.
+    if (!m_Batches.empty())
+        SDL_SetGPUScissor(renderPass, &full);
     Clear();
 }
 

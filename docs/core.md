@@ -150,6 +150,8 @@ constant `dt`, driven by `Emerald::FixedTimestep`: frame times accumulate (in in
 and each whole step runs once, so the simulation is independent of the frame rate. A frame never
 runs more than `MaxFixedStepsPerFrame` (default 8) steps; beyond that the extra time is dropped so a
 slow frame or a breakpoint slows the game briefly instead of making it spiral. `OnUpdate(f32)` still
-runs once per frame with the real frame time. `GetFixedDeltaSeconds()` and `GetFixedUpdateAlpha()`
+runs once per frame with the real frame time, capped at `MaxFrameSeconds` (default 0.25 s): after a
+long stall, `OnUpdate`, the scenes, tweens and timers move on by at most that much (the cap is
+applied before input recording, so replays see the same times). `GetFixedDeltaSeconds()` and `GetFixedUpdateAlpha()`
 (0..1, for interpolating when drawing) are available too, and `GetWindowSize()` /
 `GetWindowSizeInPixels()` return the client area in window coordinates / pixels (`Vec2i`).

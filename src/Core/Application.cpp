@@ -177,6 +177,7 @@ int Application::Run()
         // A capture runs at a fixed frame time; a replay uses the recorded one (and ends).
         if (m_CaptureFrameNs != 0)
             elapsedNs = m_CaptureFrameNs;
+        elapsedNs = ClampFrameTime(elapsedNs, m_Spec.MaxFrameSeconds); // before it is recorded
         if (!m_Session.BeginFrame(elapsedNs)) {
             EM_CORE_INFO("Replay finished after {} frames", m_FrameCount);
             break;

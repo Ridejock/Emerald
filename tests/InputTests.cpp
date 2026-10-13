@@ -1,5 +1,5 @@
 // Tests for the keyboard edge tracking, action-based Input on top of it, saving its bindings,
-// and the FixedTimestep accumulator.
+// and the FixedTimestep accumulator (and the frame time clamp).
 
 #include <algorithm>
 #include <array>
@@ -278,6 +278,14 @@ TEST(FixedTimestepClampsSlowFrames)
     CHECK(timestep.Advance(1'000'000'000) == 4);
     CHECK(timestep.GetAlpha() < 1.0f);
     CHECK(timestep.Advance(10'000'000) == 1); // back to normal right away
+}
+
+TEST(ClampFrameTime)
+{
+    constexpr u64 kSecond = 1'000'000'000;
+    CHECK(ClampFrameTime(16'000'000, 0.25f) == 16'000'000);   // a normal frame is untouched
+    CHECK(ClampFrameTime(5 * kSecond, 0.25f) == kSecond / 4); // a 5 s stall counts as 0.25 s
+    CHECK(ClampFrameTime(5 * kSecond, 0.0f) == 5 * kSecond);  // 0: no clamp
 }
 
 TEST(FixedTimestepInvalidArguments)

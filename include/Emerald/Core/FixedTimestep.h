@@ -19,6 +19,15 @@ namespace Emerald {
 // steps per frame are capped at maxSteps and the excess time is dropped: the game slows down
 // briefly instead of running ever more steps per frame to catch up ("spiral of death").
 // Time is kept in integer nanoseconds so the accumulator never drifts.
+// The frame time, at most maxSeconds (0 or less: not clamped).
+[[nodiscard]] inline u64 ClampFrameTime(u64 elapsedNs, f32 maxSeconds)
+{
+    if (maxSeconds <= 0.0f)
+        return elapsedNs;
+    const u64 maxNs = static_cast<u64>(static_cast<f64>(maxSeconds) * 1e9);
+    return elapsedNs < maxNs ? elapsedNs : maxNs;
+}
+
 class FixedTimestep {
 public:
     // rateHz must be > 0 and maxSteps >= 1; invalid values fall back to 120 Hz / 1 step.

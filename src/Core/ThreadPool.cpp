@@ -2,7 +2,7 @@
 
 #include "Emerald/Core/Profile.h"
 
-#if defined(_MSC_VER)
+#if defined(_WIN32)
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
@@ -22,10 +22,17 @@ namespace {
 void SetCurrentThreadName(const std::string& name)
 {
     EM_PROFILE_THREAD(name.c_str()); // Tracy shows the name too (it keeps a copy)
-#if defined(_MSC_VER)
-    // Windows 10 1607+. The name is UTF-16; ours is ASCII so widening each char is enough.
-    const std::wstring wide(name.begin(), name.end());
-    SetThreadDescription(GetCurrentThread(), wide.c_str());
+#if defined(_WIN32)
+    // Windows 10 1607+, looked up at run time: not every MinGW header declares it. The name is
+    // UTF-16; ours is ASCII so widening each char is enough.
+    using SetThreadDescriptionFn = HRESULT(WINAPI*)(HANDLE, PCWSTR);
+    static const auto setDescription =
+        reinterpret_cast<SetThreadDescriptionFn>(reinterpret_cast<void*>(
+            GetProcAddress(GetModuleHandleW(L"kernel32.dll"), "SetThreadDescription")));
+    if (setDescription) {
+        const std::wstring wide(name.begin(), name.end());
+        setDescription(GetCurrentThread(), wide.c_str());
+    }
 #elif defined(__APPLE__)
     pthread_setname_np(name.c_str()); // macOS can only name the calling thread
 #elif defined(__linux__)

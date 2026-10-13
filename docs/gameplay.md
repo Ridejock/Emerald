@@ -350,7 +350,9 @@ gamepad button pairs as parallel lists (`input.MoveX.negative = A, Left` /
 
 `Emerald::Mouse` (`Mouse.h`, `input.GetMouse()`) has the buttons (`Left`, `Middle`, `Right`, `X1`,
 `X2`), `GetPosition()`, `HasMoved()` (this frame, e.g. to switch aiming from a stick back to the
-mouse) and `IsInWindow()`. Clicks on the ImGui overlay don't reach the game, and losing focus
+mouse), `IsInWindow()` and `GetWheel()`: the wheel in notches (`y > 0` scrolls up, `x > 0`
+right; natural scrolling undone), per frame in `OnUpdate` and per fixed step in `OnFixedUpdate`
+like the button edges. Clicks on the ImGui overlay don't reach the game, and losing focus
 releases the buttons like keys.
 
 ### Gamepads

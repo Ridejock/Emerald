@@ -36,6 +36,10 @@ public:
     [[nodiscard]] bool HasMoved() const { return m_Moved; }
     // Inside the window (it has mouse focus).
     [[nodiscard]] bool IsInWindow() const { return m_InWindow; }
+    // Wheel scrolling, in notches (fractions on smooth wheels and touchpads): y > 0 away from
+    // the user (scroll up), x > 0 to the right; natural scrolling is already undone. Like the
+    // button edges: since the last frame in OnUpdate, since the last fixed step in OnFixedUpdate.
+    [[nodiscard]] Vec2 GetWheel() const { return m_InFixedStep ? m_StepWheel : m_FrameWheel; }
 
     // --- Called by the Application (or by tests) ---
     void OnButton(MouseButton button, bool down) { m_Buttons.Set(Index(button), down); }
@@ -46,14 +50,29 @@ public:
         m_InWindow = true;
     }
     void OnLeave() { m_InWindow = false; }
+    void OnWheel(const Vec2& notches)
+    {
+        m_FrameWheel += notches;
+        m_StepWheel += notches;
+    }
     void ReleaseAll() { m_Buttons.ReleaseAll(); }
     void BeginFrame()
     {
         m_Buttons.BeginFrame();
         m_Moved = false;
+        m_FrameWheel = {};
     }
-    void BeginFixedStep() { m_Buttons.BeginFixedStep(); }
-    void EndFixedStep() { m_Buttons.EndFixedStep(); }
+    void BeginFixedStep()
+    {
+        m_Buttons.BeginFixedStep();
+        m_InFixedStep = true;
+    }
+    void EndFixedStep()
+    {
+        m_Buttons.EndFixedStep();
+        m_InFixedStep = false;
+        m_StepWheel = {};
+    }
 
 private:
     [[nodiscard]] static usize Index(MouseButton b) { return static_cast<usize>(b); }
@@ -62,6 +81,9 @@ private:
     Vec2 m_Position{};
     bool m_Moved = false;
     bool m_InWindow = false;
+    Vec2 m_FrameWheel{}; // since BeginFrame
+    Vec2 m_StepWheel{};  // since the last EndFixedStep
+    bool m_InFixedStep = false;
 };
 
 } // namespace Emerald

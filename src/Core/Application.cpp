@@ -314,6 +314,14 @@ void Application::ProcessEvent(const SDL_Event& event)
     case SDL_EVENT_MOUSE_MOTION:
         m_Mouse.OnMotion({event.motion.x, event.motion.y});
         break;
+    case SDL_EVENT_MOUSE_WHEEL: {
+        // Over the ImGui overlay it scrolls ImGui. Flipped back to "y > 0 is up" for natural
+        // scrolling.
+        const f32 flip = event.wheel.direction == SDL_MOUSEWHEEL_FLIPPED ? -1.0f : 1.0f;
+        if (!imguiWantsMouse)
+            m_Mouse.OnWheel(Vec2(event.wheel.x, event.wheel.y) * flip);
+        break;
+    }
     case SDL_EVENT_WINDOW_MOUSE_LEAVE:
         m_Mouse.OnLeave();
         break;

@@ -177,6 +177,25 @@ TEST(ActionsWithMouseButtons)
     CHECK(!noMouse.IsActionDown("Fire"));
 }
 
+TEST(MouseWheel)
+{
+    // Notches add up; per frame in OnUpdate, and a scroll in a frame without a fixed step still
+    // reaches the next step once.
+    Mouse mouse;
+    CHECK(mouse.GetWheel() == Vec2(0.0f, 0.0f));
+    mouse.OnWheel({0.0f, 1.0f});
+    mouse.OnWheel({0.5f, 1.0f});
+    CHECK(mouse.GetWheel() == Vec2(0.5f, 2.0f));
+    mouse.BeginFrame();
+    CHECK(mouse.GetWheel() == Vec2(0.0f, 0.0f));
+    mouse.BeginFixedStep();
+    CHECK(mouse.GetWheel() == Vec2(0.5f, 2.0f));
+    mouse.EndFixedStep();
+    mouse.BeginFixedStep();
+    CHECK(mouse.GetWheel() == Vec2(0.0f, 0.0f));
+    mouse.EndFixedStep();
+}
+
 TEST(ActionsTapAndFixedSteps)
 {
     Keyboard keyboard;

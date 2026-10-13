@@ -108,8 +108,8 @@ AssetId Assets::Acquire(AssetType type, const std::filesystem::path& path, const
     const std::filesystem::path file = Resolve(path);
     std::string key = std::string(GetAssetTypeName(type)) + ":" + file.generic_string() +
                       std::visit([](const auto& o) { return OptionsKey(o); }, options);
-#if defined(_WIN32)
-    // Windows paths are not case-sensitive: "Ship.png" is the same file as
+#if defined(_WIN32) || defined(__APPLE__)
+    // Windows and (by default) macOS paths are not case-sensitive: "Ship.png" is the same file as
     // "ship.png".
     std::transform(key.begin(), key.end(), key.begin(),
                    [](char c) { return c >= 'A' && c <= 'Z' ? static_cast<char>(c + 32) : c; });

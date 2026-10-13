@@ -10,6 +10,8 @@
 #include "Emerald/Core/Log.h"
 #include "Emerald/Input/Input.h"
 
+#include "../Core/FloatText.h"
+
 namespace Emerald {
 
 namespace {
@@ -38,13 +40,9 @@ bool ParseU64(std::string_view text, u64& value)
     return error == std::errc() && end == text.data() + text.size();
 }
 
-// Floats as text: 9 significant digits read back as exactly the same f32.
 bool ParseFloat(std::string_view text, f64& value)
 {
-    const std::string copy(text); // strtod wants a terminated string
-    char* end = nullptr;
-    value = std::strtod(copy.c_str(), &end);
-    return !copy.empty() && end == copy.c_str() + copy.size();
+    return TextToFloat(text, value);
 }
 
 void WriteSample(std::string& out, const InputSample& sample)
@@ -55,11 +53,8 @@ void WriteSample(std::string& out, const InputSample& sample)
         out += static_cast<char>('0' + flags);
     if (sample.Actions.empty())
         out += '-';
-    for (const f32 axis : sample.Axes) {
-        char number[32];
-        std::snprintf(number, sizeof(number), " %.9g", static_cast<f64>(axis));
-        out += number;
-    }
+    for (const f32 axis : sample.Axes)
+        out += ' ' + FloatToText(axis);
     out += '\n';
 }
 
@@ -93,9 +88,7 @@ std::string InputRecording::ToText() const
     std::string out = std::string(kMagic) + " " + std::to_string(kFormatVersion) + "\n";
     out += "engine " + (EngineVersion.empty() ? std::string("unknown") : EngineVersion) + "\n";
     out += "seed " + std::to_string(Seed) + "\n";
-    char rate[32];
-    std::snprintf(rate, sizeof(rate), "%.17g", FixedRate);
-    out += std::string("fixed-rate ") + rate + "\n";
+    out += "fixed-rate " + FloatToText(FixedRate) + "\n";
     out += "actions";
     for (const std::string& name : Names.Actions)
         out += " " + name;

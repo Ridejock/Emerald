@@ -8,6 +8,8 @@
 
 #include "Emerald/Core/Log.h"
 
+#include "FloatText.h"
+
 namespace Emerald {
 
 DevOptions ParseDevOptions(std::span<char* const> args)
@@ -35,9 +37,9 @@ DevOptions ParseDevOptions(std::span<char* const> args)
                 std::errc())
                 EM_CORE_WARN("--frames needs a number, got '{}'", text);
         } else if (flag == "--capture-fps") {
-            const std::string fps(next());
-            const f64 rate = std::strtod(fps.c_str(), nullptr);
-            if (rate > 0.0)
+            const std::string_view fps = next();
+            f64 rate = 0.0;
+            if (TextToFloat(fps, rate) && rate > 0.0)
                 options.CaptureFps = rate;
             else
                 EM_CORE_WARN("--capture-fps needs a positive number, got '{}'", fps);

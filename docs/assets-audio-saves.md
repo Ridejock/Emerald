@@ -167,6 +167,9 @@ else if (loaded.Error != Emerald::SaveError::NotFound)
 - **Data**: `SaveData` maps keys (letters, digits, `. _ -`) to ints (`i32`), floats, bools and
   strings. Getters take a fallback, so a new key read from an old save just gets its default. A
   table is numbered keys: `scores.count`, `scores.0.name`, `scores.0.points`, ...
+  Floats are written as the shortest text that reads back exactly, always with a `.` whatever
+  the C locale (`setlocale`) is; reading also takes a leading `+` and a decimal comma from older
+  files.
 - **Slots**: any name of letters, digits, `_` and `-` (`settings`, `highscores`, `slot_1`), stored
   as `<folder>/<name>.sav`. `ListSlots()` returns every slot with `Exists`, `Valid`, `Version`,
   `SavedAt` (Unix seconds) and the `Summary` passed to `Save`; `GetInfo`, `Exists`, `Delete`.

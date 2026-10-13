@@ -1,6 +1,8 @@
 // The versioned save system (#15): values, the file format, migrations, atomic writes and slots.
 // Everything runs in a temp folder, never the real per-user one.
 
+#include <clocale>
+#include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -48,6 +50,37 @@ SaveData Settings(f32 master, bool fullscreen)
 }
 
 } // namespace
+
+TEST(SaveDataFloatsIgnoreLocale)
+{
+    // Under a locale with a decimal comma (if this machine has one), floats are still written
+    // with a '.' and read back exactly.
+    const char* locale = nullptr;
+    for (const char* name : {"de_DE.UTF-8", "de_DE.utf8", "de_DE", "de-DE", "German"}) {
+        if (std::setlocale(LC_NUMERIC, name)) {
+            locale = name;
+            break;
+        }
+    }
+    SaveData data;
+    data.SetFloat("volume", 0.1f);
+    data.SetFloat("big", -1.5e-7f);
+    CHECK(data.GetString("volume") == "0.1");
+    CHECK(data.GetFloat("volume") == 0.1f && data.GetFloat("big") == -1.5e-7f);
+    data.SetString("old", "0.100000001"); // as %.9g wrote it: the same f32
+    CHECK(data.GetFloat("old") == 0.1f);
+    std::setlocale(LC_NUMERIC, "C");
+    if (!locale)
+        std::printf("   (no decimal-comma locale here: only the C locale was checked)\n");
+
+    // What strtod took in older files still loads: a '+', a decimal comma.
+    data.SetString("plus", "+2.5");
+    data.SetString("comma", "1,5");
+    CHECK(data.GetFloat("plus") == 2.5f && data.GetFloat("comma") == 1.5f);
+    data.SetString("junk", "1.5x");
+    data.SetString("two", "1,5,0");
+    CHECK(data.GetFloat("junk", 9.0f) == 9.0f && data.GetFloat("two", 9.0f) == 9.0f);
+}
 
 TEST(SaveDataValues)
 {

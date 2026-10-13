@@ -19,6 +19,8 @@
 #include "Emerald/Core/Log.h"
 #include "Emerald/Core/Paths.h"
 
+#include "../Core/FloatText.h"
+
 namespace fs = std::filesystem;
 
 namespace Emerald {
@@ -54,13 +56,10 @@ bool ParseI64(std::string_view text, i64& value)
     return error == std::errc() && end == text.data() + text.size();
 }
 
-// Same as InputRecording: "%.9g" reads back as exactly the same f32.
 bool ParseF32(std::string_view text, f32& value)
 {
-    const std::string copy(text); // strtod wants a terminated string
-    char* end = nullptr;
-    const f64 parsed = std::strtod(copy.c_str(), &end);
-    if (copy.empty() || end != copy.c_str() + copy.size())
+    f64 parsed = 0.0;
+    if (!TextToFloat(text, parsed))
         return false;
     value = static_cast<f32>(parsed);
     return std::isfinite(value); // NaN / inf (or out of f32 range) is not a usable value
@@ -333,9 +332,7 @@ void SaveData::SetFloat(std::string_view key, f32 value)
         EM_CORE_ERROR("SaveData: '{}' is not a finite number, not saved", key);
         return;
     }
-    char text[32];
-    std::snprintf(text, sizeof(text), "%.9g", static_cast<f64>(value));
-    SetString(key, text);
+    SetString(key, FloatToText(value)); // the shortest text that reads back exactly
 }
 
 void SaveData::SetBool(std::string_view key, bool value)

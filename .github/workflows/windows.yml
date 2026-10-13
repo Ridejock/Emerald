@@ -80,7 +80,10 @@ jobs:
       - name: Check Visual Studio project
         if: matrix.preset == 'debug'
         run: |
-          cmake -S . -B build/vs -G "Visual Studio 17 2022" -A x64 -DEMERALD_BUILD_TESTS=OFF > vs-configure.txt 2>&1 \
+          # The newest Visual Studio generator this CMake has (the runner's VS version changes).
+          gen=$(cmake --help | grep -oE "Visual Studio [0-9]+ [0-9]{4}" | head -1)
+          echo "Generator: $gen"
+          cmake -S . -B build/vs -G "$gen" -A x64 -DEMERALD_BUILD_TESTS=OFF > vs-configure.txt 2>&1 \
             || { cat vs-configure.txt; exit 1; }
           if grep -rl "FXCompile" build/vs --include=*.vcxproj; then
             echo "::error::.hlsl files are set to FXCompile in the Visual Studio project"

@@ -69,6 +69,11 @@ function(emerald_set_warnings target)
     else()
         target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic
                                $<$<BOOL:${EMERALD_WARNINGS_AS_ERRORS}>:-Werror>)
+        # GCC 13 reports -Wstringop-overflow inside std::vector::push_back of small structs at -O2
+        # (a known false positive, gone in GCC 14), e.g. Input::BindAxis.
+        if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 14)
+            target_compile_options(${target} PRIVATE -Wno-stringop-overflow)
+        endif()
     endif()
 endfunction()
 

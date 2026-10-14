@@ -16,6 +16,7 @@
 #include "Emerald/Core/FixedTimestep.h"
 #include "Emerald/Core/Log.h"
 #include "Emerald/Core/Paths.h"
+#include "Emerald/Core/Platform.h"
 #include "Emerald/Core/Profile.h"
 #include "Emerald/Core/Profiler.h"
 #include "Emerald/Core/ThreadPool.h"

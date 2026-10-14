@@ -14,8 +14,10 @@ struct WindowSpec {
     u32 Width = 1280;
     u32 Height = 720;
     bool Resizable = true;
-    bool VSync = true;       // applied by the Renderer through the swapchain present mode
-    bool Fullscreen = false; // start in borderless fullscreen (see Window::SetFullscreen)
+    bool VSync = true; // applied by the Renderer through the swapchain present mode
+    // Start in borderless fullscreen (see Window::SetFullscreen). On Linux this is a desktop
+    // fullscreen with no display-mode switch, which is what gamescope on a Steam Deck expects.
+    bool Fullscreen = false;
 };
 
 struct Image;

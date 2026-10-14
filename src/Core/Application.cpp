@@ -73,14 +73,16 @@ Application::Application(const ApplicationSpec& spec)
     m_SdlInitialized = true;
     EM_CORE_INFO("SDL video driver: {}", SDL_GetCurrentVideoDriver());
 
-    // Gamepads: SDL's HIDAPI drivers talk to PS4/PS5 and Switch pads directly (also over
-    // Bluetooth), which gives the proper layout, labels and rumble. They are on by default; the
-    // hints just make that explicit (environment variables still override them). Not fatal if it
+    // Gamepads: SDL's HIDAPI drivers talk to PS4/PS5, Switch and Steam Deck pads directly (also
+    // over Bluetooth), which gives the proper layout, labels and rumble. They are on by default;
+    // the hints make that explicit (environment variables still override them). Not fatal if it
     // fails: the game then runs with the keyboard only. Pads that are already connected arrive as
     // SDL_EVENT_GAMEPAD_ADDED events like hot-plugged ones.
     SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_PS4, "1");
     SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_PS5, "1");
     SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_SWITCH, "1");
+    // The Deck's built-in controller, when Steam Input is not sitting in front of it.
+    SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_STEAMDECK, "1");
     if (!SDL_InitSubSystem(SDL_INIT_GAMEPAD))
         EM_CORE_WARN("Gamepad support unavailable: {}", SDL_GetError());
     // Audio is optional too: without a device, Audio::Play does nothing.

@@ -390,10 +390,11 @@ the pad's name and type, and all pads drive the same actions (single player: pic
   `RadialDeadzone` (true: on the stick's length, smooth diagonals; false: per axis),
   `TriggerDeadzone` (0.1), `ButtonThreshold` (0.5).
 - **Rumble**: `input.Rumble(low, high, ms)` on all pads (ignored by pads without motors).
-- The static SDL build forces `SDL_JOYSTICK`/`SDL_HIDAPI` on, and the HIDAPI hints for PS4, PS5
-  and Switch are set explicitly, so those pads use SDL's own drivers (correct layout, labels and
-  rumble, also over Bluetooth). If Steam is running, Steam Input may take over PlayStation/Switch
-  pads and present them as Xbox controllers; that is a Steam setting, not an engine bug.
+- The static SDL build forces `SDL_JOYSTICK`/`SDL_HIDAPI` on, and the HIDAPI hints for PS4, PS5,
+  Switch and the Steam Deck are set explicitly, so those pads use SDL's own drivers (correct
+  layout, labels and rumble, also over Bluetooth). If Steam is running, Steam Input may take over
+  a pad and present it as an Xbox controller; that is a Steam setting, not an engine bug. The
+  Deck's built-in controller, prompts and Steam Input are covered in [Platforms](platforms.md#input).
 
 "Pressed/released" means *since the last frame* in `OnUpdate`/`OnRender*` and *since the last fixed
 step* in `OnFixedUpdate`, so a tap in a frame that runs no fixed step (which happens at 144 fps with

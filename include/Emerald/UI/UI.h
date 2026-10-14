@@ -75,6 +75,7 @@ inline constexpr std::string_view kUiMoveX = "UiMoveX";
 inline constexpr std::string_view kUiMoveY = "UiMoveY";
 
 // Arrows / WASD, Enter / Space, Escape / Backspace; d-pad and left stick, South / East.
+// On a Steam Deck those are the d-pad, the left stick, A and B (Xbox positions, as printed).
 void BindDefaultUiActions(Input& input);
 // The UI actions now (nothing while the input is blocked) and the left mouse button. `mouse` is
 // the cursor in UI units (e.g. Mouse::GetPosition() scaled to the virtual resolution).

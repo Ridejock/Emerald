@@ -11,7 +11,8 @@ namespace Emerald::Paths {
 [[nodiscard]] std::filesystem::path GetBasePath();
 
 // A per-user folder that is safe to write to (settings, saves, high scores). Created if needed.
-//   Windows: %APPDATA%\<org>\<app>\      Linux: ~/.local/share/<org>/<app>/
+//   Windows: %APPDATA%/<org>/<app>/
+//   Linux:   $XDG_DATA_HOME/<org>/<app>/   (XDG Base Directory; unset means ~/.local/share)
 //   macOS:   ~/Library/Application Support/<org>/<app>/
 // Returns an empty path if it can't be found or created.
 [[nodiscard]] std::filesystem::path GetPrefPath(std::string_view org, std::string_view app);

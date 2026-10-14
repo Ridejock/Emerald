@@ -1,7 +1,8 @@
 # Linux tests (Ubuntu 24.04, GCC and Clang): configure, build (warnings in Emerald's own code are
 # errors) and run the tests in the debug, release, debug-ubsan (UndefinedBehaviorSanitizer) and
 # debug-tsan (ThreadSanitizer) presets. GCC debug also runs the sandbox for a few frames on
-# software Vulkan (lavapipe, under Xvfb) and uploads its screenshot.
+# software Vulkan (lavapipe, under Xvfb) and uploads its screenshot. A package job builds the
+# linux-release preset and uploads Sandbox-linux-x64.tar.gz.
 name: Linux
 
 on:
@@ -156,4 +157,83 @@ jobs:
           path: |
             build-log.txt
             build/${{ matrix.preset }}/Testing/Temporary/LastTest.log
+          if-no-files-found: ignore
+
+  # Self-contained x64 archive (static SDL3, RPATH $ORIGIN, assets, launcher). SPIR-V only, same
+  # as the test jobs: the DXIL output crashes the GCC 13-built DXC here.
+  package:
+    needs: shadercross
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    name: gcc linux-release package
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build pkg-config \
+            libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxfixes-dev libxi-dev \
+            libxss-dev libxtst-dev libxkbcommon-dev libwayland-dev wayland-protocols \
+            libegl1-mesa-dev libgl1-mesa-dev libdrm-dev libgbm-dev \
+            libasound2-dev libpulse-dev libudev-dev libdbus-1-dev \
+            mesa-vulkan-drivers xvfb
+
+      - name: Compiler
+        run: |
+          echo "CC=gcc" >> "$GITHUB_ENV"
+          echo "CXX=g++" >> "$GITHUB_ENV"
+
+      - name: Restore shadercross
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: /home/runner/emerald-cache/shadercross/*/bin
+          key: ${{ needs.shadercross.outputs.gcc-key }}
+          fail-on-cache-miss: true
+
+      - name: Configure
+        run: cmake --preset linux-release -DEMERALD_WARNINGS_AS_ERRORS=ON -DEMERALD_SHADER_FORMATS=SPIRV
+
+      - name: Package
+        run: cmake --build --preset linux-release
+
+      - name: Check the archive
+        run: |
+          archive=build/linux-release/dist/Sandbox-linux-x64.tar.gz
+          test -s "$archive"
+          tar -tzf "$archive" | tee package-list.txt
+          grep -qx 'Sandbox-linux-x64/Sandbox' package-list.txt
+          grep -qx 'Sandbox-linux-x64/Sandbox.sh' package-list.txt
+          grep -qx 'Sandbox-linux-x64/assets/sprites/hero.png' package-list.txt
+          grep -qx 'Sandbox-linux-x64/shaders/Sprite.frag.spv' package-list.txt
+          root=$(mktemp -d)
+          tar -xzf "$archive" -C "$root"
+          bin="$root/Sandbox-linux-x64/Sandbox"
+          readelf -d "$bin" | tee readelf.txt
+          grep -E 'RPATH|RUNPATH' readelf.txt | grep -F '$ORIGIN'
+          ldd "$bin" | tee ldd.txt
+          if grep -E 'libSDL3|libstdc\+\+|libgcc_s' ldd.txt; then
+            echo "::error::the package should link SDL, libstdc++ and libgcc statically"
+            exit 1
+          fi
+          xvfb-run -a -s "-screen 0 1280x720x24" \
+            "$bin" --gpu vulkan --frames 20 --screenshot "$root/shot.png"
+          test -s "$root/shot.png"
+
+      - name: Upload package
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: Sandbox-linux-x64
+          path: build/linux-release/dist/Sandbox-linux-x64.tar.gz
+          if-no-files-found: error
+
+      - name: Upload package logs
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: linux-package-logs
+          path: |
+            package-list.txt
+            readelf.txt
+            ldd.txt
           if-no-files-found: ignore

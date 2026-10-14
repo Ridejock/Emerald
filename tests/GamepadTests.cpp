@@ -5,6 +5,7 @@
 
 #include <Emerald/Input/Gamepads.h>
 #include <Emerald/Input/Input.h>
+#include <Emerald/UI/UI.h>
 
 #include "Test.h"
 
@@ -158,6 +159,60 @@ TEST(GamepadLabels)
         "ZR"));
     CHECK(Same(GetGamepadButtonLabel(GamepadButton::Start, SDL_GAMEPAD_TYPE_XBOXONE), "Menu"));
     CHECK(Same(GetGamepadTypeName(SDL_GAMEPAD_TYPE_PS4), "PS4"));
+    // SDL reports the Deck's built-in controller as STANDARD. Face labels are already A/B/X/Y,
+    // which is what is printed on the Deck.
+    CHECK(Same(GetGamepadButtonLabel(GamepadButton::South, SDL_GAMEPAD_TYPE_STANDARD), "A"));
+    CHECK(Same(GetGamepadButtonLabel(GamepadButton::East, SDL_GAMEPAD_TYPE_STANDARD), "B"));
+    CHECK(Same(GetGamepadButtonLabel(GamepadButton::West, SDL_GAMEPAD_TYPE_STANDARD), "X"));
+    CHECK(Same(GetGamepadButtonLabel(GamepadButton::North, SDL_GAMEPAD_TYPE_STANDARD), "Y"));
+}
+
+TEST(SteamDeckPromptsAndDefaultUi)
+{
+    CHECK(IsSteamDeckGamepad("Steam Deck"));
+    CHECK(IsSteamDeckGamepad("Steam Deck Controller"));
+    CHECK(IsSteamDeckGamepad("Xbox", 0x28DE, 0x1205));
+    CHECK(!IsSteamDeckGamepad("Xbox 360 Controller"));
+    CHECK(!IsSteamDeckGamepad("Microsoft X-Box 360 pad"));
+
+    Gamepads pads;
+    // No SDL handle: the HIDAPI driver names the raw Deck controller "Steam Deck".
+    pads.AddPad(kPad, nullptr, "Steam Deck", SDL_GAMEPAD_TYPE_STANDARD);
+    CHECK(pads.LastUsedIsSteamDeck());
+    CHECK(Same(pads.GetButtonLabel(GamepadButton::South), "A"));
+    CHECK(Same(pads.GetButtonLabel(GamepadButton::East), "B"));
+    CHECK(Same(pads.GetButtonLabel(GamepadButton::West), "X"));
+    CHECK(Same(pads.GetButtonLabel(GamepadButton::North), "Y"));
+    CHECK(Same(pads.GetButtonLabel(GamepadButton::LeftShoulder), "L1"));
+    CHECK(Same(pads.GetButtonLabel(GamepadButton::RightShoulder), "R1"));
+    CHECK(Same(pads.GetButtonLabel(GamepadButton::LeftTrigger), "L2"));
+    CHECK(Same(pads.GetButtonLabel(GamepadButton::RightTrigger), "R2"));
+    CHECK(Same(pads.GetButtonLabel(GamepadButton::Back), "View"));
+    CHECK(Same(pads.GetButtonLabel(GamepadButton::Start), "Menu"));
+    CHECK(Same(pads.GetButtonLabel(GamepadButton::Guide), "Steam"));
+    CHECK(Same(pads.GetButtonLabel(GamepadButton::LeftPaddle1), "L4"));
+    CHECK(Same(pads.GetButtonLabel(GamepadButton::RightPaddle1), "R4"));
+    CHECK(Same(pads.GetButtonLabel(GamepadButton::LeftPaddle2), "L5"));
+    CHECK(Same(pads.GetButtonLabel(GamepadButton::RightPaddle2), "R5"));
+
+    Keyboard keyboard;
+    Input input(keyboard, pads);
+    BindDefaultUiActions(input);
+    CHECK(input.GetActionButtons(kUiAccept).size() == 1);
+    CHECK(input.GetActionButtons(kUiAccept)[0] == GamepadButton::South); // A
+    CHECK(input.GetActionButtons(kUiBack)[0] == GamepadButton::East);    // B
+    CHECK(input.GetActionButtons(kUiUp)[0] == GamepadButton::DPadUp);
+    CHECK(input.GetAxisAnalogs(kUiMoveY).size() == 1);
+    CHECK(input.GetAxisAnalogs(kUiMoveY)[0].Axis == GamepadAxis::LeftY);
+
+    pads.BeginFrame();
+    pads.OnButton(kPad, GamepadButton::South, true);
+    CHECK(input.WasActionPressed(kUiAccept));
+    // Steam Input's virtual Xbox pad is not the raw Deck, so prompts stay Xbox (still A/B/X/Y).
+    pads.AddPad(kOtherPad, nullptr, "Microsoft X-Box 360 pad", SDL_GAMEPAD_TYPE_XBOX360);
+    pads.OnButton(kOtherPad, GamepadButton::South, true);
+    CHECK(!pads.LastUsedIsSteamDeck());
+    CHECK(Same(pads.GetButtonLabel(GamepadButton::LeftShoulder), "LB"));
 }
 
 TEST(ActionsWithGamepad)

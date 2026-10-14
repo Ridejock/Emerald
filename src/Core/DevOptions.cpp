@@ -51,6 +51,11 @@ DevOptions ParseDevOptions(std::span<char* const> args)
             options.Record = next();
         } else if (flag == "--replay") {
             options.Replay = next();
+        } else if (flag == "--profile") {
+            options.Profile = true;
+        } else if (flag == "--profile-trace") {
+            options.ProfileTrace = next();
+            options.Profile = true;
         }
     }
     return options;

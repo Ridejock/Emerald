@@ -167,6 +167,12 @@ target_compile_definitions(EmeraldDialogueTests PRIVATE
 emerald_set_warnings(EmeraldDialogueTests)
 add_test(NAME DialogueTests COMMAND EmeraldDialogueTests)
 
+# In-game profiler: scope nesting, the disabled path, Chrome trace JSON. No window or GPU.
+add_executable(EmeraldProfileTests TestMain.cpp ProfileTests.cpp)
+target_link_libraries(EmeraldProfileTests PRIVATE Emerald::Emerald)
+emerald_set_warnings(EmeraldProfileTests)
+add_test(NAME ProfileTests COMMAND EmeraldProfileTests)
+
 # Editor tools: particle effect files always; Tweaks and the entity inspector in ImGui builds
 # (their stand-ins otherwise). No window or GPU.
 add_executable(EmeraldEditorTests TestMain.cpp EditorTests.cpp)

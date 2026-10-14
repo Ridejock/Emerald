@@ -43,7 +43,7 @@ struct ApplicationSpec {
         SDL_GPU_SHADERFORMAT_SPIRV | SDL_GPU_SHADERFORMAT_DXIL | SDL_GPU_SHADERFORMAT_MSL;
     // The command line (main's argv), for engine options; other arguments are ignored:
     //   --gpu vulkan|d3d12|direct3d12|metal|auto   GPU backend (wins over SDL_GPU_DRIVER)
-    //   --frames, --screenshot, --capture, --record, --replay: see DevOptions.h
+    //   --frames, --screenshot, --capture, --record, --replay, --profile: see DevOptions.h
     // Set it with `spec.Args = {argv, static_cast<usize>(argc)};`. It must outlive the constructor.
     std::span<char* const> Args;
     // Stop after this many frames (0 = run until the window is closed). Useful for CI/headless
@@ -195,6 +195,8 @@ private:
     void StartInputSession();
     void RequestCaptures();
     void FinishCaptures();
+    // F4, and --profile-trace on the way out. Writes the Chrome trace (Profiler.h).
+    void SaveProfilerTrace();
 
     ApplicationSpec m_Spec;
 
@@ -236,6 +238,11 @@ private:
     u64 m_Seed = 0;
     u64 m_ShotFrame = 0;      // the frame (1 = first) --screenshot saves
     u64 m_CaptureFrameNs = 0; // --capture: the fixed frame time (0 = real time)
+    // Renderer2D counts from the scene pass, before the profiler text overlay draws on top.
+    u32 m_ProfileDrawCalls = 0;
+    u32 m_ProfileLines = 0;
+    u32 m_ProfileSprites = 0;
+    bool m_ProfileStatsValid = false;
     World m_World;
 };
 

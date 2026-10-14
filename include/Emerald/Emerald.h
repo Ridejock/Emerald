@@ -17,6 +17,7 @@
 #include "Emerald/Core/Log.h"
 #include "Emerald/Core/Paths.h"
 #include "Emerald/Core/Profile.h"
+#include "Emerald/Core/Profiler.h"
 #include "Emerald/Core/ThreadPool.h"
 #include "Emerald/Core/Window.h"
 #include "Emerald/Dialogue/Dialogue.h"

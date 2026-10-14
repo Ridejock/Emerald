@@ -150,6 +150,8 @@ protected:
     void OnStart() override
     {
         EM_INFO("Sandbox started - press Escape or close the window to quit");
+        EM_INFO("F3 toggles the profiler overlay (--profile starts with it on). F4 writes a Chrome "
+                "trace");
         if (!CreateGpuResources()) {
             EM_ERROR("Failed to create GPU resources, quitting");
             Quit();
@@ -299,7 +301,12 @@ protected:
                     GetRenderer2D().GetLastFrameDrawCalls());
         ImGui::Text("Move the hero: WASD / arrows / left stick (Shift runs), jump: Space / %s",
                     GetInput().GetGamepads().GetButtonLabel(GamepadButton::South));
-        ImGui::TextDisabled("F1 hides / shows these windows");
+        ImGui::TextDisabled("F1 hides these windows. F3 profiler, F4 Chrome trace.");
+#if EMERALD_PROFILER
+        bool profiler = Emerald::Profiler::Get().IsOverlayVisible();
+        if (ImGui::Checkbox("Profiler overlay", &profiler))
+            Emerald::Profiler::Get().SetOverlayVisible(profiler);
+#endif
         ShowScenes();
         if (ImGui::CollapsingHeader("Engine")) {
             ShowAssets();

@@ -273,16 +273,6 @@ Done when:
 - Zero-warning policy enforced on all presets
 - Asteroids/Rock Blaster migrated to it
 
-### Profiler overlay and batch stats ([#20](https://github.com/Ridejock/Emerald/issues/20))
-
-A lightweight in-game profiler: CPU scopes per frame (update, render, audio), GPU timing where available, frame time graph, and Renderer2D batch/draw-call/memory stats.
-
-Done when:
-- `EM_PROFILE_SCOPE` macro with negligible cost when disabled
-- Overlay shows frame time graph, top scopes, draw calls, lines/sprites, frame arena and pool usage
-- Optional capture export (e.g. Chrome trace JSON)
-- Works with and without ImGui (basic text overlay)
-
 ### Phase 4 test: ship the games ([#21](https://github.com/Ridejock/Emerald/issues/21))
 
 Ship the phase games (and Rock Blaster) through the new pipeline to all supported platforms.
@@ -321,3 +311,4 @@ Already in the engine (see the [README](README.md) for each):
 - **Math**: Vec2/3/4, Mat4 and helpers, with SIMD and scalar implementations.
 - **Paths**: Base path and per-user data folders (`Paths`).
 - **ImGui debug overlay**: Optional Dear ImGui integration (SDL GPU backend) drawn over the frame.
+- **Profiler overlay** ([#20](https://github.com/Ridejock/Emerald/issues/20)): in-game CPU scopes (`EM_PROFILE_SCOPE`), frame-time graph, Renderer2D batch stats, frame-arena and pool usage, Chrome trace export. F3 / `--profile`. GPU time when a backend can report it (SDL GPU 3.4 has no timestamp queries, so the line reads n/a). Tracy stays the separate `profile` preset.

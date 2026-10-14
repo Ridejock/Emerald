@@ -35,6 +35,7 @@ option(EMERALD_MATH_SIMD     "Use the SSE code paths of the math library on x86/
 option(EMERALD_BUILD_TESTS   "Build the unit tests (run with ctest)" ${PROJECT_IS_TOP_LEVEL})
 option(EMERALD_BUILD_BENCH   "Build the math micro-benchmark" OFF)
 option(EMERALD_PROFILE       "Profile with Tracy (Core/Profile.h; the profile preset)" OFF)
+option(EMERALD_PROFILER      "In-game profiler overlay and EM_PROFILE_SCOPE (Core/Profiler.h)" ON)
 option(EMERALD_ASAN          "Build with AddressSanitizer (the debug-asan preset)" OFF)
 option(EMERALD_UBSAN         "Build with UndefinedBehaviorSanitizer, GCC/Clang (debug-ubsan)" OFF)
 option(EMERALD_TSAN          "Build with ThreadSanitizer, GCC/Clang (the debug-tsan preset)" OFF)
@@ -98,6 +99,8 @@ add_library(Emerald STATIC
     src/Core/Window.cpp
     src/Core/Application.cpp
     src/Core/DevOptions.cpp
+    src/Core/Profiler.cpp
+    src/Core/DebugFont.cpp
     src/Core/ThreadPool.cpp
     src/Input/Gamepads.cpp
     src/Input/Input.cpp
@@ -164,8 +167,9 @@ target_compile_definitions(Emerald PUBLIC
     EMERALD_HOT_RELOAD=$<IF:$<CONFIG:Debug>,1,0>
     # The engine version, e.g. in input recordings' headers.
     EMERALD_VERSION="${Emerald_VERSION}"
-    # The EM_PROFILE_* macros (Core/Profile.h) call Tracy, or compile to nothing.
+    # The EM_PROFILE_* macros (Core/Profile.h): in-game scopes, Tracy, or nothing.
     EMERALD_PROFILE=$<BOOL:${EMERALD_PROFILE}>
+    EMERALD_PROFILER=$<BOOL:${EMERALD_PROFILER}>
 )
 
 if(EMERALD_USE_IMGUI)

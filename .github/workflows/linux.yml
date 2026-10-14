@@ -119,8 +119,10 @@ jobs:
         if: matrix.preset == 'debug-tsan'
         run: sudo sysctl vm.mmap_rnd_bits=28
 
+      # SPIR-V only: Vulkan is the GPU backend on Linux. (The DXIL output also crashes the
+      # GCC 13-built DXC here with "corrupted double-linked list"; Windows CI covers DXIL.)
       - name: Configure
-        run: cmake --preset ${{ matrix.preset }} -DEMERALD_WARNINGS_AS_ERRORS=ON
+        run: cmake --preset ${{ matrix.preset }} -DEMERALD_WARNINGS_AS_ERRORS=ON -DEMERALD_SHADER_FORMATS=SPIRV
 
       - name: Build
         run: cmake --build --preset ${{ matrix.preset }} 2>&1 | tee build-log.txt; exit ${PIPESTATUS[0]}

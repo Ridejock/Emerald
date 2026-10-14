@@ -1,6 +1,6 @@
 # Testing and profiling
 
-Unit tests, ThreadSanitizer and benchmarks, Tracy and AddressSanitizer.
+Unit tests, ThreadSanitizer and benchmarks, the in-game profiler, Tracy and AddressSanitizer.
 
 [Back to the README](../README.md)
 
@@ -24,6 +24,7 @@ Unit tests, ThreadSanitizer and benchmarks, Tracy and AddressSanitizer.
 | `SaveTests` | save values (types, fallbacks, escaping, key checks, rename); floats independent of the locale (and older `+` / decimal-comma text); the text format round trip and hand-written files (no checksum, CRLF), old body-only crc32 files, the header checksum, BOM and CRLF; newer saves moved aside; a missing .sav falling back to .bak; non-finite floats and Windows device names; save/load on disk, replacing a save and the `.bak`; a v1 -> v3 migration chain (order, partial chains, a missing step); newer data versions refused; every truncated prefix and a flipped byte rejected; falling back to the backup; a failed write (temp path blocked) and a leftover partial temp file keeping the old save; independent slots with listing, metadata, delete and bad names; a high-score table |
 | `DialogueTests` | condition/effect terms (D3's `has:` / `not:` / `hp-1` spellings too); ports of D3's samples as behaviour (the simple walk, the flag sample with visited-card flags and guarded text, the tag sample: an automatic start card, a once-only answer, a tag set by another deck, a menu card); numbers gating answers; missing cards, loops of automatic cards and broken files logged, never a crash; flags and the current card through `SaveSystem` (and refused restores: other deck, removed card); a hot-reloaded deck (changed text, removed current card); `WrapText`; `DialogueBox` typewriter (finish at once, then advance), keyboard and mouse answer picking |
 | `EditorTests` | particle effect files: a JSON round trip with every field changed (and the defaults), saving again gives the same text, missing keys keep defaults, 3-number colors, broken values rejected, revisions, files, deep copies that keep the config's address; with ImGui (`debug-full`): `Tweak` registration, the tweaks file round trip, wrong kinds skipped, values remembered across unregister / register and loaded before registration, unknown entries kept, `Save` / `Load` / `SetFile`, `ResetAll`; the entity inspector's registration (engine, custom and tag components), `Inspect`, `SelectAt` and a destroyed selection; without ImGui: tweaks are plain values and the stand-ins do nothing |
+| `ProfileTests` | in-game profiler without a GPU: nested scopes (self time excludes direct children, calls aggregate), the disabled path does not sample the clock or record, Chrome trace JSON (complete events, frame counters, escaped names, GPU sample), overlay text records sprites |
 | `AudioExtrasTests` | spatial attenuation/pan math; mixer groups mute and volume ramps; spatial voices following the listener; MP3/OGG `MusicStream` constant ring memory; crossfade between two tracks; file open for sandbox OGG loops |
 | `AudioTests` | MP3 decoding from an embedded 809-byte file (length, level, channels, pitch after resampling), garbage rejected, WAV loading, `LoadSound` by extension incl. unknown/missing files, `MakeSound` conversion; mixer handles (stale handles, reuse, releasing samples), fade-in/out and volume ramps without clicks, looping, pitch, pan, master volume/mute, voice stealing, soft limiter; synth waveforms (length, no NaN, peak), envelopes, lowpass |
 | `Renderer2DTests` | `Renderer2D` batching and shape generation on the CPU (no GPU), `Transform2D`, color packing; sprite quads (UVs, rotation, origin, flips, pixel snap), draw order across lines/sprites/texture switches and blend modes, lighting captured per draw (lit world and unlit HUD in one frame), atlas JSON parsing; `Camera2D` (pixel-space default, letterboxing, zoom/rotation, `ScreenToWorld` round trips against the GPU matrix, bounds clamp, follow dead zone and step-size independent damping, shake decay); atlas `"animations"` parsing (patterns, lists, durations, modes, missing frames reported), `Animator` loop / once / ping-pong timing at several dt, speed, stop/resume, finish and loop events, drawing a frame with flip and tint; `CrtEffect` afterglow decay, uniforms and bloom spread; `--gpu` parsing and driver names |
@@ -67,6 +68,38 @@ cmake --build --preset release
 ./build/release/bin/EmeraldEntityBench
 ```
 
+## In-game profiler
+
+`EM_PROFILE_SCOPE` (see [Profiling (Tracy)](#profiling-tracy) for the same macro under Tracy) also feeds a
+small profiler that runs in ordinary debug and release builds (`EMERALD_PROFILER=ON`, the default).
+Recording is off until you ask for it, and a disabled scope is one relaxed load and a branch. With
+`-DEMERALD_PROFILER=OFF` the macro compiles to nothing.
+
+```sh
+./build/debug/bin/Sandbox --profile                  # overlay from the first frame
+./build/debug/bin/Sandbox --profile-trace trace.json # and write a Chrome trace on exit
+```
+
+F3 shows or hides the overlay. F4 writes `profile.json` next to the executable (or the
+`--profile-trace` path). Open that file in `chrome://tracing` or [Perfetto](https://ui.perfetto.dev).
+The panel is an ImGui window when ImGui is up, and a small text panel otherwise. It shows the frame-time
+graph (the dim line is 16.7 ms), the heaviest main-thread scopes, Renderer2D draw calls / lines / sprites,
+and frame-arena plus pool usage.
+
+SDL GPU 3.4 has no timestamp queries, so the GPU line stays `n/a` on Vulkan, D3D12 and Metal. A backend
+that can measure a frame calls `Profiler::ReportGpuTime`.
+
+```cpp
+#include <Emerald/Core/Profile.h>
+
+void UpdateEnemies(World& world)
+{
+    EM_PROFILE_SCOPE("UpdateEnemies"); // recorded while the overlay or a trace is active
+}
+```
+
+The engine already zones wait, events, assets, fixed steps, update, audio and render.
+
 ## Profiling (Tracy)
 
 The `profile` preset builds with the [Tracy](https://github.com/wolfpld/tracy) profiler client
@@ -102,7 +135,8 @@ void UpdateEnemies(World& world)
 }
 ```
 
-Without `EMERALD_PROFILE` the macros compile to nothing and Tracy is not even downloaded.
+Without `EMERALD_PROFILE` Tracy is not downloaded. The macros still feed the in-game profiler when
+`EMERALD_PROFILER` is on (the default); set that off too and they compile to nothing.
 Tracy's headers are SYSTEM includes and its one source file is compiled with its own flags, so
 its warnings never count against ours.
 

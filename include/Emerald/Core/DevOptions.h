@@ -19,6 +19,8 @@ namespace Emerald {
 //   --capture-fps N     the capture's frame rate
 //   --record file       record the input actions (InputRecording.h) and save them on exit
 //   --replay file       play a recording instead of the devices, frame-exact; quits at its end
+//   --profile           show the in-game profiler overlay (F3 toggles it, F4 writes a trace)
+//   --profile-trace file  same, and write a Chrome trace JSON to that file on exit
 //
 // Values can also be written as --frames=N. Unknown arguments are left to the game.
 struct DevOptions {
@@ -28,6 +30,8 @@ struct DevOptions {
     f64 CaptureFps = 60.0;
     std::filesystem::path Record;
     std::filesystem::path Replay;
+    bool Profile = false;               // --profile: overlay on from the first frame
+    std::filesystem::path ProfileTrace; // --profile-trace: Chrome trace written on exit
 };
 
 // Reads the options above from main's argv (args[0], the program, is skipped).

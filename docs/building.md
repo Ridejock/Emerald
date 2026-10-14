@@ -36,13 +36,15 @@ Dependencies, build options, per-platform setup, presets and the sandbox command
 | `EMERALD_MATH_SIMD` | `ON` | Use the SSE code paths of the math library on x86/x64 (see [Math library](core.md#math-library)) |
 | `EMERALD_BUILD_TESTS` | `ON` | Build the unit tests and register them with CTest |
 | `EMERALD_BUILD_BENCH` | `OFF` | Build the micro-benchmarks (math, particles, collision, entities) |
-| `EMERALD_PROFILE` | `OFF` | Fetch Tracy and turn the `EM_PROFILE_*` macros on (see [Profiling](testing-and-profiling.md#profiling-tracy)) |
+| `EMERALD_PROFILE` | `OFF` | Fetch Tracy and also send `EM_PROFILE_*` scopes to Tracy (see [Profiling](testing-and-profiling.md#profiling-tracy)) |
+| `EMERALD_PROFILER` | `ON` | In-game profiler: `EM_PROFILE_SCOPE`, overlay, Chrome trace. `OFF` compiles the macro to nothing |
 | `EMERALD_ASAN` | `OFF` | Build everything with AddressSanitizer (see [AddressSanitizer](testing-and-profiling.md#addresssanitizer)); not with MinGW GCC, which has no ASan runtime |
 | `EMERALD_UBSAN` / `EMERALD_TSAN` | `OFF` | UndefinedBehaviorSanitizer / ThreadSanitizer (GCC/Clang; see [AddressSanitizer](testing-and-profiling.md#addresssanitizer)); TSan not together with ASan |
 | `EMERALD_WARNINGS_AS_ERRORS` | `OFF` | `/WX` / `-Werror` on Emerald's own targets only (dependencies unaffected); CI turns it on |
 
-The engine exports `EMERALD_WITH_IMGUI` / `EMERALD_MATH_SIMD` / `EMERALD_PROFILE` (0 or 1) as public compile
-definitions. `EMERALD_WITH_ENTT` is still exported and is always 1: EnTT is now a regular dependency.
+The engine exports `EMERALD_WITH_IMGUI` / `EMERALD_MATH_SIMD` / `EMERALD_PROFILE` / `EMERALD_PROFILER`
+(0 or 1) as public compile definitions. `EMERALD_WITH_ENTT` is still exported and is always 1: EnTT is
+now a regular dependency.
 
 ## Requirements
 
@@ -144,6 +146,8 @@ to the cache folder at their next configure; the old `build/_shadercross*` folde
 ./build/debug/bin/Sandbox --record run.txt                 # record the input actions (see Dev tools)
 ./build/debug/bin/Sandbox --replay run.txt --capture shots # replay them, saving every frame
 ./build/debug/bin/Sandbox --gpu vulkan                     # pick the GPU backend (see below)
+./build/debug/bin/Sandbox --profile                        # profiler overlay (F3 toggles, F4 saves a trace)
+./build/debug/bin/Sandbox --profile-trace trace.json       # same, and write a Chrome trace on exit
 ./build/debug/bin/Sandbox --demo                           # skip the title: start in the camera demo
 ./build/debug/bin/Sandbox --tilemap                        # start in the tilemap room (see Tilemaps)
 ./build/debug/bin/Sandbox --swarm                          # start in the entity swarm (see Entities)

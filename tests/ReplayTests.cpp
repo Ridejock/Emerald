@@ -130,16 +130,20 @@ TEST(DevOptionsParse)
     Log::Init({});
     const DevOptions none = Parse({"game"});
     CHECK(none.Frames == 0 && none.Screenshot.empty() && none.Replay.empty());
+    CHECK(!none.Profile && none.ProfileTrace.empty());
 
     const DevOptions options =
         Parse({"game", "--frames", "120", "--screenshot=out.png", "--demo", "--capture", "shots",
-               "--capture-fps=30", "--record", "run.txt", "--replay=old.txt"});
+               "--capture-fps=30", "--record", "run.txt", "--replay=old.txt", "--profile",
+               "--profile-trace", "trace.json"});
     CHECK(options.Frames == 120);
     CHECK(options.Screenshot == "out.png");
     CHECK(options.CaptureDir == "shots");
     CHECK(options.CaptureFps == 30.0);
     CHECK(options.Record == "run.txt");
     CHECK(options.Replay == "old.txt");
+    CHECK(options.Profile);
+    CHECK(options.ProfileTrace == "trace.json");
 
     // Bad numbers are ignored (with a warning); a flag at the end has no value.
     const DevOptions bad = Parse({"game", "--frames", "lots", "--capture-fps", "-5", "--record"});

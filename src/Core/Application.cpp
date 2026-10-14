@@ -12,6 +12,7 @@
 #include "Emerald/Core/Log.h"
 #include "Emerald/Core/Paths.h"
 #include "Emerald/Core/Profile.h"
+#include "Emerald/Core/Profiler.h"
 
 #if EMERALD_WITH_IMGUI
 #include <imgui.h>
@@ -55,6 +56,10 @@ Application::Application(const ApplicationSpec& spec)
         if (m_Replay)
             m_Seed = m_Replay->Seed;
     }
+    if (!m_Dev.ProfileTrace.empty())
+        Profiler::Get().SetTracePath(m_Dev.ProfileTrace);
+    if (m_Dev.Profile)
+        Profiler::Get().SetOverlayVisible(true);
 
     m_FrameArena = std::make_unique<FrameArena>(spec.FrameArenaSize);
     m_ThreadPool = std::make_unique<ThreadPool>(spec.WorkerThreads);
@@ -158,11 +163,14 @@ int Application::Run()
     m_Running = true;
     OnStart();
     StartInputSession(); // after OnStart: the game has bound its actions
+    if (Profiler::Get().IsOverlayVisible())
+        EM_CORE_INFO("Profiler overlay on (F3 hides it, F4 writes a Chrome trace)");
 
     int exitCode = 0;
     FrameStatus lastFrame = FrameStatus::Ready;
     u64 last = SDL_GetTicksNS();
     while (m_Running) {
+        Profiler::Get().BeginFrame();
         // Not after a skipped/failed frame: there is no swapchain to wait on (e.g. minimized).
         if (m_Spec.WaitForDisplayBeforeInput && lastFrame == FrameStatus::Ready) {
             EM_PROFILE_SCOPE("Wait for display");
@@ -220,6 +228,9 @@ int Application::Run()
             EM_PROFILE_SCOPE("Update");
             OnUpdate(m_FrameSeconds);
             m_Scenes.Update(m_FrameSeconds); // then the stack changes the scenes asked for
+        }
+        {
+            EM_PROFILE_SCOPE("Audio");
             m_Audio.Update();
         }
         RequestCaptures();
@@ -245,6 +256,24 @@ int Application::Run()
             }
         }
         FinishCaptures();
+        {
+            ProfileFrameStats profileStats;
+            if (m_ProfileStatsValid) {
+                profileStats.DrawCalls = m_ProfileDrawCalls;
+                profileStats.Lines = m_ProfileLines;
+                profileStats.Sprites = m_ProfileSprites;
+                m_ProfileStatsValid = false;
+            }
+            const FrameArena::Stats arena = m_FrameArena->GetStats();
+            profileStats.ArenaBytes = arena.BytesUsed;
+            profileStats.ArenaCapacity = arena.Capacity;
+            profileStats.ArenaPeakBytes = arena.PeakBytes;
+            profileStats.ArenaOverflowFrames = arena.OverflowFrames;
+            const TrackingResource::Stats pools = GetPoolStats();
+            profileStats.PoolBytes = pools.BytesInUse;
+            profileStats.PoolPeakBytes = pools.PeakBytes;
+            Profiler::Get().EndFrame(profileStats);
+        }
         EM_PROFILE_FRAME();
 
         ++m_FrameCount;
@@ -256,6 +285,8 @@ int Application::Run()
 
     // Let background tasks finish before the app releases the resources they may use.
     m_ThreadPool->WaitIdle();
+    if (!Profiler::Get().GetTracePath().empty())
+        SaveProfilerTrace();
     if (m_Session.IsRecording())
         m_Session.GetRecording().Save(m_Dev.Record);
     m_Session.Stop();
@@ -293,6 +324,14 @@ void Application::ProcessEvent(const SDL_Event& event)
         if (event.key.scancode == SDL_SCANCODE_F1 && !event.key.repeat && !imguiWantsKeys)
             m_ImGuiVisible = !m_ImGuiVisible;
 #endif
+        // F3 is the profiler panel (text when ImGui is hidden or absent). F4 writes profile.json,
+        // or the --profile-trace path when one was given.
+        if (!event.key.repeat && !imguiWantsKeys) {
+            if (event.key.scancode == SDL_SCANCODE_F3)
+                Profiler::Get().ToggleOverlay();
+            else if (event.key.scancode == SDL_SCANCODE_F4)
+                SaveProfilerTrace();
+        }
         if (!event.key.repeat && !imguiWantsKeys)
             m_Keyboard.OnKeyDown(event.key.scancode);
         break;
@@ -357,6 +396,7 @@ FrameStatus Application::RenderFrame()
     if (m_ImGuiVisible) {
         OnImGui();
         m_Scenes.ImGui();
+        Profiler::Get().DrawImGui();
     }
     ImGui::Render();
     ImDrawData* drawData = ImGui::GetDrawData();
@@ -388,10 +428,32 @@ FrameStatus Application::RenderFrame()
     OnRender(pass);
     m_Scenes.Render(pass);
     m_Renderer2D->Render(cmd, pass, width, height);
+    // The text overlay is a second batch drawn after this, so remember the scene's counts.
+    m_ProfileDrawCalls = m_Renderer2D->GetLastFrameDrawCalls();
+    m_ProfileLines = m_Renderer2D->GetLastFrameLineCount();
+    m_ProfileSprites = m_Renderer2D->GetLastFrameSpriteCount();
+    m_ProfileStatsValid = true;
     if (scene) {
         m_Renderer->EndRenderPass();
         m_Post.Apply(cmd, output, m_FrameSeconds);
         pass = nullptr;
+    }
+    // Text profiler when ImGui is off or hidden (F1). It sits above post effects, like ImGui.
+    bool textProfile = Profiler::Get().IsOverlayVisible();
+#if EMERALD_WITH_IMGUI
+    if (m_ImGuiVisible)
+        textProfile = false;
+#endif
+    if (textProfile) {
+        if (pass) {
+            m_Renderer->EndRenderPass();
+            pass = nullptr;
+        }
+        Profiler::Get().DrawOverlay(*m_Renderer2D, static_cast<f32>(width),
+                                    static_cast<f32>(height));
+        m_Renderer2D->Upload(cmd);
+        pass = m_Renderer->BeginRenderPass(output, m_Spec.ClearColor, false);
+        m_Renderer2D->Render(cmd, pass, width, height);
     }
 #if EMERALD_WITH_IMGUI
     if (!pass)
@@ -401,6 +463,15 @@ FrameStatus Application::RenderFrame()
     if (pass)
         m_Renderer->EndRenderPass();
     return m_Renderer->EndFrame() ? FrameStatus::Ready : FrameStatus::Failed;
+}
+
+void Application::SaveProfilerTrace()
+{
+    std::filesystem::path path = Profiler::Get().GetTracePath();
+    if (path.empty())
+        path = Paths::GetBasePath() / "profile.json";
+    if (Profiler::Get().SaveChromeTrace(path))
+        EM_CORE_INFO("Profiler trace written to {}", path.string());
 }
 
 void Application::StartInputSession()

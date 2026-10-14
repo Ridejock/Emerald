@@ -18,6 +18,18 @@
 
 #include "DebugFont.h"
 
+#if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#elif defined(__linux__) || defined(__APPLE__)
+#include <pthread.h>
+#endif
+
 #if EMERALD_WITH_IMGUI
 #include <imgui.h>
 #endif
@@ -68,10 +80,49 @@ struct TraceEvent {
     usize PoolBytes = 0;
 };
 
-// Pointer only, constant-initialized, so it has no destructor. A thread_local object with a
-// destructor deadlocks std::thread::join on MSVC in debug and aborts with 0xc0000409 in release
-// (ProfileTests on the Windows CI jobs). The open stack lives on the heap record above.
-constinit thread_local ThreadRecord* t_Record = nullptr;
+// C++ thread_local, even a trivially destructible pointer, still deadlocks std::thread::join in
+// MSVC debug and aborts with 0xc0000409 in release (ProfileTests). One Win32 fiber-local slot, or
+// one pthread key, with a null destructor: nothing runs when the thread exits.
+#if defined(_WIN32)
+DWORD RecordSlot()
+{
+    static const DWORD slot = FlsAlloc(nullptr);
+    return slot;
+}
+#elif defined(__linux__) || defined(__APPLE__)
+pthread_key_t RecordKey()
+{
+    static const pthread_key_t key = []() -> pthread_key_t {
+        pthread_key_t created{};
+        if (pthread_key_create(&created, nullptr) != 0)
+            return {};
+        return created;
+    }();
+    return key;
+}
+#endif
+
+ThreadRecord* LoadRecord()
+{
+#if defined(_WIN32)
+    return static_cast<ThreadRecord*>(FlsGetValue(RecordSlot()));
+#elif defined(__linux__) || defined(__APPLE__)
+    return static_cast<ThreadRecord*>(pthread_getspecific(RecordKey()));
+#else
+    return nullptr;
+#endif
+}
+
+void StoreRecord(ThreadRecord* record)
+{
+#if defined(_WIN32)
+    FlsSetValue(RecordSlot(), record);
+#elif defined(__linux__) || defined(__APPLE__)
+    pthread_setspecific(RecordKey(), record);
+#else
+    (void)record;
+#endif
+}
 
 void AppendUnsigned(std::string& out, unsigned long long value)
 {
@@ -156,8 +207,8 @@ struct Profiler::State {
 
 ThreadRecord* Profiler::State::LocalThread()
 {
-    if (t_Record)
-        return t_Record;
+    if (ThreadRecord* existing = LoadRecord())
+        return existing;
     auto record = std::make_unique<ThreadRecord>();
     record->Id = std::this_thread::get_id();
     record->Completed.reserve(32);
@@ -165,8 +216,9 @@ ThreadRecord* Profiler::State::LocalThread()
     std::lock_guard lock(Mutex);
     record->Tid = NextTid++;
     Threads.push_back(std::move(record));
-    t_Record = Threads.back().get();
-    return t_Record;
+    ThreadRecord* stored = Threads.back().get();
+    StoreRecord(stored);
+    return stored;
 }
 
 Profiler::Profiler() : m_State(std::make_unique<State>())
@@ -255,7 +307,7 @@ bool Profiler::BeginScope(const char* name)
 
 void Profiler::EndScope()
 {
-    ThreadRecord* record = t_Record;
+    ThreadRecord* record = LoadRecord();
     if (!record || record->Stack.empty())
         return;
     const OpenScope scope = record->Stack.back();
@@ -448,8 +500,8 @@ void Profiler::Clear()
     m_State->GpuMs = 0;
     m_State->HaveMain = false;
     m_Snapshot = {};
-    if (t_Record)
-        t_Record->Stack.clear();
+    if (ThreadRecord* record = LoadRecord())
+        record->Stack.clear();
 }
 
 std::string Profiler::ExportChromeTrace() const

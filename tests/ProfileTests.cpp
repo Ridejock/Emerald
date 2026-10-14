@@ -7,6 +7,7 @@
 #include <limits>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <thread>
 
 #include <Emerald/Core/Log.h>
@@ -273,13 +274,15 @@ TEST(ProfileFrameGraphGpuAndTraceFile)
         ++frames;
     CHECK(frames == 2);
 
+    std::error_code error;
     const std::filesystem::path path =
-        std::filesystem::temp_directory_path() / "emerald-profile-trace.json";
+        std::filesystem::temp_directory_path(error) / "emerald-profile-trace.json";
+    CHECK(!error);
     CHECK(profiler.SaveChromeTrace(path));
     std::ifstream in(path);
     const std::string file((std::istreambuf_iterator<char>(in)), {});
     CHECK(file == json);
-    std::filesystem::remove(path);
+    std::filesystem::remove(path, error);
     CHECK(!profiler.SaveChromeTrace({}));
 }
 

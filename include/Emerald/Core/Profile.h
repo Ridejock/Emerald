@@ -12,7 +12,7 @@
 //   * EMERALD_PROFILER=0 and EMERALD_PROFILE=0: the macros compile to nothing.
 //   * Recording off (the default until F3 / --profile): EM_PROFILE_SCOPE is one relaxed atomic
 //     load and a not-taken branch. No timer, no allocation, no lock.
-//   * Recording on: a timestamp and a thread-local push, aggregated when the frame ends.
+//   * Recording on: a timestamp and a push on this thread's scope stack, aggregated at frame end.
 //   * EMERALD_PROFILE=1 (the `profile` preset): the same scope is also a Tracy zone. Tracy is
 //     on-demand, so it stays quiet until a viewer connects. The name has to be a string literal
 //     for Tracy; the in-game profiler only needs static storage (a literal or __func__).

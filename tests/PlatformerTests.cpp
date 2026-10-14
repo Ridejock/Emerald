@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <fstream>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -221,6 +222,71 @@ TEST(PlatformerOneWayPlatforms)
     // On solid ground, down + jump is an ordinary jump.
     Step(body, *map, {.JumpPressed = true, .JumpHeld = true, .Down = true});
     CHECK(body.Jumped && !body.DroppedThrough);
+}
+
+TEST(PlatformerMovingPlatforms)
+{
+    const std::optional<Tilemap> map =
+        MakeMap({"................", "................", "................", "................",
+                 "................", "................", "................", "................",
+                 "................", "################"});
+    if (!map) {
+        CHECK(false);
+        return;
+    }
+    // A box 32 wide with its top at y = 120; the ground is at y = 144.
+    PlatformerPlatform roof{.Box = {{112.0f, 120.0f}, {144.0f, 144.0f}}};
+    const auto step = [&](PlatformerBody& body, PlatformerInput input = {}) {
+        StepPlatformer(body, input, {}, *map, kDt, std::span(&roof, 1));
+    };
+
+    // Beside it: jump up past its side and land on top.
+    PlatformerBody body = StandingAt(100.0f, 144.0f);
+    step(body);
+    CHECK(body.Grounded && !body.OnPlatform);
+    step(body, {.JumpPressed = true, .JumpHeld = true});
+    for (i32 i = 0; i < 240 && !body.Grounded; ++i)
+        step(body, {.Move = body.Position.x < 124.0f ? 1.0f : 0.0f, .JumpHeld = true});
+    CHECK(body.Grounded && body.OnPlatform && body.OnOneWay);
+    CHECK_NEAR(body.GetFeet().y, 120.0f);
+
+    // Riding: the platform moves 1 px right and 0.5 px up per step; the body keeps its place.
+    const Vec2 offset = body.Position - roof.Box.Min;
+    for (i32 i = 0; i < 20; ++i) {
+        roof.Delta = {1.0f, -0.5f};
+        roof.Box = {roof.Box.Min + roof.Delta, roof.Box.Max + roof.Delta};
+        step(body);
+        CHECK(body.Grounded && body.OnPlatform);
+    }
+    CHECK_NEAR(body.Position.x - roof.Box.Min.x, offset.x);
+    CHECK_NEAR(body.Position.y - roof.Box.Min.y, offset.y);
+    roof.Delta = {};
+
+    // Down + jump drops through to the ground.
+    step(body, {.JumpPressed = true, .JumpHeld = true, .Down = true});
+    CHECK(body.DroppedThrough && !body.Jumped);
+    for (i32 i = 0; i < 240 && !body.Grounded; ++i)
+        step(body, {.Down = true});
+    CHECK(body.Grounded && !body.OnPlatform);
+    CHECK_NEAR(body.GetFeet().y, 144.0f);
+
+    // Inside the box (from below): a jump goes up through it and lands on top.
+    body = StandingAt(roof.Box.Min.x + 16.0f, 144.0f);
+    step(body);
+    CHECK(body.Grounded && !body.OnPlatform); // overlapping it, but on the ground
+    step(body, {.JumpPressed = true, .JumpHeld = true});
+    f32 highest = body.GetFeet().y;
+    for (i32 i = 0; i < 240 && !(body.Grounded && i > 2); ++i) {
+        step(body, {.JumpHeld = true});
+        highest = Min(highest, body.GetFeet().y);
+    }
+    CHECK(highest < roof.Box.Min.y);
+    CHECK(body.Grounded && body.OnPlatform);
+    CHECK_NEAR(body.GetFeet().y, roof.Box.Min.y);
+
+    // Without the platform the same body falls past it: only the caller's list counts.
+    StepPlatformer(body, {}, {}, *map, kDt);
+    CHECK(!body.OnPlatform);
 }
 
 TEST(PlatformerCoyoteTime)

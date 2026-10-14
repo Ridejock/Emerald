@@ -21,6 +21,8 @@
 // body.GetFeet() or body.Position, whatever the sprite's origin wants), never back in. To
 // teleport, set body.Position (and Velocity), then the Transform, then World::SnapTransform.
 
+#include <span>
+
 #include "Emerald/Core/Defines.h"
 #include "Emerald/Math/Vec2.h"
 #include "Emerald/Physics/Collision.h"
@@ -61,12 +63,13 @@ struct PlatformerBody {
     Vec2 HalfSize{5.0f, 7.0f};
     Vec2 Velocity{}; // px/s, +y down
     bool Grounded = false;
-    bool OnSlope = false;   // grounded on a slope
-    bool OnOneWay = false;  // grounded on one-way tiles only (down + jump drops through)
-    bool Rising = false;    // going up from a jump that can still be cut short
-    f32 CoyoteTimer = 0.0f; // > 0: a jump works although not grounded
-    f32 BufferTimer = 0.0f; // > 0: a jump was pressed recently and is waiting for the ground
-    f32 DropTimer = 0.0f;   // > 0: falling through one-way platforms
+    bool OnSlope = false;    // grounded on a slope
+    bool OnOneWay = false;   // grounded on one-way tiles or a platform only (down + jump drops)
+    bool OnPlatform = false; // grounded on one of StepPlatformer's platforms
+    bool Rising = false;     // going up from a jump that can still be cut short
+    f32 CoyoteTimer = 0.0f;  // > 0: a jump works although not grounded
+    f32 BufferTimer = 0.0f;  // > 0: a jump was pressed recently and is waiting for the ground
+    f32 DropTimer = 0.0f;    // > 0: falling through one-way platforms
     // What happened in the last step (for sounds, animation and the HUD).
     bool Jumped = false;
     bool Landed = false;
@@ -82,5 +85,19 @@ struct PlatformerBody {
 // against the map's tiles (Tilemap::MoveAndCollide).
 void StepPlatformer(PlatformerBody& body, const PlatformerInput& input,
                     const PlatformerTunables& tunables, const Tilemap& map, f32 dt);
+
+// A one-way platform that isn't a tile: a lift, a vehicle's roof. Only the top edge of Box (where
+// it is after this step) counts, as with one-way tiles: a body lands on it falling from above,
+// jumps up through it from below or the sides, and down + jump drops through. Delta is how far it
+// moved this step; a body standing on it rides along (still colliding with the map's tiles).
+struct PlatformerPlatform {
+    Aabb Box;
+    Vec2 Delta{};
+};
+
+// The same, also standing on `platforms` (the caller picks which bodies see which platforms).
+void StepPlatformer(PlatformerBody& body, const PlatformerInput& input,
+                    const PlatformerTunables& tunables, const Tilemap& map, f32 dt,
+                    std::span<const PlatformerPlatform> platforms);
 
 } // namespace Emerald

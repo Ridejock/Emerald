@@ -706,7 +706,9 @@ private:
     f32 m_Time = 0.0f;
     Emerald::Tweens m_Tweens; // the sandbox's own (the easing preview)
     f32 m_PreviewT = 0.0f;    // 0 to 1, over and over
-    Emerald::Easing m_PreviewEasing = Emerald::Easing::BounceOut;
+#if EMERALD_WITH_IMGUI
+    Emerald::Easing m_PreviewEasing = Emerald::Easing::BounceOut; // picked in the ImGui panel
+#endif
     SDL_GPUGraphicsPipeline* m_Pipeline = nullptr;
     SDL_GPUBuffer* m_TriangleBuffer = nullptr;
     SDL_GPUBuffer* m_QuadBuffer = nullptr;

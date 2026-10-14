@@ -379,7 +379,12 @@ void Profiler::EndFrame(const ProfileFrameStats& stats)
         for (const CompletedScope& scope : bag.Scopes) {
             Acc* slot = nullptr;
             for (Acc& item : acc) {
-                if (item.Name == scope.Name) {
+                // Compare the text. MSVC debug does not pool string literals, so two "A" scopes
+                // are different pointers and would otherwise stay split. Release does pool them.
+                const bool same = item.Name == scope.Name ||
+                                  (item.Name != nullptr && scope.Name != nullptr &&
+                                   std::strcmp(item.Name, scope.Name) == 0);
+                if (same) {
                     slot = &item;
                     break;
                 }

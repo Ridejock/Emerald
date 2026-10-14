@@ -8,6 +8,7 @@ Dependencies, build options, per-platform setup, presets and the sandbox command
 - [Options](#options)
 - [Requirements](#requirements)
 - [Building](#building)
+- [Linux release package](#linux-release-package)
 - [Running](#running)
 
 ## Dependencies
@@ -41,6 +42,7 @@ Dependencies, build options, per-platform setup, presets and the sandbox command
 | `EMERALD_ASAN` | `OFF` | Build everything with AddressSanitizer (see [AddressSanitizer](testing-and-profiling.md#addresssanitizer)); not with MinGW GCC, which has no ASan runtime |
 | `EMERALD_UBSAN` / `EMERALD_TSAN` | `OFF` | UndefinedBehaviorSanitizer / ThreadSanitizer (GCC/Clang; see [AddressSanitizer](testing-and-profiling.md#addresssanitizer)); TSan not together with ASan |
 | `EMERALD_WARNINGS_AS_ERRORS` | `OFF` | `/WX` / `-Werror` on Emerald's own targets only (dependencies unaffected); CI turns it on |
+| `EMERALD_LINUX_PACKAGE` | `OFF` | Linux only. Static libstdc++/libgcc, RPATH `$ORIGIN`, and the `emerald_package` target (see [Linux release package](#linux-release-package)) |
 
 The engine exports `EMERALD_WITH_IMGUI` / `EMERALD_MATH_SIMD` / `EMERALD_PROFILE` / `EMERALD_PROFILER`
 (0 or 1) as public compile definitions. `EMERALD_WITH_ENTT` is still exported and is always 1: EnTT is
@@ -105,8 +107,35 @@ cmake --build --preset debug
 | `debug-asan` | Debug build with `EMERALD_ASAN=ON` (AddressSanitizer) |
 | `debug-ubsan` | Debug build with `EMERALD_UBSAN=ON` (UndefinedBehaviorSanitizer; GCC/Clang) |
 | `debug-tsan` | Debug build with `EMERALD_TSAN=ON` (ThreadSanitizer; GCC/Clang) |
+| `linux-release` | Linux only. Release, SPIR-V shaders, `EMERALD_LINUX_PACKAGE=ON`. The build preset produces the archive |
 
 Options can also be passed directly, e.g. `cmake --preset release -DEMERALD_USE_IMGUI=ON`.
+
+### Linux release package
+
+A self-contained x64 archive for a machine that has a GPU driver and the usual desktop libraries, and does not have Emerald's build dependencies or a copy of SDL3. CI builds it with GCC on Ubuntu 24.04 and uploads `Sandbox-linux-x64.tar.gz` (the `package` job in `.github/workflows/linux.yml`).
+
+```sh
+cmake --preset linux-release
+cmake --build --preset linux-release
+# build/linux-release/dist/Sandbox-linux-x64.tar.gz
+```
+
+The preset passes `EMERALD_SHADER_FORMATS=SPIRV` (Vulkan). The DXIL build crashes the GCC 13-built shader compiler; Windows CI still builds DXIL. GCC is what the package job uses. Clang can build the same preset when GCC's static libstdc++ is installed (`-static-libstdc++`).
+
+What the archive contains:
+
+| Path | Role |
+|---|---|
+| `Sandbox` | The executable. SDL3, libstdc++ and libgcc are linked in. RPATH is `$ORIGIN` and `$ORIGIN/lib` |
+| `Sandbox.sh` | `cd`s to the archive directory and execs `./Sandbox` |
+| `assets/`, `shaders/` | Copied next to the binary (`Paths::GetBasePath()`) |
+| `lib/` | Empty apart from a note. Drop a `.so` here and the RPATH finds it |
+| `README.txt` | How to run it, including the Steam Deck steps |
+
+SDL loads the Vulkan loader, X11, Wayland, ALSA and PulseAudio at runtime, so a normal desktop or SteamOS install already has what the binary needs. `ldd ./Sandbox` only lists libc and libm. There is no `libSDL3.so`.
+
+Trying it on a Steam Deck is described in [Platforms](platforms.md#steam-deck). **That path has not been tested on a real Deck.**
 
 ## The shader compiler
 

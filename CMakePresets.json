@@ -63,6 +63,21 @@
       "cacheVariables": {
         "EMERALD_TSAN": "ON"
       }
+    },
+    {
+      "name": "linux-release",
+      "displayName": "Linux release package (x64, SPIR-V, self-contained)",
+      "inherits": "release",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "EMERALD_SHADER_FORMATS": "SPIRV",
+        "EMERALD_LINUX_PACKAGE": "ON"
+      }
     }
   ],
   "buildPresets": [
@@ -72,7 +87,17 @@
     { "name": "profile", "configurePreset": "profile" },
     { "name": "debug-asan", "configurePreset": "debug-asan" },
     { "name": "debug-ubsan", "configurePreset": "debug-ubsan" },
-    { "name": "debug-tsan", "configurePreset": "debug-tsan" }
+    { "name": "debug-tsan", "configurePreset": "debug-tsan" },
+    {
+      "name": "linux-release",
+      "configurePreset": "linux-release",
+      "targets": ["emerald_package"],
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      }
+    }
   ],
   "testPresets": [
     {

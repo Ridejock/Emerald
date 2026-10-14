@@ -1,5 +1,6 @@
 // Tests for the log file sink in Emerald::Log.
 
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -9,6 +10,7 @@
 
 #include <Emerald/Core/Log.h>
 #include <Emerald/Core/Paths.h>
+#include <Emerald/Core/Platform.h>
 
 #include "Test.h"
 
@@ -117,3 +119,31 @@ TEST(PathsBaseAndPref)
     fs::remove(pref, error);
     fs::remove(pref.parent_path().parent_path(), error); // pref ends with a separator
 }
+
+#if defined(__linux__)
+TEST(PrefPathUsesXdgDataHome)
+{
+    const char* home = std::getenv("HOME");
+    CHECK(home != nullptr);
+    const char* xdg = std::getenv("XDG_DATA_HOME");
+    const fs::path root =
+        (xdg != nullptr && xdg[0] != '\0') ? fs::path(xdg) : fs::path(home) / ".local/share";
+    const fs::path pref = Emerald::Paths::GetPrefPath("EmeraldTests", "XdgPaths");
+    const fs::path expected = root / "EmeraldTests" / "XdgPaths";
+    // SDL appends a trailing separator.
+    CHECK(pref == expected || pref == expected / "");
+    std::error_code error;
+    fs::remove(pref, error);
+    fs::remove(pref.parent_path().parent_path(), error);
+}
+
+TEST(SteamDeckEnvironmentVariable)
+{
+    CHECK(setenv("SteamDeck", "1", 1) == 0);
+    CHECK(Emerald::IsSteamDeck());
+    CHECK(setenv("SteamDeck", "0", 1) == 0);
+    CHECK(!Emerald::IsSteamDeck());
+    CHECK(unsetenv("SteamDeck") == 0);
+    CHECK(!Emerald::IsSteamDeck());
+}
+#endif

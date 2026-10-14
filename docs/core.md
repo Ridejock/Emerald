@@ -22,7 +22,8 @@ the console (colored) **and to a log file**:
 - `Emerald/Core/Paths.h` has the two folders a game needs: `Paths::GetBasePath()` (the
   executable's folder, where assets live) and `Paths::GetPrefPath(org, app)` (a per-user writable
   folder for saves and settings, e.g. `%APPDATA%\<org>\<app>\` on Windows,
-  `~/.local/share/<org>/<app>/` on Linux; created if missing, empty path on failure). Both return
+  `$XDG_DATA_HOME/<org>/<app>/` on Linux (XDG; unset `XDG_DATA_HOME` means `~/.local/share`);
+  created if missing, empty path on failure). Both return
   UTF-8-correct `std::filesystem::path`s.
 - The file is **truncated on every run** and uses the console's pattern without color codes:
   `[12:16:06.185] [EMERALD] [info] Emerald starting (SDL 3.4.16)`.

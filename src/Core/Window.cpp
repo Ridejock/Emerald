@@ -47,13 +47,15 @@ Vec2i Window::GetSizeInPixels() const
 
 bool Window::SetFullscreen(bool fullscreen)
 {
-    // A null mode means "fullscreen desktop" (borderless) in SDL3.
+    // A null mode is borderless desktop fullscreen: the display mode stays put. On Wayland, and
+    // on gamescope (Steam Deck Gaming Mode), a mode switch is the wrong tool.
     if (!SDL_SetWindowFullscreenMode(m_Window, nullptr) ||
         !SDL_SetWindowFullscreen(m_Window, fullscreen)) {
         EM_CORE_WARN("Could not {} fullscreen: {}", fullscreen ? "enter" : "leave", SDL_GetError());
         return false;
     }
-    EM_CORE_INFO("Window {}", fullscreen ? "fullscreen (borderless)" : "windowed");
+    EM_CORE_INFO("Window {} ({})", fullscreen ? "fullscreen (borderless)" : "windowed",
+                 SDL_GetCurrentVideoDriver());
     return true;
 }
 

@@ -32,8 +32,9 @@ The code lives in `include/Emerald/Renderer/` and `src/Renderer/` and is intenti
   through the swapchain present mode (`WindowSpec::VSync`; off = mailbox/immediate when available).
   `Renderer::SetVSync(bool)` changes it at runtime (e.g. from an options menu).
 - `Window::SetFullscreen(bool)` switches to borderless fullscreen on the current display and back
-  (`WindowSpec::Fullscreen` starts that way); `Window::SetIcon(image)` sets the title bar /
-  taskbar icon from an RGBA `Image`.
+  (`WindowSpec::Fullscreen` starts that way). The SDL fullscreen mode is null, so the display mode
+  does not change (Wayland and Steam Deck gamescope want that; see [Platforms](platforms.md#fullscreen)).
+  `Window::SetIcon(image)` sets the title bar / taskbar icon from an RGBA `Image`.
   `BeginFrame()` returns a `FrameStatus`: `Ready`, `Skipped` (the window is minimized: the
   swapchain texture is null) or `Failed` (logged). For anything but `Ready` the loop waits up to
   10 ms for an event instead of spinning (the simulation keeps running); after 30 failed frames in

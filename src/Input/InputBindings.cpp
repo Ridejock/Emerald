@@ -24,6 +24,8 @@ constexpr std::array<std::string_view, static_cast<usize>(GamepadButton::Count)>
     "RightStickRight",
 };
 // A new SDL button would shift the virtual ones: keep the names in step.
+static_assert(static_cast<usize>(GamepadButton::RightPaddle1) == 16);
+static_assert(static_cast<usize>(GamepadButton::Misc6) == 25);
 static_assert(static_cast<usize>(GamepadButton::LeftTrigger) == 26);
 
 struct MouseName {

@@ -96,6 +96,7 @@ target_compile_definitions(EmeraldMath INTERFACE EMERALD_MATH_SIMD=$<BOOL:${EMER
 add_library(Emerald STATIC
     src/Core/Log.cpp
     src/Core/Paths.cpp
+    src/Core/Platform.cpp
     src/Core/Window.cpp
     src/Core/Application.cpp
     src/Core/DevOptions.cpp
@@ -206,4 +207,16 @@ endif()
 
 if(EMERALD_BUILD_BENCH)
     add_subdirectory(bench)
+endif()
+
+# After the Sandbox target exists. No-op unless EMERALD_LINUX_PACKAGE is on.
+include(cmake/LinuxPackage.cmake)
+
+# SDL 3.4.16's GPU API has no WebGPU backend (Vulkan, D3D12, Metal only), so the renderer
+# cannot draw in a browser. docs/emscripten.md records the spike.
+if(EMSCRIPTEN OR CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+    message(FATAL_ERROR
+        "Emerald cannot target Emscripten. The pinned SDL 3.4.16 GPU API has no WebGPU "
+        "backend (only Vulkan, Direct3D 12 and Metal), and Emerald renders only through "
+        "SDL GPU. See docs/emscripten.md.")
 endif()

@@ -90,7 +90,9 @@ int main() { return MyGame{}.Run(); }
 
 | File | Contents |
 |---|---|
-| [docs/building.md](docs/building.md) | Dependencies, build options, per-platform setup, presets, sandbox command line |
+| [docs/building.md](docs/building.md) | Dependencies, build options, per-platform setup, presets, the Linux release package, sandbox command line |
+| [docs/platforms.md](docs/platforms.md) | Linux paths (XDG), borderless fullscreen, Steam Deck controls and Steam Input. Deck support is untested on real hardware |
+| [docs/emscripten.md](docs/emscripten.md) | Emscripten spike: SDL 3.4.16 GPU has no WebGPU backend, so a browser build is not shippable |
 | [docs/core.md](docs/core.md) | Logging, threads, memory, math library, fixed-timestep loop |
 | [docs/rendering.md](docs/rendering.md) | Renderer, 2D shapes, camera, textures and sprites, text, CRT, lighting, shaders |
 | [docs/animation-and-effects.md](docs/animation-and-effects.md) | Sprite animation, tweens and timers, particles |
@@ -110,7 +112,7 @@ shaders/           The engine's HLSL shaders (Renderer2D lines, Sprite, lit spri
 sandbox/           Example application (src/, its own shaders/, assets/ for the demo font, hero sheet, tilemap room, dialogue deck, particle effects and audio)
 tests/             Unit tests (ctest)
 bench/             Math, particle, collision and entity micro-benchmarks (EMERALD_BUILD_BENCH)
-cmake/             Dependency setup (FetchContent), shader compilation (Shaders.cmake) and sanitizer flags (Sanitizers.cmake: ASan, UBSan, TSan)
+cmake/             Dependency setup (FetchContent), shader compilation (Shaders.cmake), sanitizer flags (Sanitizers.cmake: ASan, UBSan, TSan) and the Linux archive (LinuxPackage.cmake, cmake/linux/)
 tools/shadercross/ Host-tool project that builds SDL_shadercross
 tools/sprites/     Script that generates the sandbox's pixel-art hero sheet
 tools/check_assets.py  Asset checker (palette, atlases, Tiled maps) for CI

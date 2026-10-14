@@ -4,6 +4,7 @@
 #include <bitset>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <SDL3/SDL_gamepad.h>
@@ -29,7 +30,17 @@ enum class GamepadButton : u8 {
     RightShoulder = SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER,
     DPadUp = SDL_GAMEPAD_BUTTON_DPAD_UP, DPadDown = SDL_GAMEPAD_BUTTON_DPAD_DOWN,
     DPadLeft = SDL_GAMEPAD_BUTTON_DPAD_LEFT, DPadRight = SDL_GAMEPAD_BUTTON_DPAD_RIGHT,
-    Misc1 = SDL_GAMEPAD_BUTTON_MISC1, Touchpad = SDL_GAMEPAD_BUTTON_TOUCHPAD,
+    Misc1 = SDL_GAMEPAD_BUTTON_MISC1,
+    // Rear paddles (Xbox Elite P1..P4). On a Steam Deck: RightPaddle1 = R4, LeftPaddle1 = L4,
+    // RightPaddle2 = R5, LeftPaddle2 = L5. Values match SDL so a saved name stays put.
+    RightPaddle1 = SDL_GAMEPAD_BUTTON_RIGHT_PADDLE1,
+    LeftPaddle1 = SDL_GAMEPAD_BUTTON_LEFT_PADDLE1,
+    RightPaddle2 = SDL_GAMEPAD_BUTTON_RIGHT_PADDLE2,
+    LeftPaddle2 = SDL_GAMEPAD_BUTTON_LEFT_PADDLE2,
+    Touchpad = SDL_GAMEPAD_BUTTON_TOUCHPAD,
+    Misc2 = SDL_GAMEPAD_BUTTON_MISC2, Misc3 = SDL_GAMEPAD_BUTTON_MISC3,
+    Misc4 = SDL_GAMEPAD_BUTTON_MISC4, Misc5 = SDL_GAMEPAD_BUTTON_MISC5,
+    Misc6 = SDL_GAMEPAD_BUTTON_MISC6,
 
     // Virtual: down while the (deadzoned) value is past GamepadSettings::ButtonThreshold.
     LeftTrigger = SDL_GAMEPAD_BUTTON_COUNT, RightTrigger,
@@ -70,6 +81,14 @@ struct GamepadSettings {
 // What is printed on a button of that type of pad, for prompts: South is "A" on Xbox, "Cross" on
 // PlayStation and "B" on Switch; RightShoulder is "RB", "R1" or "R".
 [[nodiscard]] const char* GetGamepadButtonLabel(GamepadButton button, SDL_GamepadType type);
+
+// The Steam Deck's built-in controller, as SDL reports it: HIDAPI names it "Steam Deck", and the
+// USB id is Valve 0x28DE / 0x1205. SDL's gamepad type for that device is STANDARD (face buttons
+// A/B/X/Y, same positions as printed on the Deck). Steam Input can hide this device and present
+// an Xbox pad instead; that name does not match here. See docs/platforms.md.
+[[nodiscard]] bool IsSteamDeckGamepad(std::string_view name, u16 vendor = 0, u16 product = 0);
+// Prompts for that pad: A/B/X/Y, L1/R1, L2/R2, View/Menu, and L4/R4/L5/R5 on the rear paddles.
+[[nodiscard]] const char* GetSteamDeckButtonLabel(GamepadButton button);
 
 // All connected gamepads, fed from SDL events by the Application. Single-player for now: every
 // connected pad drives the same buttons and axes (the largest value wins), so the player can pick
@@ -118,11 +137,11 @@ public:
     [[nodiscard]] f32 GetAxis(usize pad, GamepadAxis axis) const; // deadzoned, one pad
     // Type of the pad that was used last (UNKNOWN without pads): pick button prompts with it.
     [[nodiscard]] SDL_GamepadType GetLastUsedType() const { return m_LastUsedType; }
+    // The last used pad is the Deck's built-in controller (name or USB id), so prompts use
+    // GetSteamDeckButtonLabel rather than the generic type (SDL calls that pad STANDARD).
+    [[nodiscard]] bool LastUsedIsSteamDeck() const { return m_LastUsedSteamDeck; }
     // Label of a button on the last used pad, e.g. GetButtonLabel(GamepadButton::South) == "Cross".
-    [[nodiscard]] const char* GetButtonLabel(GamepadButton button) const
-    {
-        return GetGamepadButtonLabel(button, m_LastUsedType);
-    }
+    [[nodiscard]] const char* GetButtonLabel(GamepadButton button) const;
     // Rumbles every connected pad; strengths 0..1 for the low (left, heavy) and high (right,
     // light) frequency motors. Pads without rumble ignore it. A new call replaces the old one.
     void Rumble(f32 low, f32 high, u32 milliseconds);
@@ -160,6 +179,8 @@ private:
 
     [[nodiscard]] static usize Index(GamepadButton b) { return static_cast<usize>(b); }
     [[nodiscard]] Pad* Find(SDL_JoystickID id);
+    [[nodiscard]] bool PadIsSteamDeck(const Pad& pad) const;
+    void Remember(const Pad& pad);
     [[nodiscard]] f32 Deadzoned(const Pad& pad, GamepadAxis axis) const;
     void SetPadButton(Pad& pad, usize button, bool down);
     void UpdateVirtualButtons(Pad& pad);
@@ -169,6 +190,7 @@ private:
     ButtonStates<kButtonCount> m_Buttons;
     GamepadSettings m_Settings;
     SDL_GamepadType m_LastUsedType = SDL_GAMEPAD_TYPE_UNKNOWN;
+    bool m_LastUsedSteamDeck = false;
 };
 
 } // namespace Emerald

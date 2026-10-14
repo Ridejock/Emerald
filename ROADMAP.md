@@ -263,6 +263,8 @@ Done when:
 - Spike or working Emscripten build of the sandbox, with the blockers documented if not shippable
 - Platform differences (paths, fullscreen, input) covered
 
+**Status:** Linux x64 package is in (`linux-release` preset, `emerald_package` target, artifact from the Linux CI package job). SDL3 is static, RPATH is `$ORIGIN` and `$ORIGIN/lib`, assets and shaders sit beside the binary, and `Sandbox.sh` launches it. Per-user paths follow XDG (`$XDG_DATA_HOME`, or `~/.local/share`). Fullscreen is borderless, with no display-mode switch; the sandbox starts that way when `SteamDeck=1`. Default bindings and UI prompts go through SDL's gamepad API (Deck face buttons are A/B/X/Y; rear paddles are L4/R4/L5/R5 when the raw controller is visible). **Steam Deck support is untested on real hardware** (label `untested-on-hardware`). Emscripten is a spike, not a shippable sandbox: SDL 3.4.16's GPU API has no WebGPU backend ([docs/emscripten.md](docs/emscripten.md)).
+
 ### CI that builds games and pushes to itch.io ([#19](https://github.com/Ridejock/Emerald/issues/19))
 
 Reusable CI workflows that build and test every game on each push, package release zips per platform, and on a tag push them to itch.io with butler (channels per platform).

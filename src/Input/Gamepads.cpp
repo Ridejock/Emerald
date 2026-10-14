@@ -2,12 +2,18 @@
 
 #include <algorithm>
 #include <cmath>
+#include <string_view>
 
 #include <SDL3/SDL_error.h>
 
 #include "Emerald/Core/Log.h"
 
 namespace Emerald {
+
+// Paddle values have to stay in the holes the binding names already use (InputBindings.cpp).
+static_assert(static_cast<int>(GamepadButton::RightPaddle1) == SDL_GAMEPAD_BUTTON_RIGHT_PADDLE1);
+static_assert(static_cast<int>(GamepadButton::LeftPaddle2) == SDL_GAMEPAD_BUTTON_LEFT_PADDLE2);
+static_assert(static_cast<int>(GamepadButton::LeftTrigger) == SDL_GAMEPAD_BUTTON_COUNT);
 
 namespace {
 
@@ -167,8 +173,22 @@ const char* GetGamepadButtonLabel(GamepadButton button, SDL_GamepadType type)
         return "D-pad Right";
     case B::Misc1:
         return Pick(type, "Share", "Mic", "Capture");
+    case B::RightPaddle1:
+        return Pick(type, "P1", "R4", "SR");
+    case B::LeftPaddle1:
+        return Pick(type, "P3", "L4", "SL");
+    case B::RightPaddle2:
+        return Pick(type, "P2", "R5", "SL");
+    case B::LeftPaddle2:
+        return Pick(type, "P4", "L5", "SR");
     case B::Touchpad:
         return "Touchpad";
+    case B::Misc2:
+    case B::Misc3:
+    case B::Misc4:
+    case B::Misc5:
+    case B::Misc6:
+        return "Misc";
     case B::LeftStickUp:
         return "Left Stick Up";
     case B::LeftStickDown:
@@ -187,6 +207,59 @@ const char* GetGamepadButtonLabel(GamepadButton button, SDL_GamepadType type)
         return "Right Stick Right";
     default:
         return "?";
+    }
+}
+
+bool IsSteamDeckGamepad(std::string_view name, u16 vendor, u16 product)
+{
+    // Valve Jupiter, the Deck's built-in controller (SDL's controller list).
+    constexpr u16 kValve = 0x28DE;
+    constexpr u16 kSteamDeck = 0x1205;
+    if (vendor == kValve && product == kSteamDeck)
+        return true;
+    return name.find("Steam Deck") != std::string_view::npos;
+}
+
+const char* GetSteamDeckButtonLabel(GamepadButton button)
+{
+    using B = GamepadButton;
+    switch (button) {
+    case B::South:
+    case B::East:
+    case B::West:
+    case B::North:
+        // Printed on the Deck, and the same positions SDL's STANDARD type already uses.
+        return GetGamepadButtonLabel(button, SDL_GAMEPAD_TYPE_XBOXONE);
+    case B::Back:
+        return "View";
+    case B::Guide:
+        return "Steam";
+    case B::Start:
+        return "Menu";
+    case B::LeftShoulder:
+        return "L1";
+    case B::RightShoulder:
+        return "R1";
+    case B::LeftTrigger:
+        return "L2";
+    case B::RightTrigger:
+        return "R2";
+    case B::Misc1:
+        return "QAM";
+    case B::RightPaddle1:
+        return "R4";
+    case B::LeftPaddle1:
+        return "L4";
+    case B::RightPaddle2:
+        return "R5";
+    case B::LeftPaddle2:
+        return "L5";
+    case B::Touchpad:
+        return "Left Pad";
+    case B::Misc2:
+        return "Right Pad";
+    default:
+        return GetGamepadButtonLabel(button, SDL_GAMEPAD_TYPE_XBOXONE);
     }
 }
 
@@ -238,9 +311,12 @@ void Gamepads::Open(SDL_JoystickID id)
     }
     const char* name = SDL_GetGamepadName(handle);
     const SDL_GamepadType type = SDL_GetGamepadType(handle);
-    AddPad(id, handle, name ? name : "Gamepad", type);
-    EM_CORE_INFO("Gamepad connected: {} ({}), rumble: {}", name ? name : "Gamepad",
-                 GetGamepadTypeName(type),
+    const std::string padName = name ? name : "Gamepad";
+    const bool deck = IsSteamDeckGamepad(padName, static_cast<u16>(SDL_GetGamepadVendor(handle)),
+                                         static_cast<u16>(SDL_GetGamepadProduct(handle)));
+    AddPad(id, handle, padName, type);
+    EM_CORE_INFO("Gamepad connected: {} ({}), rumble: {}", padName,
+                 deck ? "Steam Deck" : GetGamepadTypeName(type),
                  SDL_GetBooleanProperty(SDL_GetGamepadProperties(handle),
                                         SDL_PROP_GAMEPAD_CAP_RUMBLE_BOOLEAN, false)
                      ? "yes"
@@ -282,7 +358,7 @@ void Gamepads::AddPad(SDL_JoystickID id, SDL_Gamepad* handle, std::string name,
     pad.Handle = handle;
     m_Pads.push_back(std::move(pad));
     if (m_LastUsedType == SDL_GAMEPAD_TYPE_UNKNOWN)
-        m_LastUsedType = type;
+        Remember(m_Pads.back());
 }
 
 void Gamepads::OnButton(SDL_JoystickID id, GamepadButton button, bool down)
@@ -291,7 +367,7 @@ void Gamepads::OnButton(SDL_JoystickID id, GamepadButton button, bool down)
     if (!pad || Index(button) >= static_cast<usize>(SDL_GAMEPAD_BUTTON_COUNT))
         return; // virtual buttons only come from axes
     if (down)
-        m_LastUsedType = pad->Info.Type;
+        Remember(*pad);
     SetPadButton(*pad, Index(button), down);
 }
 
@@ -302,7 +378,7 @@ void Gamepads::OnAxis(SDL_JoystickID id, GamepadAxis axis, f32 value)
         return;
     pad->Axes[static_cast<usize>(axis)] = std::clamp(value, -1.0f, 1.0f);
     if (Deadzoned(*pad, axis) != 0.0f)
-        m_LastUsedType = pad->Info.Type;
+        Remember(*pad);
     UpdateVirtualButtons(*pad);
 }
 
@@ -313,6 +389,30 @@ void Gamepads::ReleaseAll()
         pad.Axes = {};
     }
     m_Buttons.ReleaseAll();
+}
+
+const char* Gamepads::GetButtonLabel(GamepadButton button) const
+{
+    if (m_LastUsedSteamDeck)
+        return GetSteamDeckButtonLabel(button);
+    return GetGamepadButtonLabel(button, m_LastUsedType);
+}
+
+bool Gamepads::PadIsSteamDeck(const Pad& pad) const
+{
+    u16 vendor = 0;
+    u16 product = 0;
+    if (pad.Handle) {
+        vendor = static_cast<u16>(SDL_GetGamepadVendor(pad.Handle));
+        product = static_cast<u16>(SDL_GetGamepadProduct(pad.Handle));
+    }
+    return IsSteamDeckGamepad(pad.Info.Name, vendor, product);
+}
+
+void Gamepads::Remember(const Pad& pad)
+{
+    m_LastUsedType = pad.Info.Type;
+    m_LastUsedSteamDeck = PadIsSteamDeck(pad);
 }
 
 Gamepads::Pad* Gamepads::Find(SDL_JoystickID id)

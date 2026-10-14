@@ -46,6 +46,8 @@ struct CompletedScope {
 struct ThreadRecord {
     std::mutex Mutex;
     std::vector<CompletedScope> Completed;
+    // Open scopes stay here, not in thread-local storage. The owning thread is the only writer.
+    std::vector<OpenScope> Stack;
     std::thread::id Id{};
     u32 Tid = 0;
 };
@@ -66,12 +68,10 @@ struct TraceEvent {
     usize PoolBytes = 0;
 };
 
-struct Tls {
-    ThreadRecord* Record = nullptr;
-    std::vector<OpenScope> Stack;
-};
-
-thread_local Tls t_Tls;
+// Pointer only, constant-initialized, so it has no destructor. A thread_local object with a
+// destructor deadlocks std::thread::join on MSVC in debug and aborts with 0xc0000409 in release
+// (ProfileTests on the Windows CI jobs). The open stack lives on the heap record above.
+constinit thread_local ThreadRecord* t_Record = nullptr;
 
 void AppendUnsigned(std::string& out, unsigned long long value)
 {
@@ -156,16 +156,17 @@ struct Profiler::State {
 
 ThreadRecord* Profiler::State::LocalThread()
 {
-    if (t_Tls.Record)
-        return t_Tls.Record;
+    if (t_Record)
+        return t_Record;
     auto record = std::make_unique<ThreadRecord>();
     record->Id = std::this_thread::get_id();
     record->Completed.reserve(32);
+    record->Stack.reserve(8);
     std::lock_guard lock(Mutex);
     record->Tid = NextTid++;
-    t_Tls.Record = record.get();
     Threads.push_back(std::move(record));
-    return t_Tls.Record;
+    t_Record = Threads.back().get();
+    return t_Record;
 }
 
 Profiler::Profiler() : m_State(std::make_unique<State>())
@@ -242,36 +243,35 @@ bool Profiler::BeginScope(const char* name)
     // that happens outside the frame (startup). Neither check takes the profiler lock.
     if (!ProfilerRecording() || !m_State->FrameOpen.load(std::memory_order_acquire))
         return false;
-    m_State->LocalThread();
+    ThreadRecord* record = m_State->LocalThread();
     OpenScope scope;
     scope.Name = name != nullptr && name[0] != '\0' ? name : "?";
     scope.StartNs = Now();
     scope.ChildNs = 0;
-    scope.Depth = static_cast<u16>(t_Tls.Stack.size() > 65535 ? 65535 : t_Tls.Stack.size());
-    t_Tls.Stack.push_back(scope);
+    scope.Depth = static_cast<u16>(record->Stack.size() > 65535 ? 65535 : record->Stack.size());
+    record->Stack.push_back(scope);
     return true;
 }
 
 void Profiler::EndScope()
 {
-    if (t_Tls.Stack.empty())
+    ThreadRecord* record = t_Record;
+    if (!record || record->Stack.empty())
         return;
-    const OpenScope scope = t_Tls.Stack.back();
-    t_Tls.Stack.pop_back();
+    const OpenScope scope = record->Stack.back();
+    record->Stack.pop_back();
     const u64 end = Now();
     const u64 duration = end >= scope.StartNs ? end - scope.StartNs : 0;
-    if (!t_Tls.Stack.empty())
-        t_Tls.Stack.back().ChildNs += duration;
-    if (!t_Tls.Record)
-        return;
+    if (!record->Stack.empty())
+        record->Stack.back().ChildNs += duration;
     CompletedScope done;
     done.Name = scope.Name;
     done.StartNs = scope.StartNs;
     done.DurationNs = duration;
     done.SelfNs = duration >= scope.ChildNs ? duration - scope.ChildNs : 0;
     done.Depth = scope.Depth;
-    std::lock_guard lock(t_Tls.Record->Mutex);
-    t_Tls.Record->Completed.push_back(done);
+    std::lock_guard lock(record->Mutex);
+    record->Completed.push_back(done);
 }
 
 void Profiler::ReportGpuTime(f64 milliseconds)
@@ -448,7 +448,8 @@ void Profiler::Clear()
     m_State->GpuMs = 0;
     m_State->HaveMain = false;
     m_Snapshot = {};
-    t_Tls.Stack.clear();
+    if (t_Record)
+        t_Record->Stack.clear();
 }
 
 std::string Profiler::ExportChromeTrace() const

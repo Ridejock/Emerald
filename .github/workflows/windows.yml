@@ -72,6 +72,26 @@ jobs:
           path: C:/emerald-cache/shadercross/*/bin
           key: ${{ steps.shadercross.outputs.cache-primary-key }}
 
+      # Temporary: run ProfileTests itself, with a short wait, so a hang or fast-fail leaves
+      # the flushed stderr instead of waiting out ctest's 600s timeout. Removed once the
+      # Windows failure is understood.
+      - name: ProfileTests direct
+        run: |
+          set +e
+          preset="${{ matrix.preset }}"
+          exe=$(cygpath -w "$PWD/build/$preset/bin/EmeraldProfileTests.exe")
+          wd=$(cygpath -w "$PWD/build/$preset/tests")
+          out=$(cygpath -w "$PWD/build/$preset/profile-tests-stdout.txt")
+          err=$(cygpath -w "$PWD/build/$preset/profile-tests-stderr.txt")
+          powershell.exe -NoProfile -Command "\$ErrorActionPreference = 'Stop'; \$p = Start-Process -FilePath '$exe' -WorkingDirectory '$wd' -PassThru -WindowStyle Hidden -RedirectStandardOutput '$out' -RedirectStandardError '$err'; if (-not \$p.WaitForExit(25000)) { Write-Host 'PROFILETESTS TIMED OUT after 25s'; Stop-Process -Id \$p.Id -Force; exit 124 }; Write-Host ('PROFILETESTS EXIT ' + \$p.ExitCode); if (\$p.ExitCode -ne 0) { exit 1 }; exit 0"
+          code=$?
+          set -e
+          echo "===== stdout ====="
+          cat "build/${preset}/profile-tests-stdout.txt" || true
+          echo "===== stderr ====="
+          cat "build/${preset}/profile-tests-stderr.txt" || true
+          exit "$code"
+
       - name: Test
         run: ctest --preset ${{ matrix.preset }}
 
@@ -99,4 +119,6 @@ jobs:
           path: |
             build-log.txt
             build/${{ matrix.preset }}/Testing/Temporary/LastTest.log
+            build/${{ matrix.preset }}/profile-tests-stdout.txt
+            build/${{ matrix.preset }}/profile-tests-stderr.txt
           if-no-files-found: ignore

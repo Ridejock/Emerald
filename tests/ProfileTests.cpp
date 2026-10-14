@@ -1,6 +1,7 @@
 // Profiler bookkeeping without a GPU: nested scopes, the disabled path, and Chrome trace JSON.
 
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 #include <fstream>
 #include <iterator>
@@ -77,21 +78,36 @@ bool Balanced(std::string_view json)
     return braces == 0 && brackets == 0 && !inString;
 }
 
+// Temporary: flushed breadcrumbs so a Windows hang or fast-fail shows the last call.
+void Mark(const char* where)
+{
+    std::fprintf(stderr, "mark %s\n", where);
+    std::fflush(stderr);
+}
+
 struct Fixture {
     Fixture() { Reset(); }
     ~Fixture() { Reset(); }
 
     static void Reset()
     {
+        Mark("reset Log::Init");
         Log::Init({});
         g_Clock = 0;
         g_ClockReads = 0;
+        Mark("reset Get");
         Profiler& profiler = Profiler::Get();
+        Mark("reset SetTracePath");
         profiler.SetTracePath({});
+        Mark("reset SetOverlayVisible");
         profiler.SetOverlayVisible(false);
+        Mark("reset SetEnabled");
         profiler.SetEnabled(false);
+        Mark("reset SetClock");
         profiler.SetClock(nullptr);
+        Mark("reset Clear");
         profiler.Clear();
+        Mark("reset done");
     }
 };
 

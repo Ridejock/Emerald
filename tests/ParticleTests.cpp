@@ -113,6 +113,10 @@ TEST(ParticlesContinuousRate)
         total += emitter.Advance(45.0f, 1.0f / 60.0f);
     CHECK(total == 45 || total == 44); // floating-point rounding may leave the last one pending
     CHECK(emitter.Advance(0.0f, 1.0f) == 0);
+    CHECK(emitter.Advance(-5.0f, 1.0f) == 0);
+    CHECK(emitter.Advance(1.0e20f, 1.0e20f) == 0); // non-finite product
+    ContinuousEmitter burst;
+    CHECK(burst.Advance(1.0e10f, 1.0f) == 1000000u);
 }
 
 TEST(ParticlesScalarMatchesSse)

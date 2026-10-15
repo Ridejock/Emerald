@@ -42,15 +42,27 @@ bool WrappedOverlap(f32 aLo, f32 aHi, f32 bLo, f32 bHi, f32 length)
 } // namespace
 
 SpatialHash::SpatialHash(f32 cellSize, std::optional<Vec2> wrapSize)
-    : m_CellSize(std::max(cellSize, 1e-3f)), m_Wrap(wrapSize)
+    : m_CellSize(cellSize >= 1e-3f ? cellSize : 1e-3f), m_Wrap(wrapSize)
 {
-    if (m_Wrap) {
-        // A whole number of cells across, so the grid lines up at the wrap edges.
-        m_CellsX = std::max(1, static_cast<i32>(std::lround(m_Wrap->x / cellSize)));
-        m_CellsY = std::max(1, static_cast<i32>(std::lround(m_Wrap->y / cellSize)));
-        m_CellSize = {m_Wrap->x / static_cast<f32>(m_CellsX),
-                      m_Wrap->y / static_cast<f32>(m_CellsY)};
+    if (!m_Wrap)
+        return;
+    // std::max(NaN, 1e-3) is NaN, and lround of an infinity (cell size 0) is undefined.
+    // A wrap that is not a positive finite size is ignored.
+    if (!std::isfinite(m_Wrap->x) || !std::isfinite(m_Wrap->y) || m_Wrap->x <= 0.0f ||
+        m_Wrap->y <= 0.0f) {
+        EM_CORE_WARN("SpatialHash: ignored a wrap size that is not positive and finite");
+        m_Wrap.reset();
+        return;
     }
+    // A whole number of cells across, so the grid lines up at the wrap edges. Divide by the
+    // clamped cell size, not the caller's (which may be 0).
+    const auto cells = [](f32 wrap, f32 size) {
+        const f32 count = std::clamp(wrap / size, 1.0f, kMaxCell);
+        return std::max(1, static_cast<i32>(std::lround(count)));
+    };
+    m_CellsX = cells(m_Wrap->x, m_CellSize.x);
+    m_CellsY = cells(m_Wrap->y, m_CellSize.y);
+    m_CellSize = {m_Wrap->x / static_cast<f32>(m_CellsX), m_Wrap->y / static_cast<f32>(m_CellsY)};
 }
 
 SpatialHash::CellRange SpatialHash::CellsFor(const Aabb& box) const

@@ -346,7 +346,8 @@ bool Ui::Slider(std::string_view label, f32* value, f32 min, f32 max, f32 step)
 {
     UiItem& item = Add(UiKind::Slider, label, true);
     const f32 before = *value;
-    if (m_Focused == item.Id) {
+    // step <= 0 (or NaN) would divide by zero in the snap below. Dragging still works.
+    if (m_Focused == item.Id && std::isfinite(step) && step > 0.0f) {
         const f32 move = (Nav(kRight) ? step : 0.0f) - (Nav(kLeft) ? step : 0.0f);
         if (move != 0.0f) {
             // Snapped to whole steps from `min`, so repeated presses do not drift (0.30000001).

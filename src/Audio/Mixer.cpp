@@ -131,6 +131,10 @@ void Mixer::Mix(f32* out, usize frames)
 {
     std::fill(out, out + frames * 2, 0.0f);
 
+    // Music is mixed after this loop, which steps every group ramp. Keep a copy of the music
+    // ramp from before that, so the stream hears the same per-sample fade as a music voice.
+    const Ramp musicRamp = m_Groups[static_cast<usize>(AudioGroup::Music)].Gain;
+
     // Per-sample group gains so mute/volume ramps stay click-free with the master.
     std::array<f32, static_cast<usize>(AudioGroup::Count)> groupGain{};
     for (usize i = 0; i < frames; ++i) {
@@ -142,6 +146,10 @@ void Mixer::Mix(f32* out, usize frames)
                 continue;
             const std::vector<f32>& samples = *v.Samples;
             const usize count = samples.size() / 2;
+            if (count == 0) {
+                v.Playing = false; // fmod(position, 0) is NaN and the cast back is undefined
+                continue;
+            }
             if (static_cast<usize>(v.Position) >= count) {
                 if (v.Loop)
                     v.Position = std::fmod(v.Position, static_cast<f64>(count));
@@ -166,7 +174,7 @@ void Mixer::Mix(f32* out, usize frames)
         }
     }
 
-    m_Music.MixAdd(out, frames, m_Groups[static_cast<usize>(AudioGroup::Music)].Gain.Value);
+    m_Music.MixAdd(out, frames, musicRamp.Value, musicRamp.Target, musicRamp.Step);
 
     for (usize i = 0; i < frames; ++i) {
         const f32 master = m_Master.Next();

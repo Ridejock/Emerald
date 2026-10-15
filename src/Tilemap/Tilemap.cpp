@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <fstream>
+#include <limits>
 #include <sstream>
 
 #include <nlohmann/json.hpp>
@@ -98,11 +99,25 @@ Sprite Tileset::GetSprite(u32 index) const
 
 namespace {
 
-// Typed reads that never throw: a missing key or another type gives the fallback.
+// Typed reads that never throw: a missing key, another type, or a number that does not fit in
+// an i64 gives the fallback. JSON "16.0" is a float; get<i64>() would throw on it.
 i64 GetInt(const Json& j, const char* key, i64 fallback = 0)
 {
     const auto it = j.find(key);
-    return it != j.end() && it->is_number() ? it->get<i64>() : fallback;
+    if (it == j.end() || !it->is_number())
+        return fallback;
+    if (it->is_number_unsigned()) {
+        const u64 value = it->get<u64>();
+        return value > static_cast<u64>(std::numeric_limits<i64>::max()) ? fallback
+                                                                        : static_cast<i64>(value);
+    }
+    if (it->is_number_integer())
+        return it->get<i64>();
+    const f64 value = it->get<f64>();
+    constexpr f64 kExact = 9007199254740992.0; // 2^53, every integer up to here is exact
+    if (!std::isfinite(value) || std::fabs(value) > kExact)
+        return fallback;
+    return static_cast<i64>(std::llround(value));
 }
 
 f32 GetFloat(const Json& j, const char* key, f32 fallback = 0.0f)
@@ -227,12 +242,19 @@ struct TilemapLoader {
         set.Name = GetString(json, "name");
         set.TileSize = {static_cast<i32>(GetInt(json, "tilewidth")),
                         static_cast<i32>(GetInt(json, "tileheight"))};
-        set.Margin = static_cast<i32>(GetInt(json, "margin"));
-        set.Spacing = static_cast<i32>(GetInt(json, "spacing"));
+        const i64 margin = GetInt(json, "margin");
+        const i64 spacing = GetInt(json, "spacing");
+        // Negative spacing makes the column step zero (divide by zero below). Huge values
+        // overflow the i32 step. Tiled writes both as non-negative.
+        if (margin < 0 || spacing < 0 || margin > (1 << 20) || spacing > (1 << 20))
+            return Fail("tileset '{}' has a bad margin or spacing", set.Name);
+        set.Margin = static_cast<i32>(margin);
+        set.Spacing = static_cast<i32>(spacing);
         if (const auto offset = json.find("tileoffset"); offset != json.end())
             set.DrawOffset = {GetFloat(*offset, "x"), GetFloat(*offset, "y")};
         ReadProperties(json, set.Props);
-        if (set.TileSize.x <= 0 || set.TileSize.y <= 0)
+        if (set.TileSize.x <= 0 || set.TileSize.y <= 0 || set.TileSize.x > 16384 ||
+            set.TileSize.y > 16384)
             return Fail("tileset '{}' has no tile size", set.Name);
         const std::string image = GetString(json, "image");
         if (image.empty())
@@ -258,18 +280,26 @@ struct TilemapLoader {
             }
         }
 
-        // Columns and count from the image if the file leaves them out.
-        const i32 stepX = set.TileSize.x + set.Spacing;
-        const i32 stepY = set.TileSize.y + set.Spacing;
-        const i32 fitX =
-            (static_cast<i32>(set.Sheet->GetWidth()) - 2 * set.Margin + set.Spacing) / stepX;
-        const i32 fitY =
-            (static_cast<i32>(set.Sheet->GetHeight()) - 2 * set.Margin + set.Spacing) / stepY;
-        set.Columns = static_cast<u32>(GetInt(json, "columns", fitX));
-        set.TileCount = static_cast<u32>(GetInt(json, "tilecount", fitX * fitY));
-        if (set.Columns == 0 || set.TileCount == 0 || fitX <= 0 || fitY <= 0)
+        // Columns and count from the image if the file leaves them out. The step is an i64 so
+        // a huge tile size cannot overflow before the division.
+        const i64 stepX = static_cast<i64>(set.TileSize.x) + set.Spacing;
+        const i64 stepY = static_cast<i64>(set.TileSize.y) + set.Spacing;
+        if (stepX <= 0 || stepY <= 0)
+            return Fail("tileset '{}': spacing swallows the tile size", set.Name);
+        const i64 fitX = (static_cast<i64>(set.Sheet->GetWidth()) - 2 * set.Margin + set.Spacing) /
+                         stepX;
+        const i64 fitY = (static_cast<i64>(set.Sheet->GetHeight()) - 2 * set.Margin + set.Spacing) /
+                         stepY;
+        const i64 columns = GetInt(json, "columns", fitX);
+        const i64 tileCount = GetInt(json, "tilecount", fitX * fitY);
+        // TileCount is later used as a fill count into the gid table. A negative JSON number
+        // becomes a huge u32 and walks off the end of that table.
+        if (columns <= 0 || tileCount <= 0 || columns > (1 << 20) || tileCount > (1 << 24) ||
+            fitX <= 0 || fitY <= 0)
             return Fail("tileset '{}': image {} holds no {}x{} tiles", set.Name, set.Image.string(),
                         set.TileSize.x, set.TileSize.y);
+        set.Columns = static_cast<u32>(columns);
+        set.TileCount = static_cast<u32>(tileCount);
 
         // Per-tile class and properties, and the collision they mean.
         set.Tiles.assign(set.TileCount, {});
@@ -313,9 +343,11 @@ struct TilemapLoader {
         const fs::path mapDir = File.parent_path();
         for (const Json& entry : *list) {
             Tileset set;
-            set.FirstGid = static_cast<u32>(GetInt(entry, "firstgid", 0));
-            if (set.FirstGid == 0)
-                return Fail("a tileset has no firstgid");
+            const i64 firstGid = GetInt(entry, "firstgid", 0);
+            // Above this, FirstGid + TileCount overflows the gid table (Finish fills it).
+            if (firstGid <= 0 || firstGid > (1 << 24))
+                return Fail("a tileset has a bad firstgid ({})", firstGid);
+            set.FirstGid = static_cast<u32>(firstGid);
             const std::string source = GetString(entry, "source");
             if (source.empty()) {
                 if (!ReadTileset(entry, mapDir, set)) // embedded
@@ -443,7 +475,13 @@ struct TilemapLoader {
     {
         u32 maxGid = 0;
         for (const Tileset& set : Map.m_Tilesets) {
-            maxGid = Max(maxGid, set.FirstGid + set.TileCount - 1);
+            // FirstGid + TileCount - 1 must not wrap: that size is how long the gid table is,
+            // and fill_n writes TileCount entries from FirstGid.
+            if (set.TileCount == 0 || set.FirstGid == 0 || set.TileCount > (1u << 24) ||
+                set.FirstGid > (1u << 24) ||
+                (set.TileCount - 1u) > (1u << 24) - set.FirstGid)
+                return Fail("tile ids go up to {}; too many", set.FirstGid);
+            maxGid = Max(maxGid, set.FirstGid + set.TileCount - 1u);
             Map.m_MaxTileSize = {Max(Map.m_MaxTileSize.x, set.TileSize.x),
                                  Max(Map.m_MaxTileSize.y, set.TileSize.y)};
         }

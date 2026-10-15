@@ -89,7 +89,11 @@ public:
 
     void Update(); // Pump open streams
     // Adds this player's output * groupGain into `out` (already zeroed or holding other voices).
+    // The gain is held for the whole buffer.
     void MixAdd(f32* out, usize frames, f32 groupGain);
+    // Same, but the group gain moves from `groupGain` toward `groupTarget` by at most
+    // `groupStep` per sample (the mixer's ramp). The first sample already includes one step.
+    void MixAdd(f32* out, usize frames, f32 groupGain, f32 groupTarget, f32 groupStep);
 
     // Sample rate used for fade ramps (matches the mixer).
     void SetSampleRate(i32 rate) { m_SampleRate = rate; }

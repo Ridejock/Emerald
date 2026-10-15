@@ -347,6 +347,10 @@ TEST(TilemapErrorsAreLoggedNotFatal)
     CHECK(broken("\"image\": \"props.png\"", "\"image\": \"gone.png\""));        // missing image
     CHECK(broken("\"data\": [", "\"encoding\": \"base64\", \"data\": ["));       // not CSV
     CHECK(broken("\"data\": [\n    ", "\"data\": [\n    -"));                    // bad cell
+    CHECK(broken("\"firstgid\": 1", "\"firstgid\": -1"));                       // used to wrap to 2^32-1
+    CHECK(broken("\"tilecount\": 8", "\"tilecount\": -1"));                     // used to allocate billions
+    CHECK(broken("\"margin\": 0", "\"margin\": -8"));                           // used to divide by zero
+    CHECK(!broken("\"tilewidth\": 16", "\"tilewidth\": 16.0"));                 // a float must not throw
 
     // Unknown tile ids load (with a warning) and stay empty.
     t.EditRoom("\"data\": [\n    ", "\"data\": [\n    999, ");

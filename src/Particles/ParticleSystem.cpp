@@ -11,9 +11,29 @@ namespace Emerald {
 
 u32 ContinuousEmitter::Advance(f32 rate, f32 dt)
 {
-    m_Carry += std::max(rate, 0.0f) * dt;
+    // A NaN or huge rate makes `whole` not fit in u32, and that cast is undefined.
+    if (!(rate > 0.0f) || !(dt > 0.0f))
+        return 0;
+    const f32 add = rate * dt;
+    if (!std::isfinite(add))
+        return 0;
+    m_Carry += add;
+    if (!std::isfinite(m_Carry)) {
+        m_Carry = 0.0f;
+        return 0;
+    }
     const f32 whole = std::floor(m_Carry);
     m_Carry -= whole;
+    // A negative whole (carry was already negative) does not fit in u32.
+    if (!(whole >= 0.0f)) {
+        m_Carry = 0.0f;
+        return 0;
+    }
+    constexpr f32 kMaxBurst = 1000000.0f;
+    if (whole >= kMaxBurst) {
+        m_Carry = 0.0f;
+        return static_cast<u32>(kMaxBurst);
+    }
     return static_cast<u32>(whole);
 }
 

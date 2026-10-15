@@ -100,9 +100,18 @@ std::optional<Font> Font::Load(SDL_GPUDevice* device, const std::filesystem::pat
         EM_CORE_ERROR("Failed to open font '{}'", path.string());
         return std::nullopt;
     }
-    std::vector<u8> data(static_cast<usize>(file.tellg()));
+    const std::streamoff bytes = file.tellg();
+    // tellg() is -1 on failure. Casting that to usize allocates a huge buffer.
+    if (bytes <= 0) {
+        EM_CORE_ERROR("Failed to read font '{}'", path.string());
+        return std::nullopt;
+    }
+    std::vector<u8> data(static_cast<usize>(bytes));
     file.seekg(0);
-    file.read(reinterpret_cast<char*>(data.data()), static_cast<std::streamsize>(data.size()));
+    if (!file.read(reinterpret_cast<char*>(data.data()), bytes)) {
+        EM_CORE_ERROR("Failed to read font '{}'", path.string());
+        return std::nullopt;
+    }
     std::optional<Font> font = LoadFromMemory(device, data, options);
     if (font)
         EM_CORE_INFO("Loaded font '{}' at {} px ({} glyphs, {}x{} atlas)", path.string(),

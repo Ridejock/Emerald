@@ -1,6 +1,7 @@
 #include "Emerald/Dialogue/Dialogue.h"
 
 #include <charconv>
+#include <limits>
 
 #include "Emerald/Core/Log.h"
 #include "Emerald/Save/Save.h"
@@ -128,7 +129,12 @@ void DialogueFlags::SetValue(std::string_view name, i32 value)
 
 void DialogueFlags::AddValue(std::string_view name, i32 amount)
 {
-    SetValue(name, GetValue(name) + amount);
+    // Signed overflow is undefined. A dialogue effect can add forever (gold+=1).
+    const i64 sum = static_cast<i64>(GetValue(name)) + static_cast<i64>(amount);
+    const i64 clamped = sum > std::numeric_limits<i32>::max()   ? std::numeric_limits<i32>::max()
+                        : sum < std::numeric_limits<i32>::min() ? std::numeric_limits<i32>::min()
+                                                                : sum;
+    SetValue(name, static_cast<i32>(clamped));
 }
 
 void DialogueFlags::Reset()

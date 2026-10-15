@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <limits>
 #include <random>
 #include <type_traits>
 #include <utility>
@@ -365,6 +366,25 @@ TEST(SpatialHashRejectsBadBoxes)
     std::vector<std::pair<u32, u32>> pairs;
     hash.GetPairs(pairs);
     CHECK(pairs.empty());
+
+    // A zero or NaN cell size becomes 0.001. A normal-sized box then covers too many cells and
+    // is skipped; a box that fits that grid is stored. A wrap that is not a positive size is
+    // dropped, and a zero cell with a real wrap must not divide by zero.
+    const Aabb tiny = Aabb::FromCenter({0.0f, 0.0f}, {0.002f, 0.002f});
+    SpatialHash zero(0.0f);
+    zero.Insert(1, Aabb::FromCenter({0.0f, 0.0f}, {1.0f, 1.0f}));
+    CHECK(!zero.Contains(1));
+    zero.Insert(1, tiny);
+    CHECK(zero.Contains(1));
+    SpatialHash nanCell(std::numeric_limits<f32>::quiet_NaN());
+    nanCell.Insert(1, tiny);
+    CHECK(nanCell.Contains(1));
+    SpatialHash badWrap(16.0f, Vec2{0.0f, 10.0f});
+    badWrap.Insert(1, Aabb::FromCenter({1.0f, 1.0f}, {1.0f, 1.0f}));
+    CHECK(badWrap.Contains(1));
+    SpatialHash zeroWrap(0.0f, Vec2{100.0f, 50.0f});
+    zeroWrap.Insert(1, tiny);
+    CHECK(zeroWrap.Contains(1));
 
     // Far away but small is still fine.
     hash.Insert(6, Aabb::FromCenter({1e7f, -1e7f}, {4.0f, 4.0f}));

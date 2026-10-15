@@ -233,6 +233,7 @@ void MusicStream::Pump()
 {
     if (!m_Decoder || m_Ended)
         return;
+    usize emptyRewinds = 0;
     while (m_Filled < kRingFrames) {
         const usize space = kRingFrames - m_Filled;
         // Decode into a small stack buffer then copy into the ring (may wrap).
@@ -240,13 +241,17 @@ void MusicStream::Pump()
         const usize want = std::min(space, static_cast<usize>(2048));
         usize got = m_Decoder->Decode(temp, want);
         if (got == 0) {
-            if (m_Loop && m_Decoder->Rewind()) {
+            // One rewind per empty read. A file that decodes to nothing (rewind succeeds, the
+            // next read is empty again) would otherwise spin here forever.
+            if (m_Loop && emptyRewinds == 0 && m_Decoder->Rewind()) {
+                ++emptyRewinds;
                 SDL_ClearAudioStream(m_Decoder->Resampler);
                 continue;
             }
             m_Ended = true;
             break;
         }
+        emptyRewinds = 0;
         for (usize i = 0; i < got; ++i) {
             m_Ring[m_Write * 2] = temp[i * 2];
             m_Ring[m_Write * 2 + 1] = temp[i * 2 + 1];
@@ -367,6 +372,11 @@ void MusicPlayer::Update()
 
 void MusicPlayer::MixAdd(f32* out, usize frames, f32 groupGain)
 {
+    MixAdd(out, frames, groupGain, groupGain, 0.0f);
+}
+
+void MusicPlayer::MixAdd(f32* out, usize frames, f32 groupGain, f32 groupTarget, f32 groupStep)
+{
     for (usize offset = 0; offset < frames;) {
         const usize n = std::min(frames - offset, static_cast<usize>(512));
         // Snapshot each active slot's PCM for this block.
@@ -384,6 +394,9 @@ void MusicPlayer::MixAdd(f32* out, usize frames, f32 groupGain)
                     value = std::max(value - step, target);
             };
             step(m_Volume, m_VolumeTarget, m_VolumeStep);
+            // Same rule as Mixer::Ramp::Next: move, then use the new value, so a group mute
+            // fades across this buffer instead of jumping to the value at the end of it.
+            step(groupGain, groupTarget, groupStep);
             for (usize s = 0; s < 2; ++s) {
                 if (!active[s])
                     continue;

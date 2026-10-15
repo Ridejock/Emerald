@@ -5,6 +5,7 @@
 // decks); the data is rewritten in Emerald's JSON format and no D3 code is used.
 
 #include <filesystem>
+#include <limits>
 #include <string>
 
 #include <Emerald/Core/Log.h>
@@ -147,6 +148,12 @@ TEST(DialogueTermsParse)
     DialogueConditions rich;
     CHECK(ParseDialogueConditions("a gold<0 gold>-6", rich) && CheckConditions(rich, flags));
     CHECK(!CheckConditions(c, flags));
+    flags.SetValue("gold", std::numeric_limits<i32>::max());
+    flags.AddValue("gold", 1);
+    CHECK(flags.GetValue("gold") == std::numeric_limits<i32>::max());
+    flags.SetValue("gold", std::numeric_limits<i32>::min());
+    flags.AddValue("gold", -1);
+    CHECK(flags.GetValue("gold") == std::numeric_limits<i32>::min());
 
     // Mistakes are reported, naming the term.
     std::string error;

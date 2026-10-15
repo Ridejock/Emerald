@@ -1,8 +1,9 @@
 # Linux tests (Ubuntu 24.04, GCC and Clang): configure, build (warnings in Emerald's own code are
-# errors) and run the tests in the debug, release, debug-ubsan (UndefinedBehaviorSanitizer) and
-# debug-tsan (ThreadSanitizer) presets. GCC debug also runs the sandbox for a few frames on
-# software Vulkan (lavapipe, under Xvfb) and uploads its screenshot. A package job builds the
-# linux-release preset and uploads Sandbox-linux-x64.tar.gz.
+# errors) and run the tests in the debug, release, debug-ubsan (UndefinedBehaviorSanitizer),
+# debug-tsan (ThreadSanitizer) and profile (Tracy) presets. GCC debug also runs the sandbox for a
+# few frames on software Vulkan (lavapipe, under Xvfb) and uploads its screenshot. A package job
+# builds the linux-release preset and uploads Sandbox-linux-x64.tar.gz. Every preset in
+# CMakePresets.json is built with EMERALD_WARNINGS_AS_ERRORS on either this workflow or Windows CI.
 name: Linux
 
 on:
@@ -89,7 +90,7 @@ jobs:
       fail-fast: false
       matrix:
         compiler: [gcc, clang]
-        preset: [debug, release, debug-ubsan, debug-tsan]
+        preset: [debug, release, debug-ubsan, debug-tsan, profile]
     name: ${{ matrix.compiler }} ${{ matrix.preset }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0

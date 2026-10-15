@@ -1,0 +1,352 @@
+# Build, test and package a game, then on a tag push the archives to itch.io
+# with butler (one channel per platform: windows, linux). A game repository
+# calls this with `workflow_call` — see docs/releasing.md.
+#
+# Packaging is the game's own CMake target (CPack's `package`, or Emerald's
+# `emerald_package` from the linux-release preset). This file does not assemble
+# a second zip layout. Windows checks keep a game's .itch.toml and its DXIL
+# shaders. There is no web channel (docs/emscripten.md).
+#
+# Every configure passes -DEMERALD_WARNINGS_AS_ERRORS=ON. A missing
+# BUTLER_API_KEY skips the itch upload instead of failing, so forks and pull
+# requests stay green.
+name: Game CI
+
+on:
+  workflow_call:
+    inputs:
+      itch-user:
+        description: "itch.io user. Empty skips publishing."
+        type: string
+        default: ""
+      itch-game:
+        description: "itch.io game slug for archives that match no itch-games line."
+        required: false
+        type: string
+        default: ""
+      itch-games:
+        description: "Extra slugs, one '<archive-substring> <slug>' per line. Longest substring wins (RockBlasterRogue before RockBlaster)."
+        required: false
+        type: string
+        default: ""
+      cmake-target:
+        description: "CMake target that writes the release archives (CPack's package, or emerald_package)."
+        type: string
+        default: "package"
+      presets:
+        description: "Comma-separated CMake presets to build and test."
+        type: string
+        default: "debug,release"
+      platforms:
+        description: "Comma-separated platforms: windows, linux. Web is rejected."
+        type: string
+        default: "windows,linux"
+      package-preset:
+        description: "Preset that produces the release archives. It is tested in the package job."
+        type: string
+        default: "release"
+      linux-cmake-args:
+        description: "Extra CMake arguments on Linux. SPIR-V only: DXIL crashes the GCC 13 shader compiler (Windows still builds DXIL)."
+        type: string
+        default: "-DEMERALD_SHADER_FORMATS=SPIRV"
+      cmake-args:
+        description: "Extra CMake arguments on every platform (space-separated -D flags)."
+        required: false
+        type: string
+        default: ""
+      require-itch-manifest:
+        description: "Windows archives must contain .itch.toml."
+        type: boolean
+        default: true
+      require-dxil:
+        description: "Windows archives must contain a .dxil shader."
+        type: boolean
+        default: true
+      dry-run:
+        description: "Run the publish job off a tag, and pass --dry-run to butler. Still skipped when BUTLER_API_KEY is unset."
+        type: boolean
+        default: false
+    secrets:
+      BUTLER_API_KEY:
+        description: "itch.io API key. Unset skips publishing."
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      script-repo: ${{ steps.ref.outputs.repo }}
+      script-sha: ${{ steps.ref.outputs.sha }}
+      has-test: ${{ steps.plan.outputs.has-test }}
+      test-matrix: ${{ steps.plan.outputs.test-matrix }}
+      package-matrix: ${{ steps.plan.outputs.package-matrix }}
+    steps:
+      - id: ref
+        shell: bash
+        run: |
+          ref="$GITHUB_WORKFLOW_REF"
+          repo="${ref%%/.github/*}"
+          if [ -z "$repo" ] || [ "$repo" = "$ref" ] || [ -z "${GITHUB_WORKFLOW_SHA}" ]; then
+            echo "::error::Cannot locate this workflow (GITHUB_WORKFLOW_REF=${ref})"
+            exit 1
+          fi
+          echo "repo=${repo}" >> "$GITHUB_OUTPUT"
+          echo "sha=${GITHUB_WORKFLOW_SHA}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: ${{ steps.ref.outputs.repo }}
+          ref: ${{ steps.ref.outputs.sha }}
+          fetch-depth: 1
+
+      - id: plan
+        shell: bash
+        run: |
+          tools/ci/game-matrix.sh \
+            --platforms "${{ inputs.platforms }}" \
+            --presets "${{ inputs.presets }}" \
+            --package-preset "${{ inputs.package-preset }}" \
+            --cmake-target "${{ inputs.cmake-target }}" \
+            --linux-cmake-args "${{ inputs.linux-cmake-args }}" \
+            --cmake-args "${{ inputs.cmake-args }}"
+
+  test:
+    needs: plan
+    if: needs.plan.outputs.has-test == 'true'
+    runs-on: ${{ matrix.runs_on }}
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.plan.outputs.test-matrix) }}
+    name: ${{ matrix.platform }} ${{ matrix.preset }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: game
+    env:
+      EMERALD_CACHE_DIR: ${{ matrix.platform == 'windows' && 'C:/emerald-cache' || '/home/runner/emerald-cache' }}
+      DEBIAN_FRONTEND: noninteractive
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: ${{ needs.plan.outputs.script-repo }}
+          ref: ${{ needs.plan.outputs.script-sha }}
+          fetch-depth: 1
+          path: .workflow
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 1
+          path: game
+
+      - name: Packages
+        if: matrix.platform == 'linux'
+        run: |
+          "$GITHUB_WORKSPACE/.workflow/tools/ci/install-linux-packages.sh"
+
+      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
+        if: matrix.platform == 'windows'
+        with:
+          arch: x64
+
+      - name: Compiler
+        if: matrix.platform == 'linux'
+        run: |
+          echo "CC=gcc" >> "$GITHUB_ENV"
+          echo "CXX=g++" >> "$GITHUB_ENV"
+
+      - name: Restore shadercross
+        id: shadercross
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ${{ env.EMERALD_CACHE_DIR }}/shadercross/*/bin
+          key: shadercross-${{ runner.os }}-${{ hashFiles('game/tools/shadercross/**') }}
+          restore-keys: shadercross-${{ runner.os }}-
+
+      # Warnings in the engine (and in a game that calls emerald_set_warnings) are errors.
+      - name: Configure
+        run: cmake --preset "${{ matrix.preset }}" -DEMERALD_WARNINGS_AS_ERRORS=ON ${{ matrix.cmake_args }}
+
+      - name: Build
+        id: build
+        run: cmake --build --preset "${{ matrix.preset }}" --target all 2>&1 | tee build-log.txt; exit "${PIPESTATUS[0]}"
+
+      - name: Save shadercross
+        if: steps.build.outcome == 'success' && steps.shadercross.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        continue-on-error: true
+        with:
+          path: ${{ env.EMERALD_CACHE_DIR }}/shadercross/*/bin
+          key: ${{ steps.shadercross.outputs.cache-primary-key }}
+
+      - name: Test
+        run: ctest --test-dir "build/${{ matrix.preset }}" --output-on-failure --timeout 600
+
+      - name: Upload logs
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: logs-${{ matrix.platform }}-${{ matrix.preset }}
+          path: |
+            game/build-log.txt
+            game/build/${{ matrix.preset }}/Testing/Temporary/LastTest.log
+          if-no-files-found: ignore
+
+  package:
+    needs: plan
+    runs-on: ${{ matrix.runs_on }}
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.plan.outputs.package-matrix) }}
+    name: package ${{ matrix.platform }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: game
+    env:
+      EMERALD_CACHE_DIR: ${{ matrix.platform == 'windows' && 'C:/emerald-cache' || '/home/runner/emerald-cache' }}
+      DEBIAN_FRONTEND: noninteractive
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: ${{ needs.plan.outputs.script-repo }}
+          ref: ${{ needs.plan.outputs.script-sha }}
+          fetch-depth: 1
+          path: .workflow
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 1
+          path: game
+
+      - name: Packages
+        if: matrix.platform == 'linux'
+        run: |
+          "$GITHUB_WORKSPACE/.workflow/tools/ci/install-linux-packages.sh"
+
+      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
+        if: matrix.platform == 'windows'
+        with:
+          arch: x64
+
+      - name: Compiler
+        if: matrix.platform == 'linux'
+        run: |
+          echo "CC=gcc" >> "$GITHUB_ENV"
+          echo "CXX=g++" >> "$GITHUB_ENV"
+
+      - name: Restore shadercross
+        id: shadercross
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ${{ env.EMERALD_CACHE_DIR }}/shadercross/*/bin
+          key: shadercross-${{ runner.os }}-${{ hashFiles('game/tools/shadercross/**') }}
+          restore-keys: shadercross-${{ runner.os }}-
+
+      - name: Configure
+        run: cmake --preset "${{ matrix.preset }}" -DEMERALD_WARNINGS_AS_ERRORS=ON ${{ matrix.cmake_args }}
+
+      - name: Build
+        id: build
+        run: cmake --build --preset "${{ matrix.preset }}" --target all 2>&1 | tee build-log.txt; exit "${PIPESTATUS[0]}"
+
+      - name: Save shadercross
+        if: steps.build.outcome == 'success' && steps.shadercross.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        continue-on-error: true
+        with:
+          path: ${{ env.EMERALD_CACHE_DIR }}/shadercross/*/bin
+          key: ${{ steps.shadercross.outputs.cache-primary-key }}
+
+      - name: Test
+        run: ctest --test-dir "build/${{ matrix.preset }}" --output-on-failure --timeout 600
+
+      - name: Package
+        run: cmake --build --preset "${{ matrix.preset }}" --target "${{ matrix.target }}"
+
+      - name: Collect archives
+        run: |
+          "$GITHUB_WORKSPACE/.workflow/tools/ci/collect-packages.sh" \
+            --preset "${{ matrix.preset }}" \
+            --dest dist \
+            --platform "${{ matrix.platform }}" \
+            --require-itch "${{ inputs.require-itch-manifest }}" \
+            --require-dxil "${{ inputs.require-dxil }}"
+
+      - name: Upload package
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: packages-${{ matrix.platform }}
+          path: game/dist/
+          if-no-files-found: error
+
+      - name: Upload logs
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: logs-package-${{ matrix.platform }}
+          path: game/build-log.txt
+          if-no-files-found: ignore
+
+  publish:
+    needs: [plan, test, package]
+    if: >-
+      always() &&
+      !cancelled() &&
+      (needs.test.result == 'success' || needs.test.result == 'skipped') &&
+      needs.package.result == 'success' &&
+      (startsWith(github.ref, 'refs/tags/') || inputs.dry-run)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: ${{ needs.plan.outputs.script-repo }}
+          ref: ${{ needs.plan.outputs.script-sha }}
+          fetch-depth: 1
+          path: .workflow
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: packages-*
+          path: packages
+
+      - name: Publish to itch.io
+        env:
+          BUTLER_API_KEY: ${{ secrets.BUTLER_API_KEY }}
+          ITCH_ROUTES: ${{ inputs.itch-games }}
+        run: |
+          set -euo pipefail
+          mapfile -t version_files < <(find packages -name VERSION | sort)
+          if [ "${#version_files[@]}" -eq 0 ]; then
+            echo "::error::No VERSION file in the package artifacts"
+            exit 1
+          fi
+          version=$(cat "${version_files[0]}")
+          for file in "${version_files[@]}"; do
+            got=$(cat "$file")
+            if [ "$got" != "$version" ]; then
+              echo "::error::CMake version mismatch: ${version} and ${got}"
+              exit 1
+            fi
+          done
+          echo "CMake project version: ${version}"
+          args=()
+          if [ "${{ inputs.dry-run }}" = "true" ]; then
+            args+=(--dry-run)
+          fi
+          .workflow/tools/ci/publish-itch.sh \
+            --archives-dir packages \
+            --user "${{ inputs.itch-user }}" \
+            --game "${{ inputs.itch-game }}" \
+            --version "$version" \
+            "${args[@]}"

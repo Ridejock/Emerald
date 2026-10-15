@@ -41,7 +41,7 @@ Dependencies, build options, per-platform setup, presets and the sandbox command
 | `EMERALD_PROFILER` | `ON` | In-game profiler: `EM_PROFILE_SCOPE`, overlay, Chrome trace. `OFF` compiles the macro to nothing |
 | `EMERALD_ASAN` | `OFF` | Build everything with AddressSanitizer (see [AddressSanitizer](testing-and-profiling.md#addresssanitizer)); not with MinGW GCC, which has no ASan runtime |
 | `EMERALD_UBSAN` / `EMERALD_TSAN` | `OFF` | UndefinedBehaviorSanitizer / ThreadSanitizer (GCC/Clang; see [AddressSanitizer](testing-and-profiling.md#addresssanitizer)); TSan not together with ASan |
-| `EMERALD_WARNINGS_AS_ERRORS` | `OFF` | `/WX` / `-Werror` on Emerald's own targets only (dependencies unaffected); CI turns it on |
+| `EMERALD_WARNINGS_AS_ERRORS` | `OFF` | `/WX` / `-Werror` on every target passed to `emerald_set_warnings` (engine and game). Dependencies that do not call it are unaffected. CI turns it on |
 | `EMERALD_LINUX_PACKAGE` | `OFF` | Linux only. Static libstdc++/libgcc, RPATH `$ORIGIN`, and the `emerald_package` target (see [Linux release package](#linux-release-package)) |
 
 The engine exports `EMERALD_WITH_IMGUI` / `EMERALD_MATH_SIMD` / `EMERALD_PROFILE` / `EMERALD_PROFILER`
@@ -111,7 +111,7 @@ cmake --build --preset debug
 
 Options can also be passed directly, e.g. `cmake --preset release -DEMERALD_USE_IMGUI=ON`.
 
-CI passes `-DEMERALD_WARNINGS_AS_ERRORS=ON` for every preset. Windows runs `debug`, `debug-asan`, `debug-full`, `release` and `profile`. Linux (GCC and Clang) runs `debug`, `release`, `debug-ubsan`, `debug-tsan` and `profile`, and the `linux-release` package job does too. A game that calls the reusable workflow gets the same flag on every preset it lists ([Releasing](releasing.md)).
+CI passes `-DEMERALD_WARNINGS_AS_ERRORS=ON` for every preset. Windows runs `debug`, `debug-asan`, `debug-full`, `release` and `profile`. Linux (GCC and Clang) runs `debug`, `release`, `debug-ubsan`, `debug-tsan` and `profile`, and the `linux-release` package job does too. A game that calls the reusable workflow gets the same flag on every preset it lists. The flag applies to a game target only when that target calls `emerald_set_warnings` ([Releasing](releasing.md#warnings)).
 
 ### Linux release package
 

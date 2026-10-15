@@ -39,7 +39,7 @@ option(EMERALD_PROFILER      "In-game profiler overlay and EM_PROFILE_SCOPE (Cor
 option(EMERALD_ASAN          "Build with AddressSanitizer (the debug-asan preset)" OFF)
 option(EMERALD_UBSAN         "Build with UndefinedBehaviorSanitizer, GCC/Clang (debug-ubsan)" OFF)
 option(EMERALD_TSAN          "Build with ThreadSanitizer, GCC/Clang (the debug-tsan preset)" OFF)
-option(EMERALD_WARNINGS_AS_ERRORS "Treat warnings in Emerald's own targets as errors (CI)" OFF)
+option(EMERALD_WARNINGS_AS_ERRORS "Treat warnings as errors on every target passed to emerald_set_warnings (CI)" OFF)
 
 # AddressSanitizer: before the dependencies, so they are built with it too (MSVC refuses to link
 # instrumented and plain STL code together).
@@ -51,7 +51,11 @@ include(cmake/Shaders.cmake)
 # Vorbis decode TU without ASan (see src/Vendor/vorbis/CMakeLists.txt).
 add_subdirectory(src/Vendor/vorbis)
 
-# Warning flags for Emerald's own targets (not third-party code). /utf-8: sources are UTF-8
+# Warning flags for one target the caller names: an engine target, or a game target.
+# Dependencies stay quiet because they do not call this, and the flags are PRIVATE.
+# A game should call emerald_set_warnings on each of its targets. option() is a cache
+# variable, so -DEMERALD_WARNINGS_AS_ERRORS=ON on the game's cmake line is visible
+# when Emerald is brought in with FetchContent. /utf-8: sources are UTF-8
 # (otherwise a non-ASCII comment warns, C4819, on e.g. CJK code pages). /Zc:__cplusplus: the real
 # value (202002L) instead of 199711L. With warnings as errors, linker (LNK) and librarian
 # warnings fail too.

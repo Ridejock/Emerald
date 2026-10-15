@@ -10,6 +10,13 @@
 # Every configure passes -DEMERALD_WARNINGS_AS_ERRORS=ON. A missing
 # BUTLER_API_KEY skips the itch upload instead of failing, so forks and pull
 # requests stay green.
+#
+# Concurrency is prefixed. Inside a called workflow github.workflow is the
+# caller's name, so an unprefixed "${{ github.workflow }}-${{ github.ref }}"
+# is the same group the caller already holds and the run deadlocks.
+#
+# tools/ci is checked out from this file's repository (job.workflow_repository
+# at job.workflow_sha). A caller does not copy those scripts.
 name: Game CI
 
 on:
@@ -75,7 +82,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  # Literal prefix so this cannot equal a caller's ${{ github.workflow }}-${{ github.ref }}.
+  group: emerald-game-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -83,28 +91,15 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     outputs:
-      script-repo: ${{ steps.ref.outputs.repo }}
-      script-sha: ${{ steps.ref.outputs.sha }}
       has-test: ${{ steps.plan.outputs.has-test }}
       test-matrix: ${{ steps.plan.outputs.test-matrix }}
       package-matrix: ${{ steps.plan.outputs.package-matrix }}
     steps:
-      - id: ref
-        shell: bash
-        run: |
-          ref="$GITHUB_WORKFLOW_REF"
-          repo="${ref%%/.github/*}"
-          if [ -z "$repo" ] || [ "$repo" = "$ref" ] || [ -z "${GITHUB_WORKFLOW_SHA}" ]; then
-            echo "::error::Cannot locate this workflow (GITHUB_WORKFLOW_REF=${ref})"
-            exit 1
-          fi
-          echo "repo=${repo}" >> "$GITHUB_OUTPUT"
-          echo "sha=${GITHUB_WORKFLOW_SHA}" >> "$GITHUB_OUTPUT"
-
+      # This workflow's repo, not the caller's. GITHUB_WORKFLOW_REF is the caller.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
-          repository: ${{ steps.ref.outputs.repo }}
-          ref: ${{ steps.ref.outputs.sha }}
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
           fetch-depth: 1
 
       - id: plan
@@ -137,8 +132,8 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
-          repository: ${{ needs.plan.outputs.script-repo }}
-          ref: ${{ needs.plan.outputs.script-sha }}
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
           fetch-depth: 1
           path: .workflow
 
@@ -218,8 +213,8 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
-          repository: ${{ needs.plan.outputs.script-repo }}
-          ref: ${{ needs.plan.outputs.script-sha }}
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
           fetch-depth: 1
           path: .workflow
 
@@ -310,8 +305,8 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
-          repository: ${{ needs.plan.outputs.script-repo }}
-          ref: ${{ needs.plan.outputs.script-sha }}
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
           fetch-depth: 1
           path: .workflow
 

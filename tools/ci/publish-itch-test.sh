@@ -50,8 +50,26 @@ if matrix --platforms macos --presets release >/dev/null 2>"$tmpdir/mac.err"; th
     fail "macos is not built by this workflow"
 fi
 
-ref='Ridejock/Emerald/.github/workflows/game.yml@refs/heads/cursor/reusable-game-ci-441d'
-[ "${ref%%/.github/*}" = "Ridejock/Emerald" ] || fail "workflow ref did not yield the repo"
+# game.yml must checkout its own repo. GITHUB_WORKFLOW_REF is the caller, and
+# parsing it made games vendor tools/ci. The concurrency group must not be the
+# same expression a caller uses, or the called workflow deadlocks.
+game_yml=$(cd "$root/../.." && pwd)/.github/workflows/game.yml
+# Patterns are GitHub Actions text, not shell.
+# shellcheck disable=SC2016
+{
+    count=$(grep -c 'repository: ${{ job.workflow_repository }}' "$game_yml" || true)
+    [ "$count" -eq 4 ] || fail "expected 4 checkouts of job.workflow_repository, got ${count}"
+    count=$(grep -c 'ref: ${{ job.workflow_sha }}' "$game_yml" || true)
+    [ "$count" -eq 4 ] || fail "expected 4 pins of job.workflow_sha, got ${count}"
+    if grep -q '\$GITHUB_WORKFLOW_REF\|needs.plan.outputs.script-repo' "$game_yml"; then
+        fail "game.yml must not locate scripts from the caller checkout"
+    fi
+    if grep -q 'group: ${{ github.workflow }}-${{ github.ref }}' "$game_yml"; then
+        fail "game.yml concurrency group collides with a caller"
+    fi
+    grep -q 'group: emerald-game-${{ github.workflow }}-${{ github.ref }}' "$game_yml" \
+        || fail "game.yml concurrency group should be scoped with emerald-game-"
+}
 
 # --- packages ---------------------------------------------------------------
 pkg=$tmpdir/pkg

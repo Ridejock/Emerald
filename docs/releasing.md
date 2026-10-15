@@ -122,3 +122,5 @@ The engine workflows do the same for every preset in `CMakePresets.json`: Window
 ## ROCK BLASTER
 
 ROCK BLASTER and ROCK BLASTER ROGUE are two games in [Ridejock/Asteroids](https://github.com/Ridejock/Asteroids) (`GAME_TITLE` / `PIXEL_TITLE` in that repo's `CMakeLists.txt`). There is no separate Rock Blaster or Rock Blaster Rogue repository. Each zip already carries `.itch.toml` (a Play action for `RockBlaster.exe` or `RockBlasterRogue.exe`), built by `cmake/Packaging.cmake` there. The caller in [docs/examples/game-ci.yml](examples/game-ci.yml) is that repo's release workflow: Windows and Linux, target `package`, the two itch slugs, and the existing GitHub Release attachment kept as a second job. Set `itch-user` to the itch.io account and `BUTLER_API_KEY` before a tag should upload.
+
+That file is the migration. A token that can read Asteroids still needs push access to open the pull request; without it, paste `docs/examples/game-ci.yml` over `.github/workflows/release.yml` (and point `uses:` at `@main` once this workflow is on Emerald's default branch).

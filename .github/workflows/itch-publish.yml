@@ -1,0 +1,40 @@
+# Demonstrates the itch publish job's two safe paths on every pull request:
+# a missing BUTLER_API_KEY skips the upload (exit 0), and butler --dry-run
+# lists the files it would push without uploading. The same script is what
+# .github/workflows/game.yml runs on a tag.
+name: itch publish
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    name: skip without BUTLER_API_KEY
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Skip path and butler dry run
+        env:
+          BUTLER_API_KEY: ${{ secrets.BUTLER_API_KEY }}
+        run: |
+          set -euo pipefail
+          # The test unsets the key itself, so this stays green even when the
+          # secret exists. --butler then dry-runs a real butler (no upload).
+          tools/ci/publish-itch-test.sh --butler
+          if [ -n "${BUTLER_API_KEY}" ]; then
+            echo "BUTLER_API_KEY is set on this repository; a tag push publishes."
+          else
+            echo "BUTLER_API_KEY is not set; a tag push skips publish and stays green."
+          fi

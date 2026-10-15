@@ -111,6 +111,8 @@ cmake --build --preset debug
 
 Options can also be passed directly, e.g. `cmake --preset release -DEMERALD_USE_IMGUI=ON`.
 
+CI passes `-DEMERALD_WARNINGS_AS_ERRORS=ON` for every preset. Windows runs `debug`, `debug-asan`, `debug-full`, `release` and `profile`. Linux (GCC and Clang) runs `debug`, `release`, `debug-ubsan`, `debug-tsan` and `profile`, and the `linux-release` package job does too. A game that calls the reusable workflow gets the same flag on every preset it lists ([Releasing](releasing.md)).
+
 ### Linux release package
 
 A self-contained x64 archive for a machine that has a GPU driver and the usual desktop libraries, and does not have Emerald's build dependencies or a copy of SDL3. CI builds it with GCC on Ubuntu 24.04 and uploads `Sandbox-linux-x64.tar.gz` (the `package` job in `.github/workflows/linux.yml`).

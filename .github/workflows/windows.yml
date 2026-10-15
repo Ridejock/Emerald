@@ -1,7 +1,8 @@
 # Windows tests: configure, build (warnings in Emerald's own code are errors) and run the tests,
 # in the debug and debug-asan presets (no ImGui: the editor tools compile out), debug-full
-# (ImGui on: the editor tools, their tests and the sandbox's panels) and release (no hot reload,
-# NDEBUG).
+# (ImGui on: the editor tools, their tests and the sandbox's panels), release (no hot reload,
+# NDEBUG) and profile (Tracy). Every preset in CMakePresets.json is built with
+# EMERALD_WARNINGS_AS_ERRORS on either this workflow or Linux CI.
 name: Windows
 
 on:
@@ -30,7 +31,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        preset: [debug, debug-asan, debug-full, release]
+        preset: [debug, debug-asan, debug-full, release, profile]
     name: ${{ matrix.preset }}
     defaults:
       run:

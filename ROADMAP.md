@@ -275,6 +275,8 @@ Done when:
 - Zero-warning policy enforced on all presets
 - Asteroids/Rock Blaster migrated to it
 
+**Status:** `.github/workflows/game.yml` is the reusable workflow (`workflow_call`). A tag publishes with butler (`--userversion` is the top-level CMake `project(VERSION)`); a missing `BUTLER_API_KEY` skips the upload instead of failing. Channels are `windows` and `linux` (no web channel; [docs/emscripten.md](docs/emscripten.md)). Inputs, the secret and a caller are in [docs/releasing.md](docs/releasing.md). Every preset is configured with warnings as errors in CI. ROCK BLASTER and ROCK BLASTER ROGUE are both the [Asteroids](https://github.com/Ridejock/Asteroids) repository (there is no separate Rock Blaster repository). The ready-to-paste caller is [docs/examples/game-ci.yml](docs/examples/game-ci.yml). This issue stays open until that caller is on Asteroids `main`.
+
 ### Phase 4 test: ship the games ([#21](https://github.com/Ridejock/Emerald/issues/21))
 
 Ship the phase games (and Rock Blaster) through the new pipeline to all supported platforms.

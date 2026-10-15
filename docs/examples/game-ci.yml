@@ -1,0 +1,72 @@
+# Ready-to-paste caller for ROCK BLASTER and ROCK BLASTER ROGUE
+# (https://github.com/Ridejock/Asteroids). Save as .github/workflows/release.yml.
+# Both games live in that one repo; there is no separate Rock Blaster repository.
+#
+# Set itch-user to the itch.io account (the slugs below must be the page URLs)
+# and the repository secret BUTLER_API_KEY. Empty itch-user, or a missing key,
+# skips the itch upload and leaves the run green. Merge the Emerald workflow
+# to main before this caller: it uses @main.
+name: Release
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  game:
+    uses: Ridejock/Emerald/.github/workflows/game.yml@main
+    with:
+      presets: release
+      platforms: windows,linux
+      package-preset: release
+      cmake-target: package
+      itch-user: ""
+      itch-games: |
+        RockBlasterRogue rock-blaster-rogue
+        RockBlaster rock-blaster
+    secrets:
+      BUTLER_API_KEY: ${{ secrets.BUTLER_API_KEY }}
+
+  # The previous release workflow attached the zips to the GitHub release of
+  # the tag. Artifacts uploaded by the reusable workflow are still available
+  # here. itch-user stays empty until the itch pages exist, so a tag does not
+  # publish to the wrong account.
+  github-release:
+    needs: game
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: packages-*
+          merge-multiple: true
+          path: dist
+
+      - name: Require an archive
+        shell: bash
+        run: |
+          shopt -s nullglob
+          files=(dist/*.zip dist/*.tar.gz)
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "::error::The package job uploaded no .zip or .tar.gz"
+            exit 1
+          fi
+
+      - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        with:
+          files: |
+            dist/*.zip
+            dist/*.tar.gz
+          fail_on_unmatched_files: false

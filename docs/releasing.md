@@ -44,6 +44,10 @@ jobs:
 
 Push to `main` or a pull request: configure, build and test each preset, then build `cmake-target` and upload the archives. Push a tag `v1.2.0`: the same, then butler. The workflow runs on every tag the caller triggers; limit that with `tags:` above.
 
+A caller may set its own concurrency group, including `group: ${{ github.workflow }}-${{ github.ref }}`. The reusable workflow uses `emerald-game-${{ github.workflow }}-${{ github.ref }}`. Inside a called workflow `github.workflow` is the caller's workflow name, so an unprefixed group is the same string the caller already holds and GitHub deadlocks the run. The prefix keeps cancel-in-progress without that collision. [docs/examples/game-ci.yml](examples/game-ci.yml) sets the caller's group.
+
+`tools/ci` (the matrix, Linux packages, archive checks, butler) is checked out from the workflow file's own repository at `job.workflow_sha`, not from the game. A caller does not copy those scripts. `GITHUB_WORKFLOW_REF` is the caller, so the workflow does not use it to find Emerald.
+
 `cmake-target` is the target the game already uses to write its archives. For a CPack game that is `package` (`cmake --build --preset release --target package`). For the engine sandbox's Linux archive it is `emerald_package` with `package-preset: linux-release` (the `linux-release` preset and `EMERALD_LINUX_PACKAGE`, the same path as the Linux CI package job). The workflow does not assemble a second zip.
 
 There is no Emscripten or web channel. `platforms: html5` (or `web`, `emscripten`, `wasm`) fails the run. SDL 3.4.16's GPU API has no WebGPU backend ([Emscripten](emscripten.md)).
@@ -115,12 +119,16 @@ The engine's `.github/workflows/linux.yml` package job is still what uploads `Sa
 
 ## Warnings
 
-Every configure in the reusable workflow passes `-DEMERALD_WARNINGS_AS_ERRORS=ON`. There is no input to turn that off. `emerald_set_warnings` applies `/WX` or `-Werror` to the engine and to a game target that calls it; dependencies are left alone.
+Every configure in the reusable workflow passes `-DEMERALD_WARNINGS_AS_ERRORS=ON`. There is no input to turn that off.
+
+`emerald_set_warnings(<target>)` is what applies `/WX` or `-Werror`. Call it on each game target. The engine already calls it on its own targets. The option is a cache variable, so FetchContent sees the `-D` flag from the game's cmake command line. Flags are private to the target that was passed in. Dependencies do not call the function, so they are unaffected. Do not add a second warnings function in the game.
+
+An engine pin from before this (the function only added `/W4` or `-Wall -Wextra -Wpedantic`) ignores the flag. Bump the pin and call `emerald_set_warnings`.
 
 The engine workflows do the same for every preset in `CMakePresets.json`: Windows `debug`, `debug-asan`, `debug-full`, `release`, `profile`; Linux `debug`, `release`, `debug-ubsan`, `debug-tsan`, `profile` (GCC and Clang) and the `linux-release` package.
 
 ## ROCK BLASTER
 
-ROCK BLASTER and ROCK BLASTER ROGUE are two games in [Ridejock/Asteroids](https://github.com/Ridejock/Asteroids) (`GAME_TITLE` / `PIXEL_TITLE` in that repo's `CMakeLists.txt`). There is no separate Rock Blaster or Rock Blaster Rogue repository. Each zip already carries `.itch.toml` (a Play action for `RockBlaster.exe` or `RockBlasterRogue.exe`), built by `cmake/Packaging.cmake` there. The caller in [docs/examples/game-ci.yml](examples/game-ci.yml) is that repo's release workflow: Windows and Linux, target `package`, the two itch slugs, and the existing GitHub Release attachment kept as a second job. Set `itch-user` to the itch.io account and `BUTLER_API_KEY` before a tag should upload.
+ROCK BLASTER and ROCK BLASTER ROGUE are two games in [Ridejock/Asteroids](https://github.com/Ridejock/Asteroids) (`GAME_TITLE` / `PIXEL_TITLE` in that repo's `CMakeLists.txt`). There is no separate Rock Blaster or Rock Blaster Rogue repository. Each zip already carries `.itch.toml` (a Play action for `RockBlaster.exe` or `RockBlasterRogue.exe`), built by `cmake/Packaging.cmake` there. The itch pages are [rock-blaster](https://ridejock.itch.io/rock-blaster) and [rock-blaster-rogue](https://ridejock.itch.io/rock-blaster-rogue).
 
-That file is the migration. A token that can read Asteroids still needs push access to open the pull request; without it, paste `docs/examples/game-ci.yml` over `.github/workflows/release.yml` (and point `uses:` at `@main` once this workflow is on Emerald's default branch).
+[docs/examples/game-ci.yml](examples/game-ci.yml) is that caller: Windows and Linux, target `package`, user `ridejock`, the two slugs, the caller's own concurrency group, and the existing GitHub Release attachment as a second job. It does not vendor `tools/ci`. Each game target calls `emerald_set_warnings` so the warnings-as-errors flag applies; an older pin needs a bump, not a local copy of the function. Set the repository secret `BUTLER_API_KEY` before a tag should upload.

@@ -255,8 +255,18 @@ private:
 
     // Text demo: one pixel font baked at three sizes (Nearest: crisp), and smooth (Linear,
     // oversampled) at a large size, scaling, measuring, alignment and Latin-1 characters.
+    // The built-in 5x7 debug font needs none of those files.
     void DrawTextDemo(Emerald::Renderer2D& r, const Vec2& size)
     {
+        // Rectangle font: no atlas. The outline is MeasureDebugText's pen box.
+        {
+            const std::string_view sample = "DEBUG TEXT";
+            constexpr i32 scale = 2;
+            const Vec2 textSize = Emerald::MeasureDebugText(sample, scale);
+            const Vec2 at{30.0f, 88.0f};
+            r.DrawRect(at - Vec2(4.0f), textSize + Vec2(8.0f), {0.35f, 0.95f, 0.55f, 0.9f});
+            Emerald::DrawDebugText(r, at, sample, {0.85f, 1.0f, 0.9f, 1.0f}, scale);
+        }
         if (!m_Shared.HasFonts())
             return;
         using Emerald::TextAlign;

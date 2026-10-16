@@ -9,6 +9,7 @@ The SDL GPU renderer, 2D shapes, camera, sprites, text, lighting, post effects a
 - [2D camera (Camera2D)](#2d-camera-camera2d)
 - [Textures and sprites](#textures-and-sprites)
 - [Text (Font)](#text-font)
+- [Debug text (DebugText)](#debug-text-debugtext)
 - [CRT post-process (CrtEffect)](#crt-post-process-crteffect)
 - [Lighting and post effects (Light.h, PostEffect.h)](#lighting-and-post-effects-lighth-posteffecth)
 - [Shaders](#shaders)
@@ -324,7 +325,37 @@ const Vec2 size = ui->MeasureText("Score: 1200");                           // w
 - `Font::LoadFromMemory(device, bytes, options)` takes a font embedded in the executable.
 
 The sandbox's text demo uses Press Start 2P (SIL Open Font License, in `sandbox/assets/fonts/`,
-see [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md)); the engine itself ships no fonts.
+see [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md)); the engine itself ships no font files.
+For a label with no assets, see [Debug text](#debug-text-debugtext).
+
+## Debug text (`DebugText`)
+
+`DrawDebugText` (`Renderer/DebugText.h`) is a built-in 5×7 font for debug overlays. It does not
+load a file or bake an atlas: each glyph is a run of filled rectangles in the current
+`Renderer2D` batch, so it needs no assets and records with no GPU (the same CPU path the tests
+use).
+
+```cpp
+r.Begin(Emerald::Mat4::OrthoPixelSpace(width, height));
+Emerald::DrawDebugText(r, {8.0f, 8.0f}, "SCORE 12", {1.0f, 1.0f, 1.0f, 1.0f}, 2);
+const Emerald::Vec2 size = Emerald::MeasureDebugText("SCORE 12", 2); // 96 x 18
+r.End();
+```
+
+- `scale` is an integer number of pixels per font pixel (1 is a 5×7 cell, 2 is easier to read).
+- Letters are uppercase only: `a` is drawn as `A`. The glyphs are `A`–`Z`, `0`–`9`, and
+  `. , : - + / ! ? ' ( )`. Space advances and draws nothing. `'\n'` starts a line, `'\r'` is
+  skipped, and any other byte is a hollow box.
+- A glyph is 5×7 with a one-column gap (advance 6) and a two-row gap under the line (line height
+  9), times `scale`. `MeasureDebugText` reports that pen width, including the gap after the last
+  glyph, and the same wrapping as `DrawDebugText`.
+- `maxWidth` of 0 does not wrap. A positive width wraps on spaces before a word that would pass
+  the limit; a word longer than the width stays on one line. `DrawDebugText` returns the y just
+  below the last line.
+- Call it between `Begin` and `End`. The rectangles are sprites of the renderer's 1×1 white
+  texture, so they batch with other filled rectangles.
+
+Real UI text still wants `Font` and a TrueType file.
 
 ## CRT post-process (`CrtEffect`)
 

@@ -58,8 +58,8 @@ target_link_libraries(EmeraldAudioTests PRIVATE Emerald::Emerald)
 emerald_set_warnings(EmeraldAudioTests)
 add_test(NAME AudioTests COMMAND EmeraldAudioTests)
 
-# Fonts (stb_truetype): metrics, measuring, layout and DrawString, using the sandbox's demo font.
-add_executable(EmeraldFontTests TestMain.cpp FontTests.cpp)
+# Fonts (stb_truetype) and the built-in 5x7 debug text.
+add_executable(EmeraldFontTests TestMain.cpp FontTests.cpp DebugTextTests.cpp)
 target_link_libraries(EmeraldFontTests PRIVATE Emerald::Emerald)
 target_compile_definitions(EmeraldFontTests PRIVATE
     EMERALD_TEST_FONT="${PROJECT_SOURCE_DIR}/sandbox/assets/fonts/PressStart2P-Regular.ttf")

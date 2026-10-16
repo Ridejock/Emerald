@@ -1,7 +1,8 @@
 #pragma once
 
-// Tiny 5x7 text for the profiler overlay when ImGui is off. Not a public font: games that want
-// real text use Font / Renderer2D::DrawString.
+// Tiny 5x7 text for the profiler overlay when ImGui is off. Scope names can contain quotes and
+// lowercase, so this stays separate from the public uppercase font in Renderer/DebugText.h.
+// Games that want real text use Font / Renderer2D::DrawString.
 
 #include <string_view>
 

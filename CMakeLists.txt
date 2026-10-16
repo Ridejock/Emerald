@@ -129,6 +129,7 @@ add_library(Emerald STATIC
     src/Renderer/Texture.cpp
     src/Renderer/TextureAtlas.cpp
     src/Renderer/Font.cpp
+    src/Renderer/DebugText.cpp
     src/Renderer/CrtEffect.cpp
     src/Renderer/PostChain.cpp
     src/Particles/ParticleSystem.cpp

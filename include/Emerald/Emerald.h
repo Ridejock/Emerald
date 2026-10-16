@@ -43,6 +43,7 @@
 #include "Emerald/Renderer/Animation.h"
 #include "Emerald/Renderer/Camera2D.h"
 #include "Emerald/Renderer/CrtEffect.h"
+#include "Emerald/Renderer/DebugText.h"
 #include "Emerald/Renderer/Font.h"
 #include "Emerald/Renderer/Light.h"
 #include "Emerald/Renderer/Pipeline.h"

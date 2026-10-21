@@ -344,8 +344,9 @@ r.End();
 
 - `scale` is an integer number of pixels per font pixel (1 is a 5×7 cell, 2 is easier to read).
 - Letters are uppercase only: `a` is drawn as `A`. The glyphs are `A`–`Z`, `0`–`9`, and
-  `. , : - + / ! ? ' ( )`. Space advances and draws nothing. `'\n'` starts a line, `'\r'` is
-  skipped, and any other byte is a hollow box.
+  `. , : ; - + / ! ? ' ( ) [ ] > %`. Space advances and draws nothing. `'\n'` starts a line,
+  `'\r'` is skipped, and any other byte is a hollow box. `DebugTextHasGlyph` is true for a
+  drawn glyph (either letter case), and for space, newline, and carriage return.
 - A glyph is 5×7 with a one-column gap (advance 6) and a two-row gap under the line (line height
   9), times `scale`. `MeasureDebugText` reports that pen width, including the gap after the last
   glyph, and the same wrapping as `DrawDebugText`.

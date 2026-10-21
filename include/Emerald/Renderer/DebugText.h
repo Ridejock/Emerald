@@ -4,7 +4,7 @@
 // no atlas: the quads go through Renderer2D's sprite batch. Call DrawDebugText between Begin
 // and End. Letters are uppercase only ('a' is drawn as 'A').
 //
-// Glyphs: A-Z, 0-9, and . , : - + / ! ? ' ( )
+// Glyphs: A-Z, 0-9, and . , : ; - + / ! ? ' ( ) [ ] > %
 // Space advances and draws nothing. '\n' starts a line, '\r' is skipped. Any other byte is a
 // hollow box. For real UI text, use Font and DrawString.
 
@@ -34,6 +34,10 @@ inline constexpr i32 kDebugTextLineHeight = 9; // rows, plus a two-row gap
 // (pen advance, including the gap after the last glyph of a line). `maxWidth` of 0 does not
 // wrap. Empty text is (0, one line). A non-positive scale is (0, 0).
 [[nodiscard]] Vec2 MeasureDebugText(std::string_view text, i32 scale = 1, f32 maxWidth = 0.0f);
+
+// True when DrawDebugText draws `code` as itself. Space, newline, and carriage return are
+// layout. A letter matches in either case. A byte that draws the hollow box is false.
+[[nodiscard]] bool DebugTextHasGlyph(char code);
 
 // Top-left of the first line. `maxWidth` of 0 draws one line per '\n' and does not wrap; a
 // positive width wraps on spaces before a word that would pass the right edge. A word longer

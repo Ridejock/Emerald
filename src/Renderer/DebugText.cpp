@@ -7,6 +7,15 @@ namespace Emerald {
 namespace {
 
 // Five columns, seven rows. '#' is ink. A run of '#' on one row is one rectangle.
+// One object, so a missing glyph is this pointer and not a lookalike literal.
+constexpr char kMissingRows[] = "#####"
+                                 "#...#"
+                                 "#...#"
+                                 "#...#"
+                                 "#...#"
+                                 "#...#"
+                                 "#####";
+
 const char* GlyphRows(char code)
 {
     switch (code) {
@@ -386,14 +395,48 @@ const char* GlyphRows(char code)
                "..#.."
                "..#.."
                ".#...";
+    case ';':
+        return "....."
+               "..#.."
+               "..#.."
+               "....."
+               "..#.."
+               "..#.."
+               ".#...";
+    case '[':
+        return ".##.."
+               ".#..."
+               ".#..."
+               ".#..."
+               ".#..."
+               ".#..."
+               ".##..";
+    case ']':
+        return "..##."
+               "...#."
+               "...#."
+               "...#."
+               "...#."
+               "...#."
+               "..##.";
+    case '>':
+        return ".#..."
+               "..#.."
+               "...#."
+               "....#"
+               "...#."
+               "..#.."
+               ".#...";
+    case '%':
+        return "##..#"
+               "##.#."
+               "...#."
+               "..#.."
+               ".#..."
+               ".#.##"
+               "#..##";
     default:
-        return "#####"
-               "#...#"
-               "#...#"
-               "#...#"
-               "#...#"
-               "#...#"
-               "#####";
+        return kMissingRows;
     }
 }
 
@@ -487,6 +530,13 @@ Layout LayoutText(const Vec2& position, std::string_view text, i32 scale, f32 ma
 }
 
 } // namespace
+
+bool DebugTextHasGlyph(char code)
+{
+    if (code == ' ' || code == '\n' || code == '\r')
+        return true;
+    return GlyphRows(Upper(code)) != kMissingRows;
+}
 
 Vec2 MeasureDebugText(std::string_view text, i32 scale, f32 maxWidth)
 {

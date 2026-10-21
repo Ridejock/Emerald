@@ -400,6 +400,46 @@ const GlyphSpec kGlyphs[] = {
      "..#.."
      "..#.."
      ".#..."},
+    {';',
+     "....."
+     "..#.."
+     "..#.."
+     "....."
+     "..#.."
+     "..#.."
+     ".#..."},
+    {'[',
+     ".##.."
+     ".#..."
+     ".#..."
+     ".#..."
+     ".#..."
+     ".#..."
+     ".##.."},
+    {']',
+     "..##."
+     "...#."
+     "...#."
+     "...#."
+     "...#."
+     "...#."
+     "..##."},
+    {'>',
+     ".#..."
+     "..#.."
+     "...#."
+     "....#"
+     "...#."
+     "..#.."
+     ".#..."},
+    {'%',
+     "##..#"
+     "##.#."
+     "...#."
+     "..#.."
+     ".#..."
+     ".#.##"
+     "#..##"},
 };
 
 const char* kBox = "#####"
@@ -530,10 +570,14 @@ TEST(DebugTextWrapsOnSpaces)
 
 TEST(DebugTextGlyphCoverage)
 {
-    CHECK(sizeof(kGlyphs) / sizeof(kGlyphs[0]) == 47);
+    CHECK(sizeof(kGlyphs) / sizeof(kGlyphs[0]) == 52);
+    CHECK(DebugTextHasGlyph('A') && DebugTextHasGlyph('a') && DebugTextHasGlyph(' '));
+    CHECK(DebugTextHasGlyph('>') && DebugTextHasGlyph('[') && DebugTextHasGlyph(']'));
+    CHECK(DebugTextHasGlyph(';') && DebugTextHasGlyph('%'));
+    CHECK(!DebugTextHasGlyph('@') && !DebugTextHasGlyph('{') && !DebugTextHasGlyph('_'));
 
     std::vector<u64> masks;
-    masks.reserve(48);
+    masks.reserve(53);
     const u64 box = Mask(kBox);
     masks.push_back(box);
 
@@ -580,7 +624,7 @@ TEST(DebugTextGlyphCoverage)
 
     Renderer2D unknown;
     unknown.Begin(Mat4::Identity());
-    DrawDebugText(unknown, at, "@%\t", kInk, scale);
+    DrawDebugText(unknown, at, "@#\t", kInk, scale);
     unknown.End();
     const std::vector<Rect> boxes = Drawn(unknown);
     std::vector<Rect> expected;
@@ -611,5 +655,5 @@ TEST(DebugTextGlyphCoverage)
     CHECK_NEAR(right, 15.0f);
     CHECK_NEAR(MeasureDebugText("E", 3).x, 18.0f);
 
-    CHECK(alphabet.size() == 47);
+    CHECK(alphabet.size() == 52);
 }

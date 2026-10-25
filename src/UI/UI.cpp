@@ -987,16 +987,19 @@ void Ui::EndPopup()
                 m_Items[i].Rect.Size.x = Max(0.0f, m_Items[i].Rect.Size.x - inset);
         }
         const f32 x = popup->Panel.Position.x + popup->Panel.Size.x - m_Style->Padding - bar;
+        // Held by value: the thumb's Emplace can reallocate m_Items, which would dangle a
+        // reference to the track.
+        const UiRect barRect{{std::round(x), std::round(popup->ContentTop)},
+                             {std::round(bar), std::round(popup->ViewHeight)}};
         UiItem& track = Emplace(kNoLocal);
         track.Kind = UiKind::Scrollbar;
         track.Amount = 0.0f;
-        track.Rect = {{std::round(x), std::round(popup->ContentTop)},
-                      {std::round(bar), std::round(popup->ViewHeight)}};
+        track.Rect = barRect;
         popup->Track = m_Items.size() - 1;
         UiItem& thumb = Emplace(kNoLocal);
         thumb.Kind = UiKind::Scrollbar;
         thumb.Amount = 1.0f;
-        thumb.Rect = track.Rect;
+        thumb.Rect = barRect;
         popup->Thumb = m_Items.size() - 1;
     }
 

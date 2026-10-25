@@ -27,7 +27,7 @@ void Frame(Ui& ui, const std::function<void()>& describe, const UiInput& input =
 }
 
 // A key press (down this frame) in one direction or on Accept.
-UiInput Press(UiButton UiInput::* button)
+UiInput Press(UiButton UiInput::*button)
 {
     UiInput input;
     (input.*button) = {.Held = true, .Pressed = true};
@@ -359,10 +359,13 @@ TEST(UiReadsActions)
     CHECK(in.Down.Held && in.Down.Pressed && !in.Up.Held);
     CHECK(in.Accept.Pressed && !in.Back.Pressed);
     CHECK(in.Click.Pressed && in.MouseMoved);
-    CHECK(in.Mouse == Vec2(50.0f, 60.0f)); // the caller's (UI-space) position
-    // Rebinding works like for any action.
+    CHECK(in.Mouse == Vec2(50.0f, 60.0f));                     // the caller's (UI-space) position
+    CHECK(!in.AcceptPrompt.empty() && !in.BackPrompt.empty()); // the bound keys, for PromptBar
+    // Rebinding works like for any action, and the prompt follows the new key.
     input.RebindAction(kUiAccept, {Key::J});
-    CHECK(!ReadUiInput(input, {}).Accept.Held);
+    const UiInput rebound = ReadUiInput(input, {});
+    CHECK(!rebound.Accept.Held);
+    CHECK(rebound.AcceptPrompt == "J");
     // Blocked (e.g. during a scene transition): nothing, the mouse included.
     input.SetBlocked(true);
     in = ReadUiInput(input, {});
@@ -399,4 +402,379 @@ TEST(UiDrawRecordsSprites)
     DrawNineSlice(nine, frame, {{10.0f, 10.0f}, {100.0f, 50.0f}}, 4.0f, 2.0f);
     nine.End();
     CHECK(nine.GetSpriteCount() == 9u);
+}
+
+// Pop-ups close at once in these tests; the fade has its own test. No prompt glyphs, so no bar.
+void InstantPopups(Ui& ui)
+{
+    ui.GetStyle().PopupOpenSeconds = 0.0f;
+    ui.GetStyle().PopupCloseSeconds = 0.0f;
+    ui.GetStyle().PopupMaxRows = 3;
+    ui.GetStyle().PopupGap = 4.0f;
+}
+
+UiPopupOptions PopupBox(UiPopupAnchor anchor = UiPopupAnchor::Center)
+{
+    return {.Width = 180.0f, .Anchor = anchor, .Screen = {400.0f, 300.0f}, .Prompt = false};
+}
+
+const UiItem* FindKind(const Ui& ui, UiKind kind, u32 scope)
+{
+    for (const UiItem& item : ui.GetItems())
+        if (item.Kind == kind && (scope == 0 || item.Scope == scope))
+            return &item;
+    return nullptr;
+}
+
+TEST(UiPopupFocusReturnsToTheOpener)
+{
+    Ui ui;
+    InstantPopups(ui);
+    bool shop = false;
+    bool potion = false;
+    const auto describe = [&] {
+        ui.BeginPanel("SHOP", {.Position = {40.0f, 30.0f}, .Width = 200.0f});
+        shop = ui.Button("Shop");
+        ui.Button("Leave");
+        ui.EndPanel();
+        if (shop)
+            ui.OpenPopup("wares");
+        if (ui.BeginPopup("wares", PopupBox())) {
+            potion = ui.Button("Potion"); // the press that opened the list must not select this
+            ui.Button("Ether");
+            ui.EndPopup();
+        }
+    };
+    Frame(ui, describe);
+    CHECK(ui.GetFocusedId() == ui.GetId("Shop"));
+    Frame(ui, describe, Press(&UiInput::Accept));
+    CHECK(shop && !potion);
+    CHECK(ui.IsPopupOpen("wares") && ui.GetPopupCount() == 1u);
+    CHECK(ui.GetFocusedId() == ui.GetId("Potion"));
+    Frame(ui, describe, Press(&UiInput::Back));
+    CHECK(!ui.IsPopupOpen("wares") && ui.WasPopupClosed("wares"));
+    CHECK(ui.GetFocusedId() == ui.GetId("Shop"));
+    CHECK(ui.GetPopupCount() == 0u);
+}
+
+TEST(UiPopupStackRestoresEachOpener)
+{
+    Ui ui;
+    InstantPopups(ui);
+    bool shop = false;
+    bool potion = false;
+    bool yes = false;
+    const auto describe = [&] {
+        shop = ui.Button("Shop");
+        if (shop)
+            ui.OpenPopup("wares");
+        if (ui.BeginPopup("wares", PopupBox())) {
+            potion = ui.Button("Potion");
+            ui.Button("Ether");
+            if (potion)
+                ui.OpenPopup("confirm");
+            ui.EndPopup();
+        }
+        if (ui.BeginPopup("confirm", PopupBox())) {
+            ui.Label("Buy it?");
+            yes = ui.Button("Yes");
+            if (ui.Button("No"))
+                ui.ClosePopup();
+            ui.EndPopup();
+        }
+    };
+    Frame(ui, describe, Press(&UiInput::Accept)); // Shop opens the list; focus lands on Potion
+    CHECK(ui.GetPopupCount() == 1u && ui.GetFocusedId() == ui.GetId("Potion"));
+    Frame(ui, describe, Press(&UiInput::Accept)); // Potion opens confirm; Yes is not also pressed
+    CHECK(!yes && ui.GetPopupCount() == 2u);
+    CHECK(ui.GetFocusedId() == ui.GetId("Yes"));
+    Frame(ui, describe, Press(&UiInput::Down));
+    CHECK(ui.GetFocusedId() == ui.GetId("No"));
+    Frame(ui, describe, Press(&UiInput::Accept)); // No closes confirm
+    CHECK(!ui.IsPopupOpen("confirm") && ui.IsPopupOpen("wares"));
+    CHECK(ui.GetFocusedId() == ui.GetId("Potion"));
+    CHECK(ui.GetPopupCount() == 1u);
+    Frame(ui, describe, Press(&UiInput::Back));
+    CHECK(!ui.IsPopupOpen("wares") && ui.GetFocusedId() == ui.GetId("Shop"));
+}
+
+TEST(UiPopupScrollsWhenTheListIsLongerThanTheWindow)
+{
+    Ui ui;
+    InstantPopups(ui); // three visible rows, row 28 + gap 6
+    constexpr i32 kRows = 8;
+    // A panel on the screen under the list: layout has to scroll anyway (every item, panels
+    // included, shares one local-y list).
+    const auto describe = [&] {
+        ui.BeginPanel("##shop", {.Position = {8.0f, 8.0f}, .Width = 80.0f});
+        ui.Button("Shop");
+        ui.EndPanel();
+        if (ui.BeginPopup("list", PopupBox())) {
+            for (i32 i = 0; i < kRows; ++i)
+                ui.Button("Row " + std::to_string(i));
+            ui.EndPopup();
+        }
+    };
+    // Opened from outside the describe: the list is the whole pop-up.
+    ui.OpenPopup("list");
+    Frame(ui, describe);
+    CHECK(ui.GetFocusedId() == ui.GetId("Row 0"));
+    CHECK(ui.GetPopupScroll() == 0.0f);
+    CHECK(Find(ui, ui.GetId("Row 0")).Shown);
+    CHECK(!Find(ui, ui.GetId("Row 3")).Shown);
+    const UiItem* thumbItem = nullptr;
+    const UiItem* trackItem = nullptr;
+    for (const UiItem& item : ui.GetItems()) {
+        if (item.Kind != UiKind::Scrollbar)
+            continue;
+        if (item.Amount > 0.5f)
+            thumbItem = &item;
+        else
+            trackItem = &item;
+    }
+    CHECK(thumbItem != nullptr && trackItem != nullptr);
+    if (thumbItem && trackItem)
+        CHECK(thumbItem->Rect.Size.y < trackItem->Rect.Size.y);
+
+    Frame(ui, describe, Press(&UiInput::Down));
+    Frame(ui, describe, Press(&UiInput::Down));
+    CHECK(ui.GetFocusedId() == ui.GetId("Row 2"));
+    CHECK(ui.GetPopupScroll() == 0.0f); // still inside the three visible rows
+    Frame(ui, describe, Press(&UiInput::Down));
+    CHECK(ui.GetFocusedId() == ui.GetId("Row 3"));
+    CHECK_NEAR(ui.GetPopupScroll(), 34.0f); // one row (28 + 6) so Row 3 sits in the window
+    CHECK(!Find(ui, ui.GetId("Row 0")).Shown);
+    CHECK(Find(ui, ui.GetId("Row 3")).Shown);
+
+    // Row 3 is focused. Three Ups return to Row 0; one more wraps to the last row.
+    Frame(ui, describe, Press(&UiInput::Up));
+    Frame(ui, describe, Press(&UiInput::Up));
+    Frame(ui, describe, Press(&UiInput::Up));
+    CHECK(ui.GetFocusedId() == ui.GetId("Row 0"));
+    CHECK(ui.GetPopupScroll() == 0.0f);
+    Frame(ui, describe, Press(&UiInput::Up));
+    CHECK(ui.GetFocusedId() == ui.GetId("Row 7"));
+    CHECK(ui.GetPopupScroll() > 34.0f);
+    CHECK(Find(ui, ui.GetId("Row 7")).Shown);
+    CHECK(!Find(ui, ui.GetId("Row 0")).Shown);
+}
+
+TEST(UiPopupCancelClosesWithoutUsingTheScreen)
+{
+    Ui ui;
+    InstantPopups(ui);
+    bool shop = false;
+    bool left = false;
+    const auto describe = [&] {
+        ui.BeginPanel("##shop", {.Position = {80.0f, 40.0f}, .Width = 160.0f});
+        shop = ui.Button("Shop");
+        ui.EndPanel();
+        if (shop)
+            ui.OpenPopup("wares");
+        if (ui.BeginPopup("wares", PopupBox())) {
+            ui.Button("Potion");
+            ui.EndPopup();
+        }
+        if (ui.WasBackPressed())
+            left = true;
+    };
+    Frame(ui, describe, Press(&UiInput::Accept));
+    CHECK(ui.IsPopupOpen("wares") && !left);
+    Frame(ui, describe, Press(&UiInput::Back));
+    CHECK(!ui.IsPopupOpen("wares") && ui.WasPopupClosed("wares"));
+    CHECK(!left); // the screen's Back runs only once the pop-up is gone
+    CHECK(!shop);
+    CHECK(ui.GetFocusedId() == ui.GetId("Shop"));
+
+    Frame(ui, describe, Press(&UiInput::Accept));
+    UiInput outside;
+    outside.Mouse = {2.0f, 2.0f}; // the shop panel sits at (80, 40); this misses both
+    outside.Click = {.Held = true, .Pressed = true};
+    shop = false;
+    Frame(ui, describe, outside);
+    CHECK(!ui.IsPopupOpen("wares") && !shop);
+
+    // Let the centered box settle (height comes from the previous frame) before pressing it.
+    Frame(ui, describe, Press(&UiInput::Accept));
+    Frame(ui, describe);
+    UiRect box;
+    bool found = false;
+    for (const UiItem& item : ui.GetItems())
+        if (item.Kind == UiKind::Panel && item.Scope != 0) {
+            box = item.Rect;
+            found = true;
+        }
+    CHECK(found);
+    UiInput inside = outside;
+    inside.Mouse = box.GetCenter();
+    Frame(ui, describe, inside); // press on the box: it stays open
+    CHECK(ui.IsPopupOpen("wares"));
+}
+
+TEST(UiPopupBackDuringTheFadeDoesNotLeaveTheScreen)
+{
+    Ui ui;
+    ui.GetStyle().PopupOpenSeconds = 0.0f;
+    ui.GetStyle().PopupCloseSeconds = 0.2f;
+    bool left = false;
+    const auto describe = [&] {
+        if (ui.Button("Shop"))
+            ui.OpenPopup("wares");
+        if (ui.BeginPopup("wares", PopupBox())) {
+            ui.Button("Potion");
+            ui.EndPopup();
+        }
+        if (ui.WasBackPressed())
+            left = true;
+    };
+    Frame(ui, describe, Press(&UiInput::Accept));
+    CHECK(ui.IsPopupOpen("wares") && !left);
+    Frame(ui, describe, Press(&UiInput::Back)); // starts the fade; this press is consumed
+    CHECK(ui.IsPopupOpen("wares") && !ui.WasPopupClosed("wares") && !left);
+    Frame(ui, describe, Press(&UiInput::Back)); // a second Back while it is still fading
+    CHECK(ui.IsPopupOpen("wares") && !left);
+    int frames = 0;
+    while (ui.IsPopupOpen("wares") && frames < 30) {
+        Frame(ui, describe);
+        ++frames;
+    }
+    CHECK(frames > 1); // it faded, rather than snapping shut on the second Back
+    CHECK(!ui.IsPopupOpen("wares") && ui.WasPopupClosed("wares") && !left);
+    CHECK(ui.GetFocusedId() == ui.GetId("Shop"));
+    Frame(ui, describe, Press(&UiInput::Back));
+    CHECK(left); // the screen hears Back only once the pop-up is gone
+}
+
+TEST(UiPopupAnchorsUnderTheOpenerOrInTheCenter)
+{
+    Ui ui;
+    InstantPopups(ui);
+    const auto describe = [&] {
+        ui.BeginPanel("##shop", {.Position = {40.0f, 50.0f}, .Width = 200.0f});
+        if (ui.Button("Shop"))
+            ui.OpenPopup("##list");
+        ui.EndPanel();
+        if (ui.BeginPopup("##list", PopupBox(UiPopupAnchor::Opener))) {
+            ui.Button("One");
+            ui.EndPopup();
+        }
+    };
+    Frame(ui, describe, Press(&UiInput::Accept));
+    const UiItem* popup = nullptr;
+    for (const UiItem& item : ui.GetItems())
+        if (item.Kind == UiKind::Panel && item.Scope != 0)
+            popup = &item;
+    CHECK(popup != nullptr);
+    // Shop button: panel (40, 50), padding 12, so the row is (52, 62) and 28 tall. Gap is 4.
+    if (popup)
+        CHECK(popup->Rect.Position == Vec2(52.0f, 94.0f));
+
+    Ui centered;
+    InstantPopups(centered);
+    const auto describeCenter = [&] {
+        if (centered.BeginPopup("##list", PopupBox())) {
+            centered.Button("One");
+            centered.EndPopup();
+        }
+    };
+    centered.OpenPopup("##list");
+    Frame(centered, describeCenter); // height not known yet
+    Frame(centered, describeCenter);
+    const UiItem* box = nullptr;
+    for (const UiItem& item : centered.GetItems())
+        if (item.Kind == UiKind::Panel)
+            box = &item;
+    CHECK(box != nullptr);
+    // 180 wide, padding 12 + one row 28 + padding 12 = 52 tall, centered in 400 x 300.
+    if (box) {
+        CHECK(box->Rect.Position == Vec2(110.0f, 124.0f));
+        CHECK(FindKind(centered, UiKind::Backdrop, box->Scope) != nullptr);
+    }
+}
+
+TEST(UiPopupPromptBarUsesTheBindingGlyphs)
+{
+    Ui ui;
+    InstantPopups(ui);
+    UiInput input;
+    input.AcceptPrompt = "A";
+    input.BackPrompt = "B";
+    const auto describe = [&] {
+        if (ui.BeginPopup("list", {.Width = 200.0f, .Screen = {400.0f, 300.0f}})) {
+            ui.Button("One");
+            ui.EndPopup();
+        }
+    };
+    ui.OpenPopup("list");
+    Frame(ui, describe, input);
+    const UiItem* prompt = FindKind(ui, UiKind::Prompt, 0);
+    CHECK(prompt != nullptr);
+    CHECK(prompt->Text == "A  Confirm      B  Back");
+}
+
+TEST(UiPopupFadesWithTheStyleTimes)
+{
+    Ui ui;
+    ui.GetStyle().PopupOpenSeconds = 1.0f;
+    ui.GetStyle().PopupCloseSeconds = 0.0f;
+    ui.OpenPopup("list");
+    const auto describe = [&] {
+        ui.BeginPanel("##screen", {.Position = {10.0f, 10.0f}, .Width = 120.0f});
+        ui.Button("Shop");
+        ui.EndPanel();
+        if (ui.BeginPopup("list", PopupBox())) {
+            ui.Button("One");
+            ui.EndPopup();
+        }
+    };
+    ui.Begin({}, 0.25f);
+    describe();
+    ui.End();
+    const UiItem* panel = nullptr;
+    for (const UiItem& item : ui.GetItems())
+        if (item.Kind == UiKind::Panel)
+            panel = &item;
+    CHECK(panel != nullptr);
+    if (panel)
+        CHECK(panel->Alpha == 0.25f);                // a quarter of PopupOpenSeconds
+    CHECK(Find(ui, ui.GetId("Shop")).Alpha == 1.0f); // the screen under it does not fade
+    ui.Begin({}, 1.0f);
+    describe();
+    ui.End();
+    for (const UiItem& item : ui.GetItems())
+        if (item.Kind == UiKind::Panel)
+            panel = &item;
+    if (panel)
+        CHECK(panel->Alpha == 1.0f);
+}
+
+TEST(UiStyleLoadsFromJsonAndRejectsABadFile)
+{
+    UiStyle style;
+    CHECK(style.PopupMaxRows == 8);
+    CHECK(!LoadUiStyle(style, "{"));
+    CHECK(style.PopupMaxRows == 8); // a broken file changes nothing
+    const char* json = R"({
+        "maxVisibleRows": 5,
+        "openSeconds": 0.2,
+        "closeSeconds": 0,
+        "rowHeight": 32,
+        "promptConfirm": "Choose",
+        "backdrop": [0, 0, 0, 0.4],
+        "text": [1, 1, 1]
+    })";
+    CHECK(LoadUiStyle(style, json));
+    CHECK(style.PopupMaxRows == 5);
+    CHECK_NEAR(style.PopupOpenSeconds, 0.2f);
+    CHECK(style.PopupCloseSeconds == 0.0f);
+    CHECK(style.RowHeight == 32.0f);
+    CHECK(style.PromptConfirm == "Choose");
+    CHECK(style.PromptCancel == "Back"); // absent key: the default stays
+    CHECK(style.Spacing == 6.0f);
+    CHECK_NEAR(style.PopupBackdrop.w, 0.4f);
+    CHECK(style.Text.w == 1.0f); // three components: opaque
+    CHECK(!LoadUiStyle(style, R"({"maxVisibleRows": "lots"})"));
+    CHECK(style.PopupMaxRows == 5);
+    CHECK(!LoadUiStyleFile(style, "no/such/popup.json"));
+    CHECK(style.PopupMaxRows == 5);
 }

@@ -459,6 +459,41 @@ the controls, Defaults / Back. Rock Blaster's options menu would be the same few
 `Slider` per volume (step 0.1), `Toggle`s for fullscreen, vsync, shake, particles, CRT and rock
 bounce, and `Back`; its auto-repeating Left / Right is `UiStyle::RepeatDelay` / `RepeatRate`.
 
+### Pop-ups
+
+A pop-up (a dropdown or a confirm) is the same immediate-mode UI, drawn over the screen and given
+the focus until it closes. `OpenPopup` remembers the focused widget. `BeginPopup` / `EndPopup`
+describe it (title is the part of the id before `##`). Several can be open; only the top one
+takes input. `Back` or a click outside closes the top one and the focus returns to its opener.
+`WasBackPressed` stays false while a pop-up is open or fading out, so the screen underneath does
+not also leave. `ClosePopup` does the same from a button.
+
+```cpp
+if (ui.Button("Buy"))
+    ui.OpenPopup("Wares");
+if (ui.BeginPopup("Wares", {.Width = 280.0f, .Anchor = Emerald::UiPopupAnchor::Opener,
+                            .Screen = view})) {
+    for (const std::string_view item : wares)
+        if (ui.Button(item)) ui.OpenPopup("Confirm");
+    ui.EndPopup();
+}
+```
+
+`UiPopupAnchor::Center` puts it in the middle of `Screen` (last frame's height, like a panel).
+`Opener` puts it under the widget that opened it, or above that widget when it would leave the
+screen. Rows past `UiStyle::PopupMaxRows` (or `UiPopupOptions::MaxRows`) scroll, and a bar shows
+on the right. `PopupOpenSeconds` / `PopupCloseSeconds` fade it; 0 snaps. The line under the list
+is `PromptBar`: the glyphs are the `UiAccept` / `UiBack` bindings (`ReadUiInput` fills them; a
+connected pad wins, otherwise the first key) and the words are `PromptConfirm` / `PromptCancel`.
+Call `PromptBar` in an ordinary panel for the same line.
+
+Those fields, and the shared look (row height, padding, colors, text scale), load from JSON with
+`LoadUiStyle` / `LoadUiStyleFile`. Missing keys keep the current values; a broken file changes
+nothing and is logged. `PanelSprite` is not in the file.
+
+The sandbox's shop (`sandbox/src/PopupScene.h`, "Pop-ups" on the title or `--popup`) opens a
+scrolling list and a confirm on top of it. Its look is `sandbox/assets/ui/popup.json`.
+
 ## Dialogue (`Dialogue/`)
 
 Branching conversations, modeled on Jari Komppa's

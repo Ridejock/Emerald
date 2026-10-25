@@ -165,6 +165,24 @@ Done when:
 
 **Status:** done (`UI/UI.h`: immediate-mode widgets, layout, focus navigation and `UiStyle`; `UiTests`; the sandbox's options screen, `OptionsScene.h`).
 
+### Dropdown / pop-up window ([#42](https://github.com/Ridejock/Emerald/issues/42))
+
+A widget that opens over the current screen, so a shop or a battle menu can keep large text
+instead of crowding every option onto one panel.
+
+Done when:
+- Opens anchored to its opener or centered, with an optional dimmed backdrop
+- Owns focus while open and returns it to the opener when closed; pop-ups stack
+- Navigation is the UI actions only; Back or a click outside closes the top one
+- Scrolls when the list is longer than the visible rows, with a scroll indicator
+- Padding, line height, text scale, max rows, colors and open/close timing live in `UiStyle`
+  (JSON via `LoadUiStyle`), and the prompt bar uses the bound Accept / Back glyphs
+- Unit tests for focus, stacking, scrolling and cancel, plus a sandbox scene
+
+**Status:** done (`UI/UI.h`: `OpenPopup` / `BeginPopup` / `EndPopup`, focus stack, scrolling,
+`PromptBar`, `LoadUiStyle`; `UiTests`; the sandbox's shop, `PopupScene.h` / `--popup`,
+`sandbox/assets/ui/popup.json`).
+
 ### 2D lighting, normal maps and a post-effect chain ([#13](https://github.com/Ridejock/Emerald/issues/13))
 
 Point/spot lights with normal-mapped sprites and an ambient term, plus a configurable chain of fullscreen post effects; the existing CRT effect becomes one effect in the chain.

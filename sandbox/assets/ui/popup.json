@@ -1,0 +1,23 @@
+{
+  "rowHeight": 36,
+  "spacing": 10,
+  "padding": 18,
+  "textScale": 1,
+  "maxVisibleRows": 6,
+  "openSeconds": 0.12,
+  "closeSeconds": 0.08,
+  "popupGap": 6,
+  "scrollbar": 8,
+  "text": [0.9, 0.95, 0.95, 1],
+  "textFocused": [1, 1, 1, 1],
+  "title": [0.45, 0.95, 0.62, 1],
+  "panelFill": [0.04, 0.08, 0.09, 0.96],
+  "panelBorder": [0.18, 0.8, 0.44, 1],
+  "widget": [0.1, 0.16, 0.18, 1],
+  "highlight": [0.18, 0.8, 0.44, 1],
+  "backdrop": [0.01, 0.03, 0.04, 0.62],
+  "scroll": [0.18, 0.8, 0.44, 1],
+  "scrollTrack": [1, 1, 1, 0.16],
+  "promptConfirm": "Confirm",
+  "promptCancel": "Back"
+}

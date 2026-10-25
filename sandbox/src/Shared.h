@@ -4,7 +4,8 @@
 // startup (fonts, sprite sheets, the blip), a factory for the other scenes, the transitions and
 // the hero's animation logic. The scenes: TitleScene.h, DemoScene.h, TilemapScene.h,
 // SwarmScene.h, PlatformerScene.h, PauseScene.h, OptionsScene.h, LightingScene.h,
-// DialogueScene.h and ParticlesScene.h; main.cpp creates them (SandboxShared::Make) and runs the
+// DialogueScene.h, ParticlesScene.h and PopupScene.h; main.cpp creates them (SandboxShared::Make)
+// and runs the
 // global parts, including the Tweaks panel (Emerald/Editor/Tweak.h).
 
 #include <algorithm>
@@ -29,7 +30,8 @@ enum class SceneId : u8 {
     Options,
     Lighting,
     Dialogue,
-    Particles
+    Particles,
+    Popup
 };
 
 // (--frames, --screenshot, --capture, --record and --replay are the engine's: DevOptions.h.)

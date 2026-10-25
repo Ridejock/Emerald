@@ -10,7 +10,7 @@ platformer physics, scenes, UI, dialogue and audio. All dependencies are fetched
 - **`Emerald::Emerald`**: the engine library.
 - **`Emerald::Math`**: a header-only math library (vectors, `Mat4`, optional SSE), included by the engine.
 - **`sandbox/`**: an example app, organised as scenes on the scene stack (title, camera demo, tilemap room,
-  entity swarm, platformer, pause, options, lighting, dialogue, particles). It is also the quickest way to see the engine run.
+  entity swarm, platformer, pause, options, lighting, dialogue, particles, pop-ups). It is also the quickest way to see the engine run.
 - **`tests/`**: unit-test executables run with `ctest`.
 
 What is planned next is in [ROADMAP.md](ROADMAP.md), with one GitHub issue per feature.

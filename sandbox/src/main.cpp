@@ -39,6 +39,7 @@
 #include "ParticlesScene.h"
 #include "PauseScene.h"
 #include "PlatformerScene.h"
+#include "PopupScene.h"
 #include "Shared.h"
 #include "SwarmScene.h"
 #include "TilemapScene.h"
@@ -196,12 +197,14 @@ protected:
                 return std::make_unique<DialogueScene>(m_Shared);
             case SceneId::Particles:
                 return std::make_unique<ParticlesScene>(m_Shared);
+            case SceneId::Popup:
+                return std::make_unique<PopupScene>(m_Shared);
             }
             return nullptr;
         };
         // --demo / --tilemap / --swarm / --platformer (screenshots, the benchmark) start there at
         // once (--options over the title); otherwise the title fades in from black.
-        if (m_Shared.Options.Start == SceneId::Options)
+        if (m_Shared.Options.Start == SceneId::Options || m_Shared.Options.Start == SceneId::Popup)
             GetScenes().Push(m_Shared.Make(SceneId::Title));
         if (m_Shared.Options.Start)
             GetScenes().Push(m_Shared.Make(*m_Shared.Options.Start));
@@ -750,6 +753,8 @@ SandboxOptions ParseOptions(i32 argc, char** argv)
             options.Start = SceneId::Dialogue;
         } else if (arg == "--particles") {
             options.Start = SceneId::Particles;
+        } else if (arg == "--popup") {
+            options.Start = SceneId::Popup;
         } else if (arg == "--pan") {
             options.Room.Pan = true;
         } else if (arg == "--stats") {

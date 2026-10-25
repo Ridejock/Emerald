@@ -58,6 +58,9 @@ public:
             case 7:
                 GetStack()->Replace(m_Shared.Make(SceneId::Particles), FadeBlack());
                 break;
+            case 8: // an overlay: the shop stays over the title
+                GetStack()->Push(m_Shared.Make(SceneId::Popup));
+                break;
             default:
                 m_Shared.App.Quit();
                 break;
@@ -115,7 +118,7 @@ private:
     SandboxShared& m_Shared;
     MenuDemo m_Menu{"EMERALD",
                     {"Camera demo", "Tilemap room", "Entity swarm", "Platformer", "Options",
-                     "Lighting", "Dialogue", "Particles", "Quit"},
+                     "Lighting", "Dialogue", "Particles", "Pop-ups", "Quit"},
                     "Up/Down + Enter"};
     HeroSprite m_Hero{m_Shared.Hero};
     f32 m_Time = 0.0f;

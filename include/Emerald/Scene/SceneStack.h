@@ -7,13 +7,12 @@
 #include <vector>
 
 #include "Emerald/Core/Defines.h"
+#include "Emerald/Core/Event.h"
 #include "Emerald/Math/Vec2.h"
 #include "Emerald/Math/Vec3.h"
+#include "Emerald/Renderer/Gpu.h"
 #include "Emerald/Tween/Easing.h"
 #include "Emerald/Tween/Tween.h"
-
-union SDL_Event;
-struct SDL_GPURenderPass;
 
 namespace Emerald {
 
@@ -53,11 +52,11 @@ public:
     virtual void OnExit() {}   // leaving the stack (popped, replaced, cleared); destroyed next
     virtual void OnPause() {}  // another scene was pushed on top of this one
     virtual void OnResume() {} // the scene on top was popped: this one is the top again
-    virtual void OnEvent(const SDL_Event& /*event*/) {} // the focused scene only
+    virtual void OnEvent(const Event& /*event*/) {} // the focused scene only
     virtual void OnFixedUpdate(f32 /*dt*/) {}
     virtual void OnUpdate(f32 /*dt*/) {}
     virtual void OnRender2D(Renderer2D& /*r*/) {} // Begin / Draw* / End, as in the app
-    virtual void OnRender(SDL_GPURenderPass* /*renderPass*/) {} // raw draw calls, below the 2D
+    virtual void OnRender(GpuRenderPass* /*renderPass*/) {} // raw draw calls, below the 2D
     virtual void OnImGui() {} // only with ImGui (EMERALD_WITH_IMGUI); every scene on the stack
 
     [[nodiscard]] const std::string& GetName() const { return m_Name; }
@@ -140,14 +139,14 @@ public:
     void ExitAll();
 
     // --- The loop (Application calls these after its own hooks) ---
-    void OnEvent(const SDL_Event& event);
+    void OnEvent(const Event& event);
     void FixedUpdate(f32 dt);
     // Set by Application each frame after the fixed steps (ApplicationSpec::InterpolateRendering).
     void SetRenderAlpha(f32 alpha) { m_RenderAlpha = alpha; }
     [[nodiscard]] f32 GetRenderAlpha() const { return m_RenderAlpha; }
     // The scenes, then the transition, then the queued changes.
     void Update(f32 dt);
-    void Render(SDL_GPURenderPass* pass);
+    void Render(GpuRenderPass* pass);
     // The drawn scenes bottom to top, then the transition's cover on top of them.
     void Render2D(Renderer2D& r, Vec2 viewSize);
     void ImGui();

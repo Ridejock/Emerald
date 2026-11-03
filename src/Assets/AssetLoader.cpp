@@ -8,8 +8,8 @@ namespace Emerald {
 
 Sound AssetLoader::MakePlaceholderSound()
 {
-    const usize frames = static_cast<usize>(kMixSpec.freq) / 10;
-    return Sound(std::vector<f32>(frames * static_cast<usize>(kMixSpec.channels), 0.0f));
+    const usize frames = static_cast<usize>(kMixSampleRate) / 10;
+    return Sound(std::vector<f32>(frames * static_cast<usize>(kMixChannels), 0.0f));
 }
 
 Image MakeCheckerImage()

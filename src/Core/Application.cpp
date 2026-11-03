@@ -9,6 +9,7 @@
 #include <SDL3/SDL.h>
 
 #include "Emerald/Core/Defines.h"
+#include "Platform/SdlCast.h"
 #include "Emerald/Core/Log.h"
 #include "Emerald/Core/Paths.h"
 #include "Emerald/Core/Profile.h"
@@ -110,7 +111,7 @@ Application::Application(const ApplicationSpec& spec)
                           driver)) {
         EM_CORE_ERROR("Failed to create SDL GPU device: {}", SDL_GetError());
         // Hide the (empty) main window so only the explanation is visible.
-        SDL_HideWindow(m_Window->GetNativeWindow());
+        SDL_HideWindow(Sdl(m_Window->GetNativeWindow()));
         const std::string message =
             std::string("Emerald could not initialize the GPU.\n\n"
                         "A graphics driver supporting Vulkan, Direct3D 12 or Metal\n"
@@ -188,9 +189,7 @@ int Application::Run()
         m_Mouse.BeginFrame();
         {
             EM_PROFILE_SCOPE("Events");
-            SDL_Event event;
-            while (SDL_PollEvent(&event))
-                ProcessEvent(event);
+            IngestPolledEvents();
         }
 
         const u64 now = SDL_GetTicksNS();
@@ -253,7 +252,7 @@ int Application::Run()
                 SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Emerald - rendering failed",
                                          "The GPU stopped rendering frames (see the log). The "
                                          "application will close.",
-                                         m_Window->GetNativeWindow());
+                                         Sdl(m_Window->GetNativeWindow()));
                 exitCode = 1;
                 m_Running = false;
             }
@@ -308,94 +307,108 @@ void Application::SetTextInputEnabled(bool enabled)
         m_Window->SetTextInputEnabled(enabled);
 }
 
-void Application::ProcessEvent(const SDL_Event& event)
+void Application::IngestPolledEvents()
 {
+    SDL_Event event;
+    while (SDL_PollEvent(&event)) {
 #if EMERALD_WITH_IMGUI
-    ImGui_ImplSDL3_ProcessEvent(&event);
-    // While an ImGui text field is being edited, key presses go to ImGui only. (WantTextInput,
-    // not WantCaptureKeyboard: with keyboard navigation on, the latter is true whenever an ImGui
-    // window has focus, which would block the game.) Key-ups always pass, so no key stays stuck.
-    const bool imguiWantsKeys = ImGui::GetIO().WantTextInput;
-    const bool imguiWantsMouse = ImGui::GetIO().WantCaptureMouse; // the cursor is over ImGui
+        ImGui_ImplSDL3_ProcessEvent(&event);
+        // While an ImGui text field is being edited, key presses go to ImGui only. (WantTextInput,
+        // not WantCaptureKeyboard: with keyboard navigation on, the latter is true whenever an
+        // ImGui window has focus, which would block the game.) Key-ups always pass, so no key
+        // stays stuck.
+        const bool imguiWantsKeys = ImGui::GetIO().WantTextInput;
+        const bool imguiWantsMouse = ImGui::GetIO().WantCaptureMouse; // the cursor is over ImGui
 #else
-    const bool imguiWantsKeys = false;
-    const bool imguiWantsMouse = false;
+        const bool imguiWantsKeys = false;
+        const bool imguiWantsMouse = false;
 #endif
 
-    switch (event.type) {
-    case SDL_EVENT_QUIT:
-    case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
-        m_Running = false;
-        break;
-    case SDL_EVENT_KEY_DOWN:
+        switch (event.type) {
+        case SDL_EVENT_QUIT:
+        case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
+            m_Running = false;
+            break;
+        case SDL_EVENT_KEY_DOWN:
 #if EMERALD_WITH_IMGUI
-        // F1 shows / hides the whole ImGui overlay (the debug panels and editor tools).
-        if (event.key.scancode == SDL_SCANCODE_F1 && !event.key.repeat && !imguiWantsKeys)
-            m_ImGuiVisible = !m_ImGuiVisible;
+            // F1 shows / hides the whole ImGui overlay (the debug panels and editor tools).
+            if (event.key.scancode == SDL_SCANCODE_F1 && !event.key.repeat && !imguiWantsKeys)
+                m_ImGuiVisible = !m_ImGuiVisible;
 #endif
-        // F3 is the profiler panel (text when ImGui is hidden or absent). F4 writes profile.json,
-        // or the --profile-trace path when one was given.
-        if (!event.key.repeat && !imguiWantsKeys) {
-            if (event.key.scancode == SDL_SCANCODE_F3)
-                Profiler::Get().ToggleOverlay();
-            else if (event.key.scancode == SDL_SCANCODE_F4)
-                SaveProfilerTrace();
+            // F3 is the profiler panel (text when ImGui is hidden or absent). F4 writes
+            // profile.json, or the --profile-trace path when one was given.
+            if (!event.key.repeat && !imguiWantsKeys) {
+                if (event.key.scancode == SDL_SCANCODE_F3)
+                    Profiler::Get().ToggleOverlay();
+                else if (event.key.scancode == SDL_SCANCODE_F4)
+                    SaveProfilerTrace();
+            }
+            if (!event.key.repeat && !imguiWantsKeys)
+                m_Keyboard.OnKeyDown(static_cast<Key>(event.key.scancode));
+            break;
+        case SDL_EVENT_KEY_UP:
+            m_Keyboard.OnKeyUp(static_cast<Key>(event.key.scancode));
+            break;
+        case SDL_EVENT_TEXT_INPUT:
+            if (!imguiWantsKeys && event.text.text != nullptr)
+                m_TextInput.emplace_back(event.text.text);
+            break;
+        case SDL_EVENT_WINDOW_FOCUS_LOST:
+            // We will not see key-ups (or gamepad events) while another window has focus.
+            m_Keyboard.ReleaseAll();
+            m_Gamepads.ReleaseAll();
+            m_Mouse.ReleaseAll();
+            break;
+        case SDL_EVENT_MOUSE_BUTTON_DOWN:
+        case SDL_EVENT_MOUSE_BUTTON_UP:
+            // Clicks on the ImGui overlay are for ImGui (releases always go through).
+            if (!event.button.down || !imguiWantsMouse)
+                m_Mouse.OnButton(static_cast<MouseButton>(event.button.button), event.button.down);
+            break;
+        case SDL_EVENT_MOUSE_MOTION:
+            m_Mouse.OnMotion({event.motion.x, event.motion.y});
+            break;
+        case SDL_EVENT_MOUSE_WHEEL: {
+            // Over the ImGui overlay it scrolls ImGui. Flipped back to "y > 0 is up" for natural
+            // scrolling.
+            const f32 flip = event.wheel.direction == SDL_MOUSEWHEEL_FLIPPED ? -1.0f : 1.0f;
+            if (!imguiWantsMouse)
+                m_Mouse.OnWheel(Vec2(event.wheel.x, event.wheel.y) * flip);
+            break;
         }
-        if (!event.key.repeat && !imguiWantsKeys)
-            m_Keyboard.OnKeyDown(event.key.scancode);
-        break;
-    case SDL_EVENT_KEY_UP:
-        m_Keyboard.OnKeyUp(event.key.scancode);
-        break;
-    case SDL_EVENT_TEXT_INPUT:
-        if (!imguiWantsKeys && event.text.text != nullptr)
-            m_TextInput.emplace_back(event.text.text);
-        break;
-    case SDL_EVENT_WINDOW_FOCUS_LOST:
-        // We will not see key-ups (or gamepad events) while another window has focus.
-        m_Keyboard.ReleaseAll();
-        m_Gamepads.ReleaseAll();
-        m_Mouse.ReleaseAll();
-        break;
-    case SDL_EVENT_MOUSE_BUTTON_DOWN:
-    case SDL_EVENT_MOUSE_BUTTON_UP:
-        // Clicks on the ImGui overlay are for ImGui (releases always go through).
-        if (!event.button.down || !imguiWantsMouse)
-            m_Mouse.OnButton(static_cast<MouseButton>(event.button.button), event.button.down);
-        break;
-    case SDL_EVENT_MOUSE_MOTION:
-        m_Mouse.OnMotion({event.motion.x, event.motion.y});
-        break;
-    case SDL_EVENT_MOUSE_WHEEL: {
-        // Over the ImGui overlay it scrolls ImGui. Flipped back to "y > 0 is up" for natural
-        // scrolling.
-        const f32 flip = event.wheel.direction == SDL_MOUSEWHEEL_FLIPPED ? -1.0f : 1.0f;
-        if (!imguiWantsMouse)
-            m_Mouse.OnWheel(Vec2(event.wheel.x, event.wheel.y) * flip);
-        break;
+        case SDL_EVENT_WINDOW_MOUSE_LEAVE:
+            m_Mouse.OnLeave();
+            break;
+        case SDL_EVENT_GAMEPAD_ADDED:
+            m_Gamepads.Open(static_cast<GamepadId>(event.gdevice.which));
+            break;
+        case SDL_EVENT_GAMEPAD_REMOVED:
+            m_Gamepads.Close(static_cast<GamepadId>(event.gdevice.which));
+            break;
+        case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
+        case SDL_EVENT_GAMEPAD_BUTTON_UP:
+            m_Gamepads.OnButton(static_cast<GamepadId>(event.gbutton.which),
+                                static_cast<GamepadButton>(event.gbutton.button),
+                                event.gbutton.down);
+            break;
+        case SDL_EVENT_GAMEPAD_AXIS_MOTION:
+            // Sticks are -32768..32767, triggers 0..32767.
+            m_Gamepads.OnAxis(static_cast<GamepadId>(event.gaxis.which),
+                              static_cast<GamepadAxis>(event.gaxis.axis),
+                              static_cast<f32>(event.gaxis.value) / 32767.0f);
+            break;
+        default:
+            break;
+        }
+
+        // Games see Emerald events only. Kinds the engine does not map are dropped.
+        if (const std::optional<Event> translated = TranslateEvent(event))
+            ProcessEvent(*translated);
     }
-    case SDL_EVENT_WINDOW_MOUSE_LEAVE:
-        m_Mouse.OnLeave();
-        break;
-    case SDL_EVENT_GAMEPAD_ADDED:
-        m_Gamepads.Open(event.gdevice.which);
-        break;
-    case SDL_EVENT_GAMEPAD_REMOVED:
-        m_Gamepads.Close(event.gdevice.which);
-        break;
-    case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
-    case SDL_EVENT_GAMEPAD_BUTTON_UP:
-        m_Gamepads.OnButton(event.gbutton.which, static_cast<GamepadButton>(event.gbutton.button),
-                            event.gbutton.down);
-        break;
-    case SDL_EVENT_GAMEPAD_AXIS_MOTION:
-        // Sticks are -32768..32767, triggers 0..32767.
-        m_Gamepads.OnAxis(event.gaxis.which, static_cast<GamepadAxis>(event.gaxis.axis),
-                          static_cast<f32>(event.gaxis.value) / 32767.0f);
-        break;
-    default:
-        break;
-    }
+}
+
+void Application::ProcessEvent(const Event& event)
+{
     OnEvent(event);
     m_Scenes.OnEvent(event);
 }
@@ -420,13 +433,13 @@ FrameStatus Application::RenderFrame()
 
     // Copy passes (uploads) must happen before the render pass: first record the app's 2D shapes
     // and upload them, then ImGui's vertex/index data.
-    SDL_GPUCommandBuffer* cmd = m_Renderer->GetCommandBuffer();
+    GpuCommandBuffer* cmd = m_Renderer->GetCommandBuffer();
     // The scenes first, then the app's own 2D (e.g. a debug overlay over every scene).
     m_Scenes.Render2D(*m_Renderer2D, Vec2(GetWindowSize()));
     OnRender2D(*m_Renderer2D);
     m_Renderer2D->Upload(cmd);
 #if EMERALD_WITH_IMGUI
-    ImGui_ImplSDLGPU3_PrepareDrawData(drawData, cmd);
+    ImGui_ImplSDLGPU3_PrepareDrawData(drawData, Sdl(cmd));
 #endif
 
     // Draw order: the app's own draw calls, then the 2D shapes, then the ImGui overlay on top.
@@ -434,9 +447,9 @@ FrameStatus Application::RenderFrame()
     // draws it into the frame's target, and ImGui is drawn over that (unaffected).
     const u32 width = m_Renderer->GetFrameWidth();
     const u32 height = m_Renderer->GetFrameHeight();
-    SDL_GPUTexture* output = m_Renderer->GetRenderTarget();
-    SDL_GPUTexture* scene = m_Post.GetSceneTarget(width, height);
-    SDL_GPURenderPass* pass =
+    GpuTexture* output = m_Renderer->GetRenderTarget();
+    GpuTexture* scene = m_Post.GetSceneTarget(width, height);
+    GpuRenderPass* pass =
         m_Renderer->BeginRenderPass(scene ? scene : output, m_Spec.ClearColor);
     OnRender(pass);
     m_Scenes.Render(pass);
@@ -471,7 +484,7 @@ FrameStatus Application::RenderFrame()
 #if EMERALD_WITH_IMGUI
     if (!pass)
         pass = m_Renderer->BeginRenderPass(output, m_Spec.ClearColor, false); // keep the image
-    ImGui_ImplSDLGPU3_RenderDrawData(drawData, cmd, pass);
+    ImGui_ImplSDLGPU3_RenderDrawData(drawData, Sdl(cmd), Sdl(pass));
 #endif
     if (pass)
         m_Renderer->EndRenderPass();
@@ -590,10 +603,10 @@ void Application::InitImGui()
     io.IniFilename = nullptr;
     ImGui::StyleColorsDark();
 
-    ImGui_ImplSDL3_InitForSDLGPU(m_Window->GetNativeWindow());
+    ImGui_ImplSDL3_InitForSDLGPU(Sdl(m_Window->GetNativeWindow()));
     ImGui_ImplSDLGPU3_InitInfo info{};
-    info.Device = m_Renderer->GetDevice();
-    info.ColorTargetFormat = m_Renderer->GetSwapchainFormat(); // ImGui draws into the swapchain
+    info.Device = Sdl(m_Renderer->GetDevice());
+    info.ColorTargetFormat = Sdl(m_Renderer->GetSwapchainFormat()); // ImGui draws into the swapchain
     info.MSAASamples = SDL_GPU_SAMPLECOUNT_1;
     ImGui_ImplSDLGPU3_Init(&info);
     m_ImGuiInitialized = true;
@@ -606,7 +619,7 @@ void Application::ShutdownImGui()
 #if EMERALD_WITH_IMGUI
     if (!m_ImGuiInitialized)
         return;
-    SDL_WaitForGPUIdle(m_Renderer->GetDevice());
+    SDL_WaitForGPUIdle(Sdl(m_Renderer->GetDevice()));
     ImGui_ImplSDLGPU3_Shutdown();
     ImGui_ImplSDL3_Shutdown();
     ImGui::DestroyContext();

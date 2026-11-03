@@ -1,11 +1,11 @@
 #pragma once
 
+#include "Emerald/Renderer/Gpu.h"
+
 #include <memory>
 #include <string>
 #include <string_view>
 #include <vector>
-
-#include <SDL3/SDL_gpu.h>
 
 #include "Emerald/Core/Defines.h"
 #include "Emerald/Math/Vec3.h"
@@ -18,13 +18,13 @@ class PostEffect {
 public:
     virtual ~PostEffect() = default;
 
-    virtual bool Init(SDL_GPUDevice* device, SDL_GPUTextureFormat format) = 0;
+    virtual bool Init(GpuDevice* device, GpuTextureFormat format) = 0;
     virtual void Shutdown() = 0;
     // `width` x `height` is the size of both textures (the swapchain's for the last effect).
     // Returns false if it could not run (nothing written); the chain then copies `source` to
     // `target` so the frame still shows the image.
-    virtual bool Apply(SDL_GPUCommandBuffer* commandBuffer, SDL_GPUTexture* source,
-                       SDL_GPUTexture* target, u32 width, u32 height, f32 deltaSeconds) = 0;
+    virtual bool Apply(GpuCommandBuffer* commandBuffer, GpuTexture* source,
+                       GpuTexture* target, u32 width, u32 height, f32 deltaSeconds) = 0;
     [[nodiscard]] virtual std::string_view GetName() const = 0;
 };
 
@@ -41,7 +41,7 @@ public:
 
     // Remembers the device and format; Init's any effects already added. Returns false if an
     // effect fails (logged). Call once after the renderer exists.
-    bool Init(SDL_GPUDevice* device, SDL_GPUTextureFormat format);
+    bool Init(GpuDevice* device, GpuTextureFormat format);
     void Shutdown();
 
     // Takes ownership. Init's the effect when the chain is already initialized. Returns its
@@ -62,23 +62,23 @@ public:
 
     // The texture to render the scene into when the chain is not empty; nullptr when it is
     // (render to the swapchain). (Re)created at `width` x `height`.
-    [[nodiscard]] SDL_GPUTexture* GetSceneTarget(u32 width, u32 height);
+    [[nodiscard]] GpuTexture* GetSceneTarget(u32 width, u32 height);
     // Runs every effect in order into `target`. No-op when empty.
-    void Apply(SDL_GPUCommandBuffer* commandBuffer, SDL_GPUTexture* target, f32 deltaSeconds);
+    void Apply(GpuCommandBuffer* commandBuffer, GpuTexture* target, f32 deltaSeconds);
 
     static constexpr usize npos = static_cast<usize>(-1);
 
 private:
     struct Target {
-        SDL_GPUTexture* Texture = nullptr;
+        GpuTexture* Texture = nullptr;
         u32 Width = 0;
         u32 Height = 0;
     };
     bool EnsureTargets(u32 width, u32 height);
     void ReleaseTargets();
 
-    SDL_GPUDevice* m_Device = nullptr;
-    SDL_GPUTextureFormat m_Format = SDL_GPU_TEXTUREFORMAT_INVALID;
+    GpuDevice* m_Device = nullptr;
+    GpuTextureFormat m_Format = GpuTextureFormat::Invalid;
     bool m_Initialized = false;
     std::vector<std::unique_ptr<PostEffect>> m_Effects;
     Target m_Scene; // the scene draws here
@@ -98,16 +98,16 @@ public:
     [[nodiscard]] const TintParams& GetParams() const { return m_Params; }
     void SetParams(const TintParams& params) { m_Params = params; }
 
-    bool Init(SDL_GPUDevice* device, SDL_GPUTextureFormat format) override;
+    bool Init(GpuDevice* device, GpuTextureFormat format) override;
     void Shutdown() override;
-    bool Apply(SDL_GPUCommandBuffer* commandBuffer, SDL_GPUTexture* source, SDL_GPUTexture* target,
+    bool Apply(GpuCommandBuffer* commandBuffer, GpuTexture* source, GpuTexture* target,
                u32 width, u32 height, f32 deltaSeconds) override;
     [[nodiscard]] std::string_view GetName() const override { return "Tint"; }
 
 private:
-    SDL_GPUDevice* m_Device = nullptr;
-    SDL_GPUGraphicsPipeline* m_Pipeline = nullptr;
-    SDL_GPUSampler* m_Sampler = nullptr;
+    GpuDevice* m_Device = nullptr;
+    GpuGraphicsPipeline* m_Pipeline = nullptr;
+    GpuSampler* m_Sampler = nullptr;
     TintParams m_Params;
 };
 

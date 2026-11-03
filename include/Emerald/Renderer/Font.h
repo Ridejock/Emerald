@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Emerald/Renderer/Gpu.h"
+
 #include <filesystem>
 #include <memory>
 #include <optional>
@@ -7,8 +9,6 @@
 #include <string_view>
 #include <unordered_map>
 #include <vector>
-
-#include <SDL3/SDL_gpu.h>
 
 #include "Emerald/Core/Defines.h"
 #include "Emerald/Math/Vec2.h"
@@ -85,16 +85,16 @@ public:
     // `device` may be null: everything but drawing works (tests, tools). Returns nullopt on
     // failure (logged).
     [[nodiscard]] static std::optional<Font>
-    Load(SDL_GPUDevice* device, const std::filesystem::path& path, const FontOptions& options = {});
+    Load(GpuDevice* device, const std::filesystem::path& path, const FontOptions& options = {});
     // From a .ttf/.otf file in memory (copied).
-    [[nodiscard]] static std::optional<Font> LoadFromMemory(SDL_GPUDevice* device,
+    [[nodiscard]] static std::optional<Font> LoadFromMemory(GpuDevice* device,
                                                             std::span<const u8> data,
                                                             const FontOptions& options = {});
 
     // A stand-in for a font that could not be loaded (the asset manager uses it): every
     // character in options.Ranges is a hollow box ("tofu"), so text still shows up, clearly
     // wrong, and measures about like real text at options.Size. `device` may be null.
-    [[nodiscard]] static Font CreatePlaceholder(SDL_GPUDevice* device, const FontOptions& options);
+    [[nodiscard]] static Font CreatePlaceholder(GpuDevice* device, const FontOptions& options);
 
     // --- Metrics, in pixels at the baked size (times `scale` where given) ---
     [[nodiscard]] f32 GetSize() const { return m_Size; }

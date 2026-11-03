@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Emerald/Renderer/Gpu.h"
+
 #include <filesystem>
 #include <map>
 #include <memory>
@@ -7,8 +9,6 @@
 #include <string>
 #include <string_view>
 #include <vector>
-
-#include <SDL3/SDL_gpu.h>
 
 #include "Emerald/Renderer/Animation.h"
 #include "Emerald/Renderer/Sprite.h"
@@ -60,7 +60,7 @@ public:
     using AnimationMap = std::map<std::string, Animation, std::less<>>;
 
     // Loads the image and the JSON. Regions outside the image are dropped (with a warning).
-    [[nodiscard]] static std::optional<TextureAtlas> Load(SDL_GPUDevice* device,
+    [[nodiscard]] static std::optional<TextureAtlas> Load(GpuDevice* device,
                                                           const std::filesystem::path& image,
                                                           const std::filesystem::path& json,
                                                           const TextureOptions& options = {});

@@ -5,9 +5,9 @@
 #include "Emerald/Core/Defines.h"
 #include "Emerald/Math/Vec2.h"
 
-struct SDL_Window;
-
 namespace Emerald {
+
+struct NativeWindow;
 
 struct WindowSpec {
     std::string Title = "Emerald";
@@ -22,7 +22,7 @@ struct WindowSpec {
 
 struct Image;
 
-// Owns an SDL3 window. Rendering into it is done by Emerald::Renderer (SDL GPU).
+// Owns the OS window. Rendering into it is done by Emerald::Renderer.
 class Window {
 public:
     explicit Window(const WindowSpec& spec);
@@ -32,7 +32,11 @@ public:
     Window& operator=(const Window&) = delete;
 
     [[nodiscard]] bool IsValid() const { return m_Window != nullptr; }
-    [[nodiscard]] SDL_Window* GetNativeWindow() const { return m_Window; }
+    // The platform window. Games do not need it; the engine uses it to create the renderer.
+    [[nodiscard]] NativeWindow* GetNativeWindow() const { return m_Window; }
+    // The OS cursor. Hidden cursors stay hidden until this is called with true.
+    bool SetCursorVisible(bool visible);
+    [[nodiscard]] bool IsCursorVisible() const;
     [[nodiscard]] const WindowSpec& GetSpec() const { return m_Spec; }
 
     // Current client-area size in window coordinates (the units of mouse positions). With display
@@ -56,7 +60,7 @@ public:
 
 private:
     WindowSpec m_Spec;
-    SDL_Window* m_Window = nullptr;
+    NativeWindow* m_Window = nullptr;
     bool m_TextInput = false;
 };
 

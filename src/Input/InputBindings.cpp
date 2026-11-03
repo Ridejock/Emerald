@@ -7,6 +7,7 @@
 #include <SDL3/SDL_keyboard.h>
 
 #include "Emerald/Core/Log.h"
+#include "Platform/SdlCast.h"
 
 namespace Emerald {
 
@@ -139,9 +140,8 @@ std::string GetKeyName(Key key)
 {
     // SDL's name, unless it has none or shares it with another key (both Return keys are
     // "Return"): then the number, so every key reads back as itself.
-    const auto code = static_cast<SDL_Scancode>(key);
-    const char* name = SDL_GetScancodeName(code);
-    if (name && *name && SDL_GetScancodeFromName(name) == code)
+    const char* name = SDL_GetScancodeName(Sdl(key));
+    if (name && *name && SDL_GetScancodeFromName(name) == Sdl(key))
         return name;
     return "#" + std::to_string(static_cast<u32>(key));
 }
@@ -164,8 +164,7 @@ std::optional<Key> FindKey(std::string_view name)
 
 std::string GetKeyLabel(Key key)
 {
-    const SDL_Keycode code =
-        SDL_GetKeyFromScancode(static_cast<SDL_Scancode>(key), SDL_KMOD_NONE, false);
+    const SDL_Keycode code = SDL_GetKeyFromScancode(Sdl(key), SDL_KMOD_NONE, false);
     const char* label = SDL_GetKeyName(code);
     return label && *label ? std::string(label) : GetKeyName(key);
 }

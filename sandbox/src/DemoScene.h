@@ -92,15 +92,15 @@ public:
 
     // Mouse wheel zoom (unless the mouse is over an ImGui window). Only the focused scene gets
     // events, so the wheel does nothing while paused.
-    void OnEvent(const SDL_Event& event) override
+    void OnEvent(const Emerald::Event& event) override
     {
-        if (event.type != SDL_EVENT_MOUSE_WHEEL)
+        if (event.Type != Emerald::EventType::MouseWheel)
             return;
 #if EMERALD_WITH_IMGUI
         if (ImGui::GetIO().WantCaptureMouse)
             return;
 #endif
-        m_Camera.SetZoom(m_Camera.GetZoom() * std::pow(1.15f, event.wheel.y));
+        m_Camera.SetZoom(m_Camera.GetZoom() * std::pow(1.15f, event.Wheel.Notches.y));
     }
 
     // The world goes through the camera; text and stats are a screen-space batch on top.
@@ -244,10 +244,10 @@ private:
     // The mouse in world units, if it is over the window.
     [[nodiscard]] std::optional<Vec2> GetMouseWorld() const
     {
-        if (!SDL_GetMouseFocus())
+        const Emerald::Mouse& mouseState = m_Shared.App.GetInput().GetMouse();
+        if (!mouseState.IsInWindow())
             return std::nullopt;
-        Vec2 mouse;
-        SDL_GetMouseState(&mouse.x, &mouse.y);
+        const Vec2 mouse = mouseState.GetPosition();
         // Window units -> render target pixels (they differ on high-DPI displays).
         const Vec2 pixels = mouse * (m_Camera.GetTargetSize().x / m_Shared.GetViewSize().x);
         return m_Camera.ScreenToWorld(pixels);

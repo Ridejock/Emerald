@@ -216,7 +216,7 @@ void TextureAtlas::ReplaceWith(TextureAtlas&& other)
     m_PlaceholderAnimation.Frames = {{Sprite::FromTexture(*m_Texture), 1.0f}};
 }
 
-std::optional<TextureAtlas> TextureAtlas::Load(SDL_GPUDevice* device,
+std::optional<TextureAtlas> TextureAtlas::Load(GpuDevice* device,
                                                const std::filesystem::path& image,
                                                const std::filesystem::path& json,
                                                const TextureOptions& options)

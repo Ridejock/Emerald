@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Emerald/Renderer/Gpu.h"
+
 #include <filesystem>
 #include <memory>
 #include <optional>
@@ -8,8 +10,6 @@
 #include <utility>
 #include <variant>
 #include <vector>
-
-#include <SDL3/SDL_gpu.h>
 
 #include "Emerald/Core/Defines.h"
 #include "Emerald/Math/Common.h"
@@ -202,7 +202,7 @@ public:
     // Loads the map, its external tilesets and their images (textures on `device`; with no
     // device, textures without GPU resources, for tests and tools). Returns nullopt and logs why
     // if a file is missing or the data is unusable.
-    [[nodiscard]] static std::optional<Tilemap> Load(SDL_GPUDevice* device,
+    [[nodiscard]] static std::optional<Tilemap> Load(GpuDevice* device,
                                                      const std::filesystem::path& file,
                                                      const TextureOptions& options = {});
 

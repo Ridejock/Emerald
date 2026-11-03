@@ -1,8 +1,8 @@
 #pragma once
 
-#include <string_view>
+#include "Emerald/Renderer/Gpu.h"
 
-#include <SDL3/SDL_gpu.h>
+#include <string_view>
 
 #include "Emerald/Core/Defines.h"
 
@@ -22,7 +22,7 @@ struct ShaderDesc {
 };
 
 // Loads the variant of a shader matching the device's backend (SDL_GetGPUShaderFormats).
-// Returns nullptr on failure (logged). Release with SDL_ReleaseGPUShader.
-[[nodiscard]] SDL_GPUShader* LoadShader(SDL_GPUDevice* device, const ShaderDesc& desc);
+// Returns nullptr on failure (logged). Release with ReleaseShader.
+[[nodiscard]] GpuShader* LoadShader(GpuDevice* device, const ShaderDesc& desc);
 
 } // namespace Emerald

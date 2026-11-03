@@ -54,7 +54,7 @@ public:
     static constexpr usize kVoiceCount = 32;
     static constexpr f32 kDefaultFadeMs = 10.0f;
 
-    explicit Mixer(i32 sampleRate = kMixSpec.freq);
+    explicit Mixer(i32 sampleRate = kMixSampleRate);
     ~Mixer();
 
     // Starts a sound. When all voices are busy, the oldest non-looping sound is cut off.

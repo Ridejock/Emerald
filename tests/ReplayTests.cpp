@@ -43,22 +43,22 @@ void BindPlatformer(Input& input)
 // What the scripted player does in a frame: holds keys down and lets go of them.
 void Script(Keyboard& keyboard, u64 frame)
 {
-    const auto hold = [&](SDL_Scancode key, bool down) {
+    const auto hold = [&](Key key, bool down) {
         if (down)
             keyboard.OnKeyDown(key);
         else
             keyboard.OnKeyUp(key);
     };
-    hold(SDL_SCANCODE_D, (frame >= 10 && frame < 220) || frame >= 300);
-    hold(SDL_SCANCODE_A, frame >= 230 && frame < 280);
+    hold(Key::D, (frame >= 10 && frame < 220) || frame >= 300);
+    hold(Key::A, frame >= 230 && frame < 280);
     // Taps and longer holds (variable jump height), one tap within a single frame.
-    hold(SDL_SCANCODE_SPACE, (frame >= 40 && frame < 43) || (frame >= 90 && frame < 130) ||
+    hold(Key::Space, (frame >= 40 && frame < 43) || (frame >= 90 && frame < 130) ||
                                  (frame >= 250 && frame < 262) || frame % 37 == 0);
     if (frame == 160) { // pressed and released before the frame runs
-        keyboard.OnKeyDown(SDL_SCANCODE_SPACE);
-        keyboard.OnKeyUp(SDL_SCANCODE_SPACE);
+        keyboard.OnKeyDown(Key::Space);
+        keyboard.OnKeyUp(Key::Space);
     }
-    hold(SDL_SCANCODE_S, frame >= 320 && frame < 340);
+    hold(Key::S, frame >= 320 && frame < 340);
 }
 
 // Uneven frame times, 4 to 28 ms, from a small fixed-seed generator.
@@ -198,8 +198,8 @@ TEST(InputAnswersFromReplay)
     Input live(keyboard, gamepads);
     BindPlatformer(live);
     keyboard.BeginFrame();
-    keyboard.OnKeyDown(SDL_SCANCODE_SPACE);
-    keyboard.OnKeyDown(SDL_SCANCODE_D);
+    keyboard.OnKeyDown(Key::Space);
+    keyboard.OnKeyDown(Key::D);
 
     const InputNames names = live.GetNames();
     CHECK(names.Actions == std::vector<std::string>{"Jump"});

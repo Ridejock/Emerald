@@ -186,7 +186,7 @@ std::optional<Json> ReadJson(const fs::path& file)
 struct TilemapLoader {
     Tilemap& Map;
     fs::path File; // the .tmj, for messages
-    SDL_GPUDevice* Device = nullptr;
+    GpuDevice* Device = nullptr;
     TextureOptions Options;
 
     template <typename... Args> bool Fail(spdlog::format_string_t<Args...> format, Args&&... args)
@@ -530,7 +530,7 @@ struct TilemapLoader {
     }
 };
 
-std::optional<Tilemap> Tilemap::Load(SDL_GPUDevice* device, const fs::path& file,
+std::optional<Tilemap> Tilemap::Load(GpuDevice* device, const fs::path& file,
                                      const TextureOptions& options)
 {
     const std::optional<Json> root = ReadJson(file);

@@ -1,11 +1,11 @@
 #pragma once
 
+#include "Emerald/Renderer/Gpu.h"
+
 #include <memory>
 #include <span>
 #include <string_view>
 #include <vector>
-
-#include <SDL3/SDL_gpu.h>
 
 #include "Emerald/Core/Defines.h"
 #include "Emerald/Math/Mat4.h"
@@ -91,19 +91,21 @@ public:
         u32 FirstVertex = 0; // into GetVertices() (lines) or GetSpriteVertices() (sprites)
         u32 VertexCount = 0;
         // Sprites only: the albedo (and optional normal map when lighting is on).
+        // The alias keeps the member name GpuTexture from hiding the type on the next line.
+        using TextureHandle = ::Emerald::GpuTexture;
         u32 TextureId = 0;
-        SDL_GPUTexture* GpuTexture = nullptr;
-        SDL_GPUSampler* Sampler = nullptr;
+        TextureHandle* GpuTexture = nullptr;
+        GpuSampler* Sampler = nullptr;
         u32 NormalId = 0;
-        SDL_GPUTexture* NormalTexture = nullptr;
-        SDL_GPUSampler* NormalSampler = nullptr;
+        TextureHandle* NormalTexture = nullptr;
+        GpuSampler* NormalSampler = nullptr;
     };
     // One Begin/End pair: its commands, drawn with one view-projection matrix and clip rectangle.
     // (Size is a multiple of Mat4's 16-byte alignment; implicit padding caused by an alignas
     // member would trigger MSVC warning C4324 at /W4.)
     struct Batch {
         Mat4 ViewProjection;
-        SDL_Rect Clip{};     // render-target pixels; w or h == 0: no clipping
+        PixelRect Clip{};     // render-target pixels; W or H of 0: no clipping
         u32 FirstVertex = 0; // the batch's line vertices (contiguous in GetVertices())
         u32 VertexCount = 0;
         u32 FirstCommand = 0; // into GetCommands()
@@ -120,13 +122,13 @@ public:
     // and builds the line and sprite pipelines for `colorFormat`. Returns false on failure
     // (logged). Recording shapes works without it (e.g. in tests); Upload/Render then only discard
     // them.
-    bool Init(SDL_GPUDevice* device, SDL_GPUTextureFormat colorFormat);
+    bool Init(GpuDevice* device, GpuTextureFormat colorFormat);
     void Shutdown();
 
     // --- Recording (CPU only) ---
     // `clip` (optional) limits the batch to a rectangle of the render target, in pixels with
     // (0, 0) at the top-left, e.g. to keep a letterboxed playfield out of the black bars.
-    void Begin(const Mat4& viewProjection, const SDL_Rect& clip = {});
+    void Begin(const Mat4& viewProjection, const PixelRect& clip = {});
     // The camera's view-projection, clipped to its (letterboxed) viewport.
     void Begin(const Camera2D& camera) { Begin(camera.GetViewProjection(), camera.GetClip()); }
     void End();
@@ -175,10 +177,10 @@ public:
 
     // --- GPU side (the Application calls these) ---
     // Copies this frame's vertices to the GPU. Must be called outside of any render pass.
-    void Upload(SDL_GPUCommandBuffer* commandBuffer);
+    void Upload(GpuCommandBuffer* commandBuffer);
     // Draws the uploaded batches into `renderPass`, whose target is targetWidth x targetHeight
     // pixels, then clears everything for the next frame.
-    void Render(SDL_GPUCommandBuffer* commandBuffer, SDL_GPURenderPass* renderPass, u32 targetWidth,
+    void Render(GpuCommandBuffer* commandBuffer, GpuRenderPass* renderPass, u32 targetWidth,
                 u32 targetHeight);
     // Drops everything recorded so far (Render does this too).
     void Clear();
@@ -223,15 +225,15 @@ private:
     // A GPU vertex buffer + the CPU-writable transfer buffer used to fill it. Both grow (never
     // shrink) to fit the largest frame so far.
     struct GpuStream {
-        SDL_GPUBuffer* Buffer = nullptr;
-        SDL_GPUTransferBuffer* Transfer = nullptr;
+        GpuBuffer* Buffer = nullptr;
+        GpuTransferBuffer* Transfer = nullptr;
         u32 Capacity = 0;      // bytes
         const char* Name = ""; // for log messages
 
-        bool Ensure(SDL_GPUDevice* device, u32 bytes);
+        bool Ensure(GpuDevice* device, u32 bytes);
         // Copies `bytes` from `data` into the transfer buffer; the caller then records the copy.
-        bool Fill(SDL_GPUDevice* device, const void* data, u32 bytes);
-        void Release(SDL_GPUDevice* device);
+        bool Fill(GpuDevice* device, const void* data, u32 bytes);
+        void Release(GpuDevice* device);
     };
 
     [[nodiscard]] bool CanDraw() const;
@@ -254,11 +256,11 @@ private:
     u32 m_LastFrameSprites = 0;
     u32 m_LastFrameDrawCalls = 0;
 
-    SDL_GPUDevice* m_Device = nullptr;
-    SDL_GPUGraphicsPipeline* m_Pipeline = nullptr; // lines
-    SDL_GPUGraphicsPipeline* m_SpritePipeline = nullptr;
-    SDL_GPUGraphicsPipeline* m_AdditivePipeline = nullptr; // lines, BlendMode::Additive
-    SDL_GPUGraphicsPipeline* m_AdditiveSpritePipeline = nullptr;
+    GpuDevice* m_Device = nullptr;
+    GpuGraphicsPipeline* m_Pipeline = nullptr; // lines
+    GpuGraphicsPipeline* m_SpritePipeline = nullptr;
+    GpuGraphicsPipeline* m_AdditivePipeline = nullptr; // lines, BlendMode::Additive
+    GpuGraphicsPipeline* m_AdditiveSpritePipeline = nullptr;
     GpuStream m_LineStream{.Name = "line"};
     GpuStream m_SpriteStream{.Name = "sprite"};
     // For FillRect: made by Init, or without GPU resources on first use when there is no device
@@ -268,8 +270,8 @@ private:
     Vec3 m_Ambient{0.15f, 0.15f, 0.2f};
     std::vector<Light> m_Lights;
     std::unique_ptr<Texture> m_FlatNormal; // 1x1 (128,128,255) when a sprite has no normal map
-    SDL_GPUGraphicsPipeline* m_LitSpritePipeline = nullptr;
-    SDL_GPUGraphicsPipeline* m_AdditiveLitSpritePipeline = nullptr;
+    GpuGraphicsPipeline* m_LitSpritePipeline = nullptr;
+    GpuGraphicsPipeline* m_AdditiveLitSpritePipeline = nullptr;
 };
 
 } // namespace Emerald

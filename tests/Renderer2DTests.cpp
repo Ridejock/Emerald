@@ -52,9 +52,9 @@ TEST(Renderer2DBatches)
     CHECK(batches.size() == 2);
     CHECK(batches[0].FirstVertex == 0 && batches[0].VertexCount == 2 + 6);
     CHECK(batches[1].FirstVertex == 8 && batches[1].VertexCount == 32 + 4 + 8);
-    CHECK(batches[0].Clip.w == 0); // no clip rectangle by default
-    CHECK(batches[1].Clip.x == 10 && batches[1].Clip.y == 20 && batches[1].Clip.w == 30 &&
-          batches[1].Clip.h == 40);
+    CHECK(batches[0].Clip.W == 0); // no clip rectangle by default
+    CHECK(batches[1].Clip.X == 10 && batches[1].Clip.Y == 20 && batches[1].Clip.W == 30 &&
+          batches[1].Clip.H == 40);
     CHECK(r.GetLineCount() == 4 + 22);
 
     // The polygon is closed and moved: its last segment ends at the (moved) first point.

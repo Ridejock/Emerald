@@ -15,7 +15,7 @@
 //   ApplyDecay(zap, 0.05f);                                                  // quick fade
 //   Emerald::Sound sound = ToSound(zap);
 //
-// Everything runs at the mix rate (kMixSpec.freq), mono until ToSound.
+// Everything runs at the mix rate (kMixSampleRate), mono until ToSound.
 namespace Emerald::Synth {
 
 enum class Wave : u8 {

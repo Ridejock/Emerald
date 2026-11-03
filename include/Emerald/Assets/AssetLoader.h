@@ -1,9 +1,9 @@
 #pragma once
 
+#include "Emerald/Renderer/Gpu.h"
+
 #include <filesystem>
 #include <optional>
-
-#include <SDL3/SDL_gpu.h>
 
 #include "Emerald/Assets/Image.h"
 #include "Emerald/Audio/Sound.h"
@@ -69,7 +69,7 @@ public:
 // checkerboard), a font that draws every character as a hollow box, silence, and an empty map.
 class GpuAssetLoader final : public AssetLoader {
 public:
-    explicit GpuAssetLoader(SDL_GPUDevice* device) : m_Device(device) {}
+    explicit GpuAssetLoader(GpuDevice* device) : m_Device(device) {}
 
     [[nodiscard]] std::optional<Texture> LoadTexture(const std::filesystem::path& file,
                                                      const TextureOptions& options) override;
@@ -87,7 +87,7 @@ public:
     [[nodiscard]] Font MakePlaceholderFont(const FontOptions& options) override;
 
 private:
-    SDL_GPUDevice* m_Device = nullptr;
+    GpuDevice* m_Device = nullptr;
 };
 
 // The 64 x 64 magenta/black checkerboard (8 x 8 pixel squares) used for missing textures.

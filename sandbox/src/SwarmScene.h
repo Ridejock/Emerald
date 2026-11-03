@@ -340,13 +340,12 @@ private:
     }
 
     // The mouse in window units, if it is over the window.
-    [[nodiscard]] static std::optional<Vec2> GetMouse()
+    [[nodiscard]] std::optional<Vec2> GetMouse() const
     {
-        if (!SDL_GetMouseFocus())
+        const Emerald::Mouse& mouse = m_Shared.App.GetInput().GetMouse();
+        if (!mouse.IsInWindow())
             return std::nullopt;
-        Vec2 mouse;
-        SDL_GetMouseState(&mouse.x, &mouse.y);
-        return mouse;
+        return mouse.GetPosition();
     }
 
     // Runs fn and folds its time into `ms` (a moving average, so the numbers are readable).

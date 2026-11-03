@@ -26,8 +26,8 @@ TEST(CameraDefaultIsPixelSpace)
     const Camera2D camera({1280.0f, 720.0f});
     CHECK_NEAR(camera.GetViewProjection(), Mat4::OrthoPixelSpace(1280.0f, 720.0f));
     CHECK_NEAR(camera.WorldToScreen({100.0f, 50.0f}), Vec2(100.0f, 50.0f));
-    const SDL_Rect clip = camera.GetClip();
-    CHECK(clip.x == 0 && clip.y == 0 && clip.w == 1280 && clip.h == 720);
+    const PixelRect clip = camera.GetClip();
+    CHECK(clip.X == 0 && clip.Y == 0 && clip.W == 1280 && clip.H == 720);
 }
 
 TEST(CameraLetterbox)
@@ -39,15 +39,15 @@ TEST(CameraLetterbox)
     CHECK_NEAR(vp.Position, Vec2(0.0f, 60.0f));
     CHECK_NEAR(vp.Size, Vec2(640.0f, 360.0f));
     CHECK_NEAR(camera.GetPixelsPerUnit(), 0.5f);
-    const SDL_Rect clip = camera.GetClip();
-    CHECK(clip.x == 0 && clip.y == 60 && clip.w == 640 && clip.h == 360);
+    const PixelRect clip = camera.GetClip();
+    CHECK(clip.X == 0 && clip.Y == 60 && clip.W == 640 && clip.H == 360);
     // The view's corners land on the viewport's corners.
     CHECK_NEAR(camera.WorldToScreen({0.0f, 0.0f}), Vec2(0.0f, 60.0f));
     CHECK_NEAR(camera.WorldToScreen({1280.0f, 720.0f}), Vec2(640.0f, 420.0f));
     // Odd bar sizes round outwards.
     camera.SetTargetSize({101.0f, 100.0f});
-    const SDL_Rect odd = camera.GetClip();
-    CHECK(odd.y <= 21 && odd.y + odd.h >= 79);
+    const PixelRect odd = camera.GetClip();
+    CHECK(odd.Y <= 21 && odd.Y + odd.H >= 79);
 }
 
 TEST(CameraZoomAndRotation)
@@ -162,7 +162,7 @@ TEST(CameraRenderer2DBatch)
     r.End();
     const Renderer2D::Batch& batch = r.GetBatches()[0];
     CHECK_NEAR(batch.ViewProjection, camera.GetViewProjection());
-    CHECK(batch.Clip.x == 0 && batch.Clip.y == 60 && batch.Clip.w == 1920 && batch.Clip.h == 1080);
+    CHECK(batch.Clip.X == 0 && batch.Clip.Y == 60 && batch.Clip.W == 1920 && batch.Clip.H == 1080);
 }
 
 TEST(CameraRenderInterpolation)

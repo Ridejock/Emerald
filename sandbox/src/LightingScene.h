@@ -138,7 +138,7 @@ private:
     // Procedural albedo + matching normals (bump from a height pattern).
     void BuildSurfaces()
     {
-        SDL_GPUDevice* device = m_Shared.App.GetRenderer().GetDevice();
+        Emerald::GpuDevice* device = m_Shared.App.GetRenderer().GetDevice();
         m_Floor = MakeBrick(device, 64, 64, false);
         m_FloorNormal = MakeBrick(device, 64, 64, true);
         m_Prop = MakeBlob(device, 32, 32, false);
@@ -148,7 +148,7 @@ private:
                    {{700.0f, 400.0f}, {64.0f, 96.0f}, 0.15f}};
     }
 
-    static std::optional<Emerald::Texture> MakeBrick(SDL_GPUDevice* device, i32 w, i32 h,
+    static std::optional<Emerald::Texture> MakeBrick(Emerald::GpuDevice* device, i32 w, i32 h,
                                                      bool normal)
     {
         Emerald::Image image{.Width = w, .Height = h, .Pixels = std::vector<u8>(w * h * 4)};
@@ -200,7 +200,7 @@ private:
         return bx > 0.42f || by > 0.42f ? 0.15f : 0.85f;
     }
 
-    static std::optional<Emerald::Texture> MakeBlob(SDL_GPUDevice* device, i32 w, i32 h,
+    static std::optional<Emerald::Texture> MakeBlob(Emerald::GpuDevice* device, i32 w, i32 h,
                                                     bool normal)
     {
         Emerald::Image image{.Width = w, .Height = h, .Pixels = std::vector<u8>(w * h * 4)};

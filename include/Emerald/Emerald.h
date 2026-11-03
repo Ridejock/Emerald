@@ -13,6 +13,7 @@
 #include "Emerald/Audio/Spatial.h"
 #include "Emerald/Audio/Synth.h"
 #include "Emerald/Core/Application.h"
+#include "Emerald/Core/Event.h"
 #include "Emerald/Core/FixedTimestep.h"
 #include "Emerald/Core/Log.h"
 #include "Emerald/Core/Paths.h"

@@ -7,6 +7,7 @@
 #include <SDL3/SDL.h>
 
 #include "Emerald/Core/Log.h"
+#include "Platform/SdlCast.h"
 
 namespace Emerald {
 
@@ -64,7 +65,7 @@ void ApplyReflection(const std::string& jsonPath, ShaderDesc& desc)
 
 } // namespace
 
-SDL_GPUShader* LoadShader(SDL_GPUDevice* device, const ShaderDesc& inDesc)
+GpuShader* LoadShader(GpuDevice* device, const ShaderDesc& inDesc)
 {
     SDL_GPUShaderStage stage;
     if (inDesc.Name.ends_with(".vert")) {
@@ -86,7 +87,8 @@ SDL_GPUShader* LoadShader(SDL_GPUDevice* device, const ShaderDesc& inDesc)
     ApplyReflection(basePath + ".json", desc);
 
     // Which bytecode formats does this device's backend understand?
-    const SDL_GPUShaderFormat supported = SDL_GetGPUShaderFormats(device);
+    SDL_GPUDevice* sdl = Sdl(device);
+    const SDL_GPUShaderFormat supported = SDL_GetGPUShaderFormats(sdl);
     for (const ShaderVariant& variant : kVariants) {
         if (!(supported & variant.Format))
             continue;
@@ -110,7 +112,7 @@ SDL_GPUShader* LoadShader(SDL_GPUDevice* device, const ShaderDesc& inDesc)
         info.num_storage_buffers = desc.StorageBuffers;
         info.num_uniform_buffers = desc.UniformBuffers;
 
-        SDL_GPUShader* shader = SDL_CreateGPUShader(device, &info);
+        SDL_GPUShader* shader = SDL_CreateGPUShader(sdl, &info);
         SDL_free(code);
         if (!shader) {
             EM_CORE_ERROR("SDL_CreateGPUShader({}) failed: {}", path, SDL_GetError());
@@ -118,7 +120,7 @@ SDL_GPUShader* LoadShader(SDL_GPUDevice* device, const ShaderDesc& inDesc)
         }
         EM_CORE_INFO("Loaded shader {}.{} (uniform buffers: {}, samplers: {})", inDesc.Name,
                      variant.Extension, desc.UniformBuffers, desc.Samplers);
-        return shader;
+        return FromSdl(shader);
     }
 
     EM_CORE_ERROR("LoadShader: no usable variant of '{}' for this GPU backend", inDesc.Name);

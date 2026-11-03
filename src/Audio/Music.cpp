@@ -12,6 +12,7 @@
 #define STB_VORBIS_HEADER_ONLY
 #include <stb_vorbis.c>
 
+#include "Audio/MixFormat.h"
 #include "Emerald/Audio/Sound.h"
 #include "Emerald/Core/Log.h"
 
@@ -78,7 +79,8 @@ struct MusicStream::Decoder {
     bool InitResampler()
     {
         const SDL_AudioSpec src{SDL_AUDIO_F32, SrcChannels, SrcRate};
-        Resampler = SDL_CreateAudioStream(&src, &kMixSpec);
+        const SDL_AudioSpec spec = MixSpec();
+        Resampler = SDL_CreateAudioStream(&src, &spec);
         if (!Resampler) {
             LogError("MusicStream: SDL_CreateAudioStream failed: {}", SDL_GetError());
             return false;

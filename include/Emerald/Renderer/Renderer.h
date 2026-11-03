@@ -1,17 +1,17 @@
 #pragma once
 
+#include "Emerald/Renderer/Gpu.h"
+
 #include <filesystem>
 #include <optional>
 #include <span>
 #include <string_view>
 
-#include <SDL3/SDL_gpu.h>
-
 #include "Emerald/Core/Defines.h"
 
-struct SDL_Window;
-
 namespace Emerald {
+
+struct NativeWindow;
 
 // The SDL GPU driver name for a --gpu value: "vulkan", "metal", "direct3d12" (also "d3d12"), or
 // "" for "auto" (SDL picks). Case-insensitive. nullopt if the value is not one of these.
@@ -27,7 +27,7 @@ enum class FrameStatus : u8 {
     Failed,  // a GPU call failed (logged)
 };
 
-// Thin wrapper around an SDL_GPUDevice that renders into one window's swapchain.
+// Owns the GPU device that renders into one window's swapchain.
 //
 // A frame with SDL GPU always looks like this:
 //   1. Acquire a command buffer          (BeginFrame)
@@ -48,7 +48,7 @@ public:
     // NormalizeGpuDriver ("" = auto, even if SDL_GPU_DRIVER is set), or nullopt for SDL's default
     // (the SDL_GPU_DRIVER environment variable, else auto). If a requested driver fails, it
     // retries with auto (logged). Returns false on failure; SDL_GetError() has the reason.
-    bool Init(SDL_Window* window, bool vsync, SDL_GPUShaderFormat shaderFormats,
+    bool Init(NativeWindow* window, bool vsync, ShaderFormat shaderFormats,
               std::optional<std::string_view> driver = std::nullopt);
     void Shutdown();
 
@@ -57,10 +57,10 @@ public:
     // functions.
     FrameStatus BeginFrame();
     // Starts a render pass that clears the swapchain texture to `clearColor`.
-    SDL_GPURenderPass* BeginRenderPass(const SDL_FColor& clearColor);
+    GpuRenderPass* BeginRenderPass(const Color& clearColor);
     // Starts a render pass into any texture (e.g. an offscreen one for post-processing), cleared
     // to `clearColor` or, with `clear` = false, keeping what is already there.
-    SDL_GPURenderPass* BeginRenderPass(SDL_GPUTexture* target, const SDL_FColor& clearColor,
+    GpuRenderPass* BeginRenderPass(GpuTexture* target, const Color& clearColor,
                                        bool clear = true);
     void EndRenderPass();
     // Submits the command buffer; the swapchain texture is presented when the GPU is done.
@@ -69,7 +69,7 @@ public:
 
     // Creates a GPU buffer and uploads `data` into it: CPU -> transfer buffer -> copy pass -> GPU
     // buffer. The upload runs on its own command buffer, submitted before any later frame.
-    [[nodiscard]] SDL_GPUBuffer* CreateBuffer(SDL_GPUBufferUsageFlags usage, const void* data,
+    [[nodiscard]] GpuBuffer* CreateBuffer(GpuBufferUsage usage, const void* data,
                                               u32 size);
 
     // Saves the next rendered frame as a PNG (read back from the GPU after submission).
@@ -83,41 +83,41 @@ public:
     // is ready for another frame), so BeginFrame then doesn't wait.
     bool WaitForSwapchain();
 
-    [[nodiscard]] SDL_GPUDevice* GetDevice() const { return m_Device; }
+    [[nodiscard]] GpuDevice* GetDevice() const { return m_Device; }
     // The active backend, e.g. "vulkan", "direct3d12" or "metal" (empty before Init).
     [[nodiscard]] std::string_view GetDriverName() const;
-    [[nodiscard]] SDL_GPUCommandBuffer* GetCommandBuffer() const { return m_CommandBuffer; }
-    [[nodiscard]] SDL_GPURenderPass* GetRenderPass() const { return m_RenderPass; }
+    [[nodiscard]] GpuCommandBuffer* GetCommandBuffer() const { return m_CommandBuffer; }
+    [[nodiscard]] GpuRenderPass* GetRenderPass() const { return m_RenderPass; }
     // This frame's output texture: the swapchain's, or the screenshot capture texture.
-    [[nodiscard]] SDL_GPUTexture* GetRenderTarget() const { return m_RenderTarget; }
-    [[nodiscard]] SDL_GPUTextureFormat GetSwapchainFormat() const;
+    [[nodiscard]] GpuTexture* GetRenderTarget() const { return m_RenderTarget; }
+    [[nodiscard]] GpuTextureFormat GetSwapchainFormat() const;
     [[nodiscard]] u32 GetFrameWidth() const { return m_FrameWidth; }
     [[nodiscard]] u32 GetFrameHeight() const { return m_FrameHeight; }
 
 private:
-    SDL_GPUTexture* GetCaptureTarget(u32 width, u32 height);
+    GpuTexture* GetCaptureTarget(u32 width, u32 height);
     void FinishScreenshot();
 
-    SDL_GPUDevice* m_Device = nullptr;
-    SDL_Window* m_Window = nullptr;
+    GpuDevice* m_Device = nullptr;
+    NativeWindow* m_Window = nullptr;
     bool m_VSync = true;
 
     // Per-frame state (valid between BeginFrame and EndFrame).
-    SDL_GPUCommandBuffer* m_CommandBuffer = nullptr;
-    SDL_GPUTexture* m_SwapchainTexture = nullptr;
-    SDL_GPUTexture* m_RenderTarget = nullptr; // swapchain, or the capture texture for screenshots
-    SDL_GPURenderPass* m_RenderPass = nullptr;
+    GpuCommandBuffer* m_CommandBuffer = nullptr;
+    GpuTexture* m_SwapchainTexture = nullptr;
+    GpuTexture* m_RenderTarget = nullptr; // swapchain, or the capture texture for screenshots
+    GpuRenderPass* m_RenderPass = nullptr;
     u32 m_FrameWidth = 0;
     u32 m_FrameHeight = 0;
 
     // Screenshot support: the frame is rendered into an offscreen texture (the swapchain texture
     // is write-only), which is then blitted to the swapchain and downloaded to the CPU.
     std::optional<std::filesystem::path> m_ScreenshotPath;
-    SDL_GPUTexture* m_CaptureTexture = nullptr;
+    GpuTexture* m_CaptureTexture = nullptr;
     u32 m_CaptureWidth = 0;
     u32 m_CaptureHeight = 0;
-    SDL_GPUTransferBuffer* m_CaptureDownload = nullptr;
-    SDL_GPUFence* m_CaptureFence = nullptr;
+    GpuTransferBuffer* m_CaptureDownload = nullptr;
+    GpuFence* m_CaptureFence = nullptr;
 };
 
 } // namespace Emerald

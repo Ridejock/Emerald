@@ -182,6 +182,7 @@ int Application::Run()
         // Everything allocated from the frame arena last frame is gone from here on.
         m_FrameArena->Reset();
 
+        m_TextInput.clear();
         m_Keyboard.BeginFrame();
         m_Gamepads.BeginFrame();
         m_Mouse.BeginFrame();
@@ -301,6 +302,12 @@ int Application::Run()
     return exitCode;
 }
 
+void Application::SetTextInputEnabled(bool enabled)
+{
+    if (m_Window)
+        m_Window->SetTextInputEnabled(enabled);
+}
+
 void Application::ProcessEvent(const SDL_Event& event)
 {
 #if EMERALD_WITH_IMGUI
@@ -339,6 +346,10 @@ void Application::ProcessEvent(const SDL_Event& event)
         break;
     case SDL_EVENT_KEY_UP:
         m_Keyboard.OnKeyUp(event.key.scancode);
+        break;
+    case SDL_EVENT_TEXT_INPUT:
+        if (!imguiWantsKeys && event.text.text != nullptr)
+            m_TextInput.emplace_back(event.text.text);
         break;
     case SDL_EVENT_WINDOW_FOCUS_LOST:
         // We will not see key-ups (or gamepad events) while another window has focus.

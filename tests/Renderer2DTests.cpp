@@ -156,6 +156,27 @@ TEST(Renderer2DFillRect)
           r.GetCommands()[0].Type == Renderer2D::CommandType::Sprites);
 }
 
+TEST(Renderer2DPanelMeterAndFrame)
+{
+    Renderer2D r;
+    r.Begin(Mat4::Identity());
+    r.FillPanel({10.0f, 20.0f}, {30.0f, 40.0f}, {0.0f, 0.0f, 1.0f, 1.0f}, kWhite);
+    r.DrawMeter({0.0f, 0.0f}, {10.0f, 4.0f}, 0.5f, kWhite);
+    r.DrawFrame({8.0f, 8.0f}, {4.0f, 4.0f}, 2.0f, kWhite);
+    r.DrawFrame({0.0f, 0.0f}, {4.0f, 4.0f}, 0.0f, kWhite);
+    r.End();
+
+    // Panel fill, meter fill, and four frame bands. The zero-thickness frame adds nothing.
+    CHECK(r.GetSpriteCount() == 6);
+    CHECK(r.GetLineCount() == 8); // panel outline and meter outline, four segments each
+    const auto v = r.GetSpriteVertices();
+    CHECK_NEAR(v[0].Position, Vec2(10.0f, 20.0f));
+    CHECK(v[0].Color == Renderer2D::PackColor({0.0f, 0.0f, 1.0f, 1.0f}));
+    // Meter fill sits one pixel in and covers half of the inner width (4 of 8).
+    CHECK_NEAR(v[6].Position, Vec2(1.0f, 1.0f));
+    CHECK_NEAR(v[8].Position, Vec2(5.0f, 3.0f));
+}
+
 TEST(Renderer2DSpriteOptions)
 {
     const Texture texture = Texture::CreateWithoutGpu(10, 10);

@@ -545,6 +545,55 @@ Vec2 MeasureDebugText(std::string_view text, i32 scale, f32 maxWidth)
     return {layout.Width, layout.Bottom};
 }
 
+std::string FitDebugText(std::string_view text, i32 scale, f32 maxWidth)
+{
+    if (scale <= 0 || maxWidth <= 0.0f)
+        return {};
+    if (MeasureDebugText(text, scale).x <= maxWidth)
+        return std::string(text);
+    std::string kept;
+    kept.reserve(text.size());
+    for (const char code : text) {
+        kept.push_back(code);
+        if (MeasureDebugText(kept, scale).x > maxWidth) {
+            kept.pop_back();
+            break;
+        }
+    }
+    while (!kept.empty() && kept.back() == ' ')
+        kept.pop_back();
+    return kept;
+}
+
+std::string ClipDebugText(std::string_view text, i32 scale, f32 maxWidth, f32 maxHeight)
+{
+    if (scale <= 0 || maxWidth <= 0.0f || maxHeight <= 0.0f)
+        return {};
+    if (MeasureDebugText(text, scale, maxWidth).y <= maxHeight)
+        return std::string(text);
+    std::string kept;
+    std::string word;
+    for (usize index = 0; index <= text.size(); ++index) {
+        const bool end = index == text.size();
+        const char code = end ? ' ' : text[index];
+        if (!end && code != ' ') {
+            word.push_back(code);
+            continue;
+        }
+        if (word.empty())
+            continue;
+        std::string trial = kept;
+        if (!trial.empty())
+            trial.push_back(' ');
+        trial += word;
+        if (MeasureDebugText(trial, scale, maxWidth).y > maxHeight)
+            break;
+        kept = std::move(trial);
+        word.clear();
+    }
+    return kept;
+}
+
 f32 DrawDebugText(Renderer2D& renderer, const Vec2& position, std::string_view text,
                   const Vec4& color, i32 scale, f32 maxWidth)
 {

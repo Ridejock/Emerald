@@ -49,9 +49,15 @@ public:
     // icon comes from its resource file instead; this one is used while the game runs.
     bool SetIcon(const Image& image);
 
+    // OS text input (IME and composed characters) for this window. Key events keep arriving
+    // either way. The committed strings are collected by Application.
+    void SetTextInputEnabled(bool enabled);
+    [[nodiscard]] bool IsTextInputEnabled() const { return m_TextInput; }
+
 private:
     WindowSpec m_Spec;
     SDL_Window* m_Window = nullptr;
+    bool m_TextInput = false;
 };
 
 } // namespace Emerald

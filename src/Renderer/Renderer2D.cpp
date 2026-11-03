@@ -357,6 +357,42 @@ void Renderer2D::FillRect(const Vec2& topLeft, const Vec2& size, const Vec4& col
                {.Size = size, .Origin = {0.0f, 0.0f}, .Tint = color});
 }
 
+void Renderer2D::FillPanel(const Vec2& topLeft, const Vec2& size, const Vec4& fill,
+                           const Vec4& edge)
+{
+    FillRect(topLeft, size, fill);
+    DrawRect(topLeft, size, edge);
+}
+
+void Renderer2D::DrawMeter(const Vec2& topLeft, const Vec2& size, f32 amount, const Vec4& color)
+{
+    Vec2 box = size;
+    if (box.x < 2.0f)
+        box.x = 2.0f;
+    if (box.y < 2.0f)
+        box.y = 2.0f;
+    if (amount < 0.0f)
+        amount = 0.0f;
+    if (amount > 1.0f)
+        amount = 1.0f;
+    DrawRect(topLeft, box, color);
+    const f32 inner = amount * (box.x - 2.0f);
+    if (inner > 0.0f)
+        FillRect(topLeft + Vec2{1.0f, 1.0f}, {inner, box.y - 2.0f}, color);
+}
+
+void Renderer2D::DrawFrame(const Vec2& topLeft, const Vec2& size, f32 thickness, const Vec4& color)
+{
+    if (thickness <= 0.0f)
+        return;
+    FillRect({topLeft.x - thickness, topLeft.y - thickness},
+             {size.x + thickness * 2.0f, thickness}, color);
+    FillRect({topLeft.x - thickness, topLeft.y + size.y}, {size.x + thickness * 2.0f, thickness},
+             color);
+    FillRect({topLeft.x - thickness, topLeft.y}, {thickness, size.y}, color);
+    FillRect({topLeft.x + size.x, topLeft.y}, {thickness, size.y}, color);
+}
+
 void Renderer2D::DrawSprite(const Texture& texture, const Vec2& position,
                             const SpriteOptions& options)
 {

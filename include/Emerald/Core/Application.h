@@ -5,6 +5,8 @@
 #include <memory_resource>
 #include <optional>
 #include <span>
+#include <string>
+#include <vector>
 
 #include <SDL3/SDL_pixels.h>
 
@@ -93,6 +95,11 @@ public:
     [[nodiscard]] Renderer2D& GetRenderer2D() { return *m_Renderer2D; }
     // Action-based input: bind actions/axes to keys (e.g. in OnStart), then query them.
     [[nodiscard]] Input& GetInput() { return m_Input; }
+    // OS text input for the window. While it is on, GetTextInput() is each UTF-8 string
+    // committed since the previous frame, in order (empty when nothing was typed). Key
+    // events still arrive. An ImGui text field keeps the strings.
+    void SetTextInputEnabled(bool enabled);
+    [[nodiscard]] std::span<const std::string> GetTextInput() const { return m_TextInput; }
     // Sound playback (see Audio.h; load sounds with LoadSound).
     [[nodiscard]] Audio& GetAudio() { return m_Audio; }
     // Textures, atlases, fonts and sounds by path, loaded once and hot reloaded in debug builds.
@@ -216,6 +223,7 @@ private:
     std::unique_ptr<Assets> m_Assets; // after the renderer: its textures need the GPU device
     f32 m_FrameSeconds = 0.0f;        // last frame's time, for post effects (e.g. CRT afterglow)
     Keyboard m_Keyboard;              // raw key state, fed from SDL events
+    std::vector<std::string> m_TextInput; // SDL_EVENT_TEXT_INPUT strings this frame
     Gamepads m_Gamepads;              // raw gamepad state, fed from SDL events
     Mouse m_Mouse;                    // raw mouse state, fed from SDL events
     Audio m_Audio;

@@ -298,8 +298,8 @@ function(emerald_add_shaders target)
     endforeach()
 
     # Tell the code which formats exist, e.g. for ApplicationSpec::ShaderFormats.
-    # The mask is numeric (the SDL_GPUShaderFormat bits) so a game can assign it without
-    # including SDL. SPIR-V is bit 1, DXBC bit 2, DXIL bit 3, MSL bit 4, Metallib bit 5.
+    # The mask uses the same bits as ShaderFormat. Assign it with ShaderFormatFromMask.
+    # SPIR-V is bit 1, DXBC bit 2, DXIL bit 3, MSL bit 4, Metallib bit 5.
     set(format_bits "")
     foreach(format IN LISTS formats)
         if(format STREQUAL "PRIVATE")

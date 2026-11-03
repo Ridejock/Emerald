@@ -2,9 +2,8 @@
 
 #include <optional>
 
-#include <SDL3/SDL_rect.h>
-
 #include "Emerald/Core/Defines.h"
+#include "Emerald/Renderer/Gpu.h"
 #include "Emerald/Math/Mat4.h"
 #include "Emerald/Math/Vec2.h"
 
@@ -106,7 +105,7 @@ public:
     [[nodiscard]] f32 GetEyeRotation() const;
     [[nodiscard]] Viewport GetViewport() const;
     // The viewport rounded outwards, for Renderer2D::Begin's clip rectangle.
-    [[nodiscard]] SDL_Rect GetClip() const;
+    [[nodiscard]] PixelRect GetClip() const;
     // Target pixels per world unit (letterbox scale * zoom).
     [[nodiscard]] f32 GetPixelsPerUnit() const;
     [[nodiscard]] Mat4 GetView() const; // world -> target pixels

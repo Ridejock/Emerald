@@ -1,9 +1,9 @@
 #pragma once
 
+#include "Emerald/Renderer/Gpu.h"
+
 #include <span>
 #include <string_view>
-
-#include <SDL3/SDL_gpu.h>
 
 #include "Emerald/Core/Defines.h"
 #include "Emerald/Renderer/PostEffect.h"
@@ -53,10 +53,10 @@ public:
     CrtEffect(const CrtEffect&) = delete;
     CrtEffect& operator=(const CrtEffect&) = delete;
 
-    bool Init(SDL_GPUDevice* device, SDL_GPUTextureFormat outputFormat) override;
+    bool Init(GpuDevice* device, GpuTextureFormat outputFormat) override;
     void Shutdown() override;
     // Reads `source` (the previous chain step or the scene), writes `target`.
-    bool Apply(SDL_GPUCommandBuffer* commandBuffer, SDL_GPUTexture* source, SDL_GPUTexture* target,
+    bool Apply(GpuCommandBuffer* commandBuffer, GpuTexture* source, GpuTexture* target,
                u32 width, u32 height, f32 deltaSeconds) override;
     [[nodiscard]] std::string_view GetName() const override { return "CRT"; }
 
@@ -77,24 +77,24 @@ public:
 private:
     // An offscreen texture with its size.
     struct Target {
-        SDL_GPUTexture* Texture = nullptr;
+        GpuTexture* Texture = nullptr;
         u32 Width = 0;
         u32 Height = 0;
     };
     bool CreateTargets(u32 width, u32 height);
     void ReleaseTargets();
     // Work targets only (history + bloom); the chain owns the scene / ping textures.
-    void RunPass(SDL_GPUCommandBuffer* commandBuffer, SDL_GPUGraphicsPipeline* pipeline,
-                 const Target& target, std::span<SDL_GPUTexture* const> sources,
+    void RunPass(GpuCommandBuffer* commandBuffer, GpuGraphicsPipeline* pipeline,
+                 const Target& target, std::span<GpuTexture* const> sources,
                  const void* uniforms, u32 uniformSize);
 
-    SDL_GPUDevice* m_Device = nullptr;
-    SDL_GPUTextureFormat m_OutputFormat = SDL_GPU_TEXTUREFORMAT_INVALID;
-    SDL_GPUTextureFormat m_WorkFormat = SDL_GPU_TEXTUREFORMAT_INVALID; // history and bloom
-    SDL_GPUGraphicsPipeline* m_PhosphorPipeline = nullptr;
-    SDL_GPUGraphicsPipeline* m_BlurPipeline = nullptr;
-    SDL_GPUGraphicsPipeline* m_CompositePipeline = nullptr;
-    SDL_GPUSampler* m_Sampler = nullptr; // linear, clamp to edge
+    GpuDevice* m_Device = nullptr;
+    GpuTextureFormat m_OutputFormat = GpuTextureFormat::Invalid;
+    GpuTextureFormat m_WorkFormat = GpuTextureFormat::Invalid; // history and bloom
+    GpuGraphicsPipeline* m_PhosphorPipeline = nullptr;
+    GpuGraphicsPipeline* m_BlurPipeline = nullptr;
+    GpuGraphicsPipeline* m_CompositePipeline = nullptr;
+    GpuSampler* m_Sampler = nullptr; // linear, clamp to edge
 
     Target m_History[2]; // phosphor ping-pong: this frame's and last frame's
     Target m_Bloom[4];   // near: [0] horizontal, [1] vertical at 1/2; wide: [2], [3] at 1/4

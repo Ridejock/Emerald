@@ -6,14 +6,13 @@
 #include <span>
 #include <vector>
 
-#include <SDL3/SDL_audio.h>
-
 #include "Emerald/Core/Defines.h"
 
 namespace Emerald {
 
 // The mix format: every Sound is converted to it when loaded, so playing one is just a copy.
-inline constexpr SDL_AudioSpec kMixSpec{SDL_AUDIO_F32, 2, 48000};
+inline constexpr i32 kMixChannels = 2;
+inline constexpr i32 kMixSampleRate = 48000;
 
 // A decoded sound in the mix format: interleaved stereo f32 samples (left, right, left, ...).
 // The samples are shared and never change, so copying a Sound is cheap, and a sound that is
@@ -33,11 +32,11 @@ public:
     [[nodiscard]] bool IsEmpty() const { return GetSamples().empty(); }
     [[nodiscard]] usize GetFrameCount() const
     {
-        return GetSamples().size() / static_cast<usize>(kMixSpec.channels);
+        return GetSamples().size() / static_cast<usize>(kMixChannels);
     }
     [[nodiscard]] f32 GetDurationSeconds() const
     {
-        return static_cast<f32>(GetFrameCount()) / static_cast<f32>(kMixSpec.freq);
+        return static_cast<f32>(GetFrameCount()) / static_cast<f32>(kMixSampleRate);
     }
     // The shared samples, for the mixer.
     [[nodiscard]] const std::shared_ptr<const std::vector<f32>>& GetData() const
@@ -49,7 +48,7 @@ private:
     std::shared_ptr<const std::vector<f32>> m_Samples;
 };
 
-// Loads a .wav (SDL_LoadWAV) or .mp3 (dr_mp3) file, picked by the extension (case-insensitive).
+// Loads a .wav or .mp3 file, picked by the extension (case-insensitive).
 // Returns nothing (and logs why) if the file is missing, broken or of another type.
 [[nodiscard]] std::optional<Sound> LoadSound(const std::filesystem::path& path);
 [[nodiscard]] std::optional<Sound> LoadWav(const std::filesystem::path& path);

@@ -92,7 +92,7 @@ Font::~Font() = default;
 Font::Font(Font&&) noexcept = default;
 Font& Font::operator=(Font&&) noexcept = default;
 
-std::optional<Font> Font::Load(SDL_GPUDevice* device, const std::filesystem::path& path,
+std::optional<Font> Font::Load(GpuDevice* device, const std::filesystem::path& path,
                                const FontOptions& options)
 {
     std::ifstream file(path, std::ios::binary | std::ios::ate); // opened at the end: its size
@@ -120,7 +120,7 @@ std::optional<Font> Font::Load(SDL_GPUDevice* device, const std::filesystem::pat
     return font;
 }
 
-std::optional<Font> Font::LoadFromMemory(SDL_GPUDevice* device, std::span<const u8> data,
+std::optional<Font> Font::LoadFromMemory(GpuDevice* device, std::span<const u8> data,
                                          const FontOptions& options)
 {
     Font font;
@@ -212,7 +212,7 @@ std::optional<Font> Font::LoadFromMemory(SDL_GPUDevice* device, std::span<const 
     return font;
 }
 
-Font Font::CreatePlaceholder(SDL_GPUDevice* device, const FontOptions& options)
+Font Font::CreatePlaceholder(GpuDevice* device, const FontOptions& options)
 {
     // An 8 x 8 white outline; every glyph uses all of it, stretched to the box size.
     constexpr i32 kSide = 8;

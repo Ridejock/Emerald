@@ -2,13 +2,13 @@
 
 #include <filesystem>
 
-#include <SDL3/SDL_audio.h>
-
 #include "Emerald/Audio/Mixer.h"
 #include "Emerald/Audio/Sound.h"
 #include "Emerald/Core/Defines.h"
 
 namespace Emerald {
+
+struct AudioStream;
 
 // Sound playback on the default output device. Get it with Application::GetAudio():
 //
@@ -32,7 +32,7 @@ public:
     Audio(const Audio&) = delete;
     Audio& operator=(const Audio&) = delete;
 
-    // Called by the Application after SDL_INIT_AUDIO. Returns false if there is no device.
+    // Called by the Application after audio is initialized. Returns false if there is no device.
     bool Init();
     void Shutdown();
     [[nodiscard]] bool IsAvailable() const { return m_Stream != nullptr; }
@@ -78,27 +78,19 @@ private:
     // Locks the audio stream for the lifetime of the object (no-op without a device).
     class Lock {
     public:
-        explicit Lock(SDL_AudioStream* stream) : m_Stream(stream)
-        {
-            if (m_Stream)
-                SDL_LockAudioStream(m_Stream);
-        }
-        ~Lock()
-        {
-            if (m_Stream)
-                SDL_UnlockAudioStream(m_Stream);
-        }
+        explicit Lock(AudioStream* stream);
+        ~Lock();
         Lock(const Lock&) = delete;
         Lock& operator=(const Lock&) = delete;
 
     private:
-        SDL_AudioStream* m_Stream;
+        AudioStream* m_Stream;
     };
 
-    static void SDLCALL Callback(void* userdata, SDL_AudioStream* stream, int additionalBytes,
-                                 int totalBytes);
+    // The device callback. Defined in Audio.cpp so the backend type stays out of this header.
+    friend struct AudioCallback;
 
-    SDL_AudioStream* m_Stream = nullptr; // device stream: we push mixed audio into it
+    AudioStream* m_Stream = nullptr; // device stream: we push mixed audio into it
     Mixer m_Mixer;
 };
 

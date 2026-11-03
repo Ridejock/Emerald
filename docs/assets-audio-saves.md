@@ -108,7 +108,7 @@ audio.CrossfadeMusic("assets/audio/loop_b.ogg", 800.0f);
   `LoadWav` (`SDL_LoadWAV`), `.mp3` → `LoadMp3` ([dr_mp3](https://github.com/mackron/dr_libs),
   compiled once in `src/Vendor/dr_mp3.cpp`). MP3s are decoded to f32 at the file's own rate and
   channel count, then everything is converted with `SDL_ConvertAudioSamples` to the **mix format**
-  `kMixSpec` (f32, stereo, 48 kHz). Failures return `std::nullopt` and are logged.
+  the mix format (`kMixChannels` 2, `kMixSampleRate` 48000, f32). Failures return `std::nullopt` and are logged.
   `LoadMp3FromMemory` decodes embedded data, `MakeSound(samples, channels, rate)` converts
   generated samples. A `Sound` shares its (immutable) samples, so copies are cheap and a playing
   sound stays valid even if the game drops its `Sound`.

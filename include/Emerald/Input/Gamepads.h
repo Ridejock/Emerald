@@ -7,58 +7,53 @@
 #include <string_view>
 #include <vector>
 
-#include <SDL3/SDL_gamepad.h>
-
 #include "Emerald/Core/Defines.h"
 #include "Emerald/Input/ButtonStates.h"
 #include "Emerald/Math/Vec2.h"
 
 namespace Emerald {
 
-// Gamepad buttons in SDL's standard layout, named by position so one set of bindings works on
+// One connected pad. Stable for the process; do not store it across runs.
+using GamepadId = u32;
+
+struct GamepadDevice;
+
+// Gamepad buttons in the standard layout, named by position so one set of bindings works on
 // every pad: South is A on Xbox, Cross on PlayStation and B on Switch (see GetButtonLabel for
-// what to show in prompts). The first values are SDL_GamepadButton; after them come "virtual"
-// buttons made from analog inputs, so triggers and stick directions can be bound to actions.
+// what to show in prompts). After the physical buttons come "virtual" buttons made from analog
+// inputs, so triggers and stick directions can be bound to actions. Do not renumber: saved
+// bindings store these values.
 // clang-format off
 enum class GamepadButton : u8 {
-    South = SDL_GAMEPAD_BUTTON_SOUTH, East = SDL_GAMEPAD_BUTTON_EAST,
-    West = SDL_GAMEPAD_BUTTON_WEST, North = SDL_GAMEPAD_BUTTON_NORTH,
-    Back = SDL_GAMEPAD_BUTTON_BACK, Guide = SDL_GAMEPAD_BUTTON_GUIDE,
-    Start = SDL_GAMEPAD_BUTTON_START,
-    LeftStick = SDL_GAMEPAD_BUTTON_LEFT_STICK, RightStick = SDL_GAMEPAD_BUTTON_RIGHT_STICK,
-    LeftShoulder = SDL_GAMEPAD_BUTTON_LEFT_SHOULDER,
-    RightShoulder = SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER,
-    DPadUp = SDL_GAMEPAD_BUTTON_DPAD_UP, DPadDown = SDL_GAMEPAD_BUTTON_DPAD_DOWN,
-    DPadLeft = SDL_GAMEPAD_BUTTON_DPAD_LEFT, DPadRight = SDL_GAMEPAD_BUTTON_DPAD_RIGHT,
-    Misc1 = SDL_GAMEPAD_BUTTON_MISC1,
+    South = 0, East, West, North,
+    Back, Guide, Start,
+    LeftStick, RightStick,
+    LeftShoulder, RightShoulder,
+    DPadUp, DPadDown, DPadLeft, DPadRight,
+    Misc1,
     // Rear paddles (Xbox Elite P1..P4). On a Steam Deck: RightPaddle1 = R4, LeftPaddle1 = L4,
-    // RightPaddle2 = R5, LeftPaddle2 = L5. Values match SDL so a saved name stays put.
-    RightPaddle1 = SDL_GAMEPAD_BUTTON_RIGHT_PADDLE1,
-    LeftPaddle1 = SDL_GAMEPAD_BUTTON_LEFT_PADDLE1,
-    RightPaddle2 = SDL_GAMEPAD_BUTTON_RIGHT_PADDLE2,
-    LeftPaddle2 = SDL_GAMEPAD_BUTTON_LEFT_PADDLE2,
-    Touchpad = SDL_GAMEPAD_BUTTON_TOUCHPAD,
-    Misc2 = SDL_GAMEPAD_BUTTON_MISC2, Misc3 = SDL_GAMEPAD_BUTTON_MISC3,
-    Misc4 = SDL_GAMEPAD_BUTTON_MISC4, Misc5 = SDL_GAMEPAD_BUTTON_MISC5,
-    Misc6 = SDL_GAMEPAD_BUTTON_MISC6,
+    // RightPaddle2 = R5, LeftPaddle2 = L5.
+    RightPaddle1, LeftPaddle1, RightPaddle2, LeftPaddle2,
+    Touchpad,
+    Misc2, Misc3, Misc4, Misc5, Misc6,
 
     // Virtual: down while the (deadzoned) value is past GamepadSettings::ButtonThreshold.
-    LeftTrigger = SDL_GAMEPAD_BUTTON_COUNT, RightTrigger,
+    LeftTrigger, RightTrigger,
     LeftStickUp, LeftStickDown, LeftStickLeft, LeftStickRight,
     RightStickUp, RightStickDown, RightStickLeft, RightStickRight,
     Count
 };
 // clang-format on
 
-// Analog inputs. Sticks go from -1 to +1 (+X right, +Y DOWN, as SDL reports them); triggers from
-// 0 (released) to 1 (fully pulled).
+// Analog inputs. Sticks go from -1 to +1 (+X right, +Y down); triggers from 0 (released) to 1
+// (fully pulled).
 enum class GamepadAxis : u8 {
-    LeftX = SDL_GAMEPAD_AXIS_LEFTX,
-    LeftY = SDL_GAMEPAD_AXIS_LEFTY,
-    RightX = SDL_GAMEPAD_AXIS_RIGHTX,
-    RightY = SDL_GAMEPAD_AXIS_RIGHTY,
-    LeftTrigger = SDL_GAMEPAD_AXIS_LEFT_TRIGGER,
-    RightTrigger = SDL_GAMEPAD_AXIS_RIGHT_TRIGGER,
+    LeftX = 0,
+    LeftY,
+    RightX,
+    RightY,
+    LeftTrigger,
+    RightTrigger,
     Count
 };
 
@@ -76,47 +71,46 @@ struct GamepadSettings {
 [[nodiscard]] f32 ApplyDeadzone(f32 value, f32 deadzone);
 [[nodiscard]] Vec2 ApplyRadialDeadzone(Vec2 stick, f32 deadzone);
 
-// The pad families games name. The values are SDL's gamepad types, so a stored type still
-// matches what the device reports. Games use this instead of the SDL enum.
+// The pad families games name. Do not renumber: a stored type has to keep meaning the same pad.
 enum class GamepadType : i32 {
-    Unknown = SDL_GAMEPAD_TYPE_UNKNOWN,
-    Xbox360 = SDL_GAMEPAD_TYPE_XBOX360,
-    XboxOne = SDL_GAMEPAD_TYPE_XBOXONE,
-    PS3 = SDL_GAMEPAD_TYPE_PS3,
-    PS4 = SDL_GAMEPAD_TYPE_PS4,
-    PS5 = SDL_GAMEPAD_TYPE_PS5,
-    SwitchPro = SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_PRO,
-    JoyConLeft = SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_LEFT,
-    JoyConRight = SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_RIGHT,
-    JoyConPair = SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_PAIR,
-    GameCube = SDL_GAMEPAD_TYPE_GAMECUBE,
-    Standard = SDL_GAMEPAD_TYPE_STANDARD,
+    Unknown = 0,
+    Standard = 1,
+    Xbox360 = 2,
+    XboxOne = 3,
+    PS3 = 4,
+    PS4 = 5,
+    PS5 = 6,
+    SwitchPro = 7,
+    JoyConLeft = 8,
+    JoyConRight = 9,
+    JoyConPair = 10,
+    GameCube = 11,
 };
 
 // Names for UI: "Xbox One", "PS4", "Switch Pro", ...
-[[nodiscard]] const char* GetGamepadTypeName(SDL_GamepadType type);
+[[nodiscard]] const char* GetGamepadTypeName(GamepadType type);
 // What is printed on a button of that type of pad, for prompts: South is "A" on Xbox, "Cross" on
 // PlayStation and "B" on Switch; RightShoulder is "RB", "R1" or "R".
-[[nodiscard]] const char* GetGamepadButtonLabel(GamepadButton button, SDL_GamepadType type);
+[[nodiscard]] const char* GetGamepadButtonLabel(GamepadButton button, GamepadType type);
 
-// The Steam Deck's built-in controller, as SDL reports it: HIDAPI names it "Steam Deck", and the
-// USB id is Valve 0x28DE / 0x1205. SDL's gamepad type for that device is STANDARD (face buttons
-// A/B/X/Y, same positions as printed on the Deck). Steam Input can hide this device and present
-// an Xbox pad instead; that name does not match here. See docs/platforms.md.
+// The Steam Deck's built-in controller: HIDAPI names it "Steam Deck", and the USB id is Valve
+// 0x28DE / 0x1205. Its gamepad type is Standard (face buttons A/B/X/Y, same positions as printed
+// on the Deck). Steam Input can hide this device and present an Xbox pad instead; that name does
+// not match here. See docs/platforms.md.
 [[nodiscard]] bool IsSteamDeckGamepad(std::string_view name, u16 vendor = 0, u16 product = 0);
 // Prompts for that pad: A/B/X/Y, L1/R1, L2/R2, View/Menu, and L4/R4/L5/R5 on the rear paddles.
 [[nodiscard]] const char* GetSteamDeckButtonLabel(GamepadButton button);
 
-// All connected gamepads, fed from SDL events by the Application. Single-player for now: every
+// All connected gamepads, fed from events by the Application. Single-player for now: every
 // connected pad drives the same buttons and axes (the largest value wins), so the player can pick
 // up any of them. Games normally use actions (Input.h); this is the layer underneath. Buttons
 // follow the same frame/fixed-step edge rules as keys (ButtonStates.h).
 class Gamepads {
 public:
     struct PadInfo {
-        SDL_JoystickID Id = 0;
+        GamepadId Id = 0;
         std::string Name;
-        SDL_GamepadType Type = SDL_GAMEPAD_TYPE_UNKNOWN;
+        GamepadType Type = GamepadType::Unknown;
     };
 
     Gamepads() = default;
@@ -153,9 +147,9 @@ public:
     [[nodiscard]] f32 GetRawAxis(usize pad, GamepadAxis axis) const;
     [[nodiscard]] f32 GetAxis(usize pad, GamepadAxis axis) const; // deadzoned, one pad
     // Type of the pad that was used last (UNKNOWN without pads): pick button prompts with it.
-    [[nodiscard]] SDL_GamepadType GetLastUsedType() const { return m_LastUsedType; }
+    [[nodiscard]] GamepadType GetLastUsedType() const { return m_LastUsedType; }
     // The last used pad is the Deck's built-in controller (name or USB id), so prompts use
-    // GetSteamDeckButtonLabel rather than the generic type (SDL calls that pad STANDARD).
+    // GetSteamDeckButtonLabel rather than the generic type (that pad reports as Standard).
     [[nodiscard]] bool LastUsedIsSteamDeck() const { return m_LastUsedSteamDeck; }
     // Label of a button on the last used pad, e.g. GetButtonLabel(GamepadButton::South) == "Cross".
     [[nodiscard]] const char* GetButtonLabel(GamepadButton button) const;
@@ -167,18 +161,18 @@ public:
     void SetSettings(const GamepadSettings& settings) { m_Settings = settings; }
 
     // --- Called by the Application (or by tests) ---
-    // Opens a pad reported by SDL_EVENT_GAMEPAD_ADDED (ignored if it is already open).
-    void Open(SDL_JoystickID id);
-    // Forgets a pad (SDL_EVENT_GAMEPAD_REMOVED); buttons it was holding get released.
-    void Close(SDL_JoystickID id);
+    // Opens a pad reported as added (ignored if it is already open).
+    void Open(GamepadId id);
+    // Forgets a pad; buttons it was holding get released.
+    void Close(GamepadId id);
     void CloseAll();
-    // Registers a pad without SDL (handle may be null): used by Open and by tests.
-    void AddPad(SDL_JoystickID id, SDL_Gamepad* handle, std::string name, SDL_GamepadType type);
-    // A pad with no device handle. Tests and tools use this so they never name an SDL type.
+    // Registers a pad (handle may be null): used by Open and by tests.
+    void AddPad(GamepadId id, GamepadDevice* handle, std::string name, GamepadType type);
+    // A pad with no device handle. Tests and tools use this.
     void AddSyntheticPad(u32 id, std::string name, GamepadType type);
-    void OnButton(SDL_JoystickID id, GamepadButton button, bool down);
-    // `value`: -1..1 for sticks, 0..1 for triggers (SDL's integer values divided by 32767).
-    void OnAxis(SDL_JoystickID id, GamepadAxis axis, f32 value);
+    void OnButton(GamepadId id, GamepadButton button, bool down);
+    // `value`: -1..1 for sticks, 0..1 for triggers.
+    void OnAxis(GamepadId id, GamepadAxis axis, f32 value);
     // Releases all buttons and centers all axes, e.g. when the window loses focus.
     void ReleaseAll();
     void BeginFrame() { m_Buttons.BeginFrame(); }
@@ -191,13 +185,13 @@ private:
 
     struct Pad {
         PadInfo Info;
-        SDL_Gamepad* Handle = nullptr;
+        GamepadDevice* Handle = nullptr;
         std::bitset<kButtonCount> Buttons; // this pad's buttons, virtual ones included
         std::array<f32, kAxisCount> Axes{};
     };
 
     [[nodiscard]] static usize Index(GamepadButton b) { return static_cast<usize>(b); }
-    [[nodiscard]] Pad* Find(SDL_JoystickID id);
+    [[nodiscard]] Pad* Find(GamepadId id);
     [[nodiscard]] bool PadIsSteamDeck(const Pad& pad) const;
     void Remember(const Pad& pad);
     [[nodiscard]] f32 Deadzoned(const Pad& pad, GamepadAxis axis) const;
@@ -208,7 +202,7 @@ private:
     std::vector<Pad> m_Pads;
     ButtonStates<kButtonCount> m_Buttons;
     GamepadSettings m_Settings;
-    SDL_GamepadType m_LastUsedType = SDL_GAMEPAD_TYPE_UNKNOWN;
+    GamepadType m_LastUsedType = GamepadType::Unknown;
     bool m_LastUsedSteamDeck = false;
 };
 

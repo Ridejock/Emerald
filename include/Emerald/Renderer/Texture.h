@@ -1,9 +1,9 @@
 #pragma once
 
+#include "Emerald/Renderer/Gpu.h"
+
 #include <filesystem>
 #include <optional>
-
-#include <SDL3/SDL_gpu.h>
 
 #include "Emerald/Core/Defines.h"
 #include "Emerald/Math/Vec2.h"
@@ -47,10 +47,10 @@ public:
 
     // Uploads `image` right away (own command buffer + copy pass, submitted before any later
     // frame). Returns nullopt on failure (logged).
-    [[nodiscard]] static std::optional<Texture> Create(SDL_GPUDevice* device, const Image& image,
+    [[nodiscard]] static std::optional<Texture> Create(GpuDevice* device, const Image& image,
                                                        const TextureOptions& options = {});
     // Loads a PNG/JPG/... with stb_image (see Image) and uploads it.
-    [[nodiscard]] static std::optional<Texture> Load(SDL_GPUDevice* device,
+    [[nodiscard]] static std::optional<Texture> Load(GpuDevice* device,
                                                      const std::filesystem::path& path,
                                                      const TextureOptions& options = {});
     // A texture with a size but no GPU resources: sprite batching works (UVs, commands), drawing
@@ -66,15 +66,15 @@ public:
     // Unique per texture (0 = none), used to batch sprites that share a texture.
     [[nodiscard]] u32 GetId() const { return m_Id; }
     [[nodiscard]] bool HasGpuTexture() const { return m_Texture != nullptr; }
-    [[nodiscard]] SDL_GPUTexture* GetGpuTexture() const { return m_Texture; }
-    [[nodiscard]] SDL_GPUSampler* GetSampler() const { return m_Sampler; }
+    [[nodiscard]] GpuTexture* GetGpuTexture() const { return m_Texture; }
+    [[nodiscard]] GpuSampler* GetSampler() const { return m_Sampler; }
 
 private:
     void Release();
 
-    SDL_GPUDevice* m_Device = nullptr;
-    SDL_GPUTexture* m_Texture = nullptr;
-    SDL_GPUSampler* m_Sampler = nullptr;
+    GpuDevice* m_Device = nullptr;
+    GpuTexture* m_Texture = nullptr;
+    GpuSampler* m_Sampler = nullptr;
     u32 m_Width = 0;
     u32 m_Height = 0;
     u32 m_Id = 0;

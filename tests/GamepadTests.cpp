@@ -13,8 +13,8 @@ using namespace Emerald;
 
 namespace {
 
-constexpr SDL_JoystickID kPad = 1;
-constexpr SDL_JoystickID kOtherPad = 2;
+constexpr GamepadId kPad = 1;
+constexpr GamepadId kOtherPad = 2;
 
 bool Same(const char* a, const char* b)
 {
@@ -54,7 +54,7 @@ TEST(DeadzoneRadial)
 TEST(GamepadAxesUseSettings)
 {
     Gamepads pads;
-    pads.AddPad(kPad, nullptr, "Test", SDL_GAMEPAD_TYPE_XBOXONE);
+    pads.AddPad(kPad, nullptr, "Test", GamepadType::XboxOne);
     pads.OnAxis(kPad, GamepadAxis::LeftX, 0.15f);
     pads.OnAxis(kPad, GamepadAxis::LeftY, 0.15f);
     CHECK(pads.GetAxis(GamepadAxis::LeftX) > 0.0f); // radial (default)
@@ -74,7 +74,7 @@ TEST(GamepadAxesUseSettings)
 TEST(GamepadVirtualButtons)
 {
     Gamepads pads;
-    pads.AddPad(kPad, nullptr, "Test", SDL_GAMEPAD_TYPE_PS4);
+    pads.AddPad(kPad, nullptr, "Test", GamepadType::PS4);
     // Trigger as a button: presses at the threshold (0.5 after the deadzone)...
     pads.BeginFrame();
     pads.OnAxis(kPad, GamepadAxis::RightTrigger, 0.4f);
@@ -100,7 +100,7 @@ TEST(GamepadVirtualButtons)
 TEST(GamepadButtonsAndFixedSteps)
 {
     Gamepads pads;
-    pads.AddPad(kPad, nullptr, "Test", SDL_GAMEPAD_TYPE_XBOXONE);
+    pads.AddPad(kPad, nullptr, "Test", GamepadType::XboxOne);
     // A tap within a frame that runs no fixed step reaches the next step exactly once.
     pads.BeginFrame();
     pads.OnButton(kPad, GamepadButton::South, true);
@@ -119,15 +119,15 @@ TEST(GamepadButtonsAndFixedSteps)
 TEST(GamepadSeveralPads)
 {
     Gamepads pads;
-    pads.AddPad(kPad, nullptr, "Xbox", SDL_GAMEPAD_TYPE_XBOXONE);
-    pads.AddPad(kOtherPad, nullptr, "Switch", SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_PRO);
+    pads.AddPad(kPad, nullptr, "Xbox", GamepadType::XboxOne);
+    pads.AddPad(kOtherPad, nullptr, "Switch", GamepadType::SwitchPro);
     CHECK(pads.GetCount() == 2);
 
     // The axis with the largest magnitude wins.
     pads.OnAxis(kPad, GamepadAxis::LeftX, 0.6f);
     pads.OnAxis(kOtherPad, GamepadAxis::LeftX, -1.0f);
     CHECK_NEAR(pads.GetAxis(GamepadAxis::LeftX), -1.0f);
-    CHECK(pads.GetLastUsedType() == SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_PRO);
+    CHECK(pads.GetLastUsedType() == GamepadType::SwitchPro);
 
     // A button is down while any pad holds it; unplugging a pad releases what it held.
     pads.BeginFrame();
@@ -145,26 +145,26 @@ TEST(GamepadSeveralPads)
 
 TEST(GamepadLabels)
 {
-    CHECK(Same(GetGamepadButtonLabel(GamepadButton::South, SDL_GAMEPAD_TYPE_XBOXONE), "A"));
-    CHECK(Same(GetGamepadButtonLabel(GamepadButton::South, SDL_GAMEPAD_TYPE_PS4), "Cross"));
+    CHECK(Same(GetGamepadButtonLabel(GamepadButton::South, GamepadType::XboxOne), "A"));
+    CHECK(Same(GetGamepadButtonLabel(GamepadButton::South, GamepadType::PS4), "Cross"));
     // Nintendo prints B on the bottom button (and A on the right one).
-    CHECK(Same(GetGamepadButtonLabel(GamepadButton::South, SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_PRO),
+    CHECK(Same(GetGamepadButtonLabel(GamepadButton::South, GamepadType::SwitchPro),
                "B"));
-    CHECK(Same(GetGamepadButtonLabel(GamepadButton::East, SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_PRO),
+    CHECK(Same(GetGamepadButtonLabel(GamepadButton::East, GamepadType::SwitchPro),
                "A"));
-    CHECK(Same(GetGamepadButtonLabel(GamepadButton::North, SDL_GAMEPAD_TYPE_PS4), "Triangle"));
-    CHECK(Same(GetGamepadButtonLabel(GamepadButton::RightShoulder, SDL_GAMEPAD_TYPE_PS4), "R1"));
+    CHECK(Same(GetGamepadButtonLabel(GamepadButton::North, GamepadType::PS4), "Triangle"));
+    CHECK(Same(GetGamepadButtonLabel(GamepadButton::RightShoulder, GamepadType::PS4), "R1"));
     CHECK(Same(
-        GetGamepadButtonLabel(GamepadButton::RightTrigger, SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_PRO),
+        GetGamepadButtonLabel(GamepadButton::RightTrigger, GamepadType::SwitchPro),
         "ZR"));
-    CHECK(Same(GetGamepadButtonLabel(GamepadButton::Start, SDL_GAMEPAD_TYPE_XBOXONE), "Menu"));
-    CHECK(Same(GetGamepadTypeName(SDL_GAMEPAD_TYPE_PS4), "PS4"));
+    CHECK(Same(GetGamepadButtonLabel(GamepadButton::Start, GamepadType::XboxOne), "Menu"));
+    CHECK(Same(GetGamepadTypeName(GamepadType::PS4), "PS4"));
     // SDL reports the Deck's built-in controller as STANDARD. Face labels are already A/B/X/Y,
     // which is what is printed on the Deck.
-    CHECK(Same(GetGamepadButtonLabel(GamepadButton::South, SDL_GAMEPAD_TYPE_STANDARD), "A"));
-    CHECK(Same(GetGamepadButtonLabel(GamepadButton::East, SDL_GAMEPAD_TYPE_STANDARD), "B"));
-    CHECK(Same(GetGamepadButtonLabel(GamepadButton::West, SDL_GAMEPAD_TYPE_STANDARD), "X"));
-    CHECK(Same(GetGamepadButtonLabel(GamepadButton::North, SDL_GAMEPAD_TYPE_STANDARD), "Y"));
+    CHECK(Same(GetGamepadButtonLabel(GamepadButton::South, GamepadType::Standard), "A"));
+    CHECK(Same(GetGamepadButtonLabel(GamepadButton::East, GamepadType::Standard), "B"));
+    CHECK(Same(GetGamepadButtonLabel(GamepadButton::West, GamepadType::Standard), "X"));
+    CHECK(Same(GetGamepadButtonLabel(GamepadButton::North, GamepadType::Standard), "Y"));
 }
 
 TEST(SteamDeckPromptsAndDefaultUi)
@@ -177,7 +177,7 @@ TEST(SteamDeckPromptsAndDefaultUi)
 
     Gamepads pads;
     // No SDL handle: the HIDAPI driver names the raw Deck controller "Steam Deck".
-    pads.AddPad(kPad, nullptr, "Steam Deck", SDL_GAMEPAD_TYPE_STANDARD);
+    pads.AddPad(kPad, nullptr, "Steam Deck", GamepadType::Standard);
     CHECK(pads.LastUsedIsSteamDeck());
     CHECK(Same(pads.GetButtonLabel(GamepadButton::South), "A"));
     CHECK(Same(pads.GetButtonLabel(GamepadButton::East), "B"));
@@ -209,7 +209,7 @@ TEST(SteamDeckPromptsAndDefaultUi)
     pads.OnButton(kPad, GamepadButton::South, true);
     CHECK(input.WasActionPressed(kUiAccept));
     // Steam Input's virtual Xbox pad is not the raw Deck, so prompts stay Xbox (still A/B/X/Y).
-    pads.AddPad(kOtherPad, nullptr, "Microsoft X-Box 360 pad", SDL_GAMEPAD_TYPE_XBOX360);
+    pads.AddPad(kOtherPad, nullptr, "Microsoft X-Box 360 pad", GamepadType::Xbox360);
     pads.OnButton(kOtherPad, GamepadButton::South, true);
     CHECK(!pads.LastUsedIsSteamDeck());
     CHECK(Same(pads.GetButtonLabel(GamepadButton::LeftShoulder), "LB"));
@@ -220,7 +220,7 @@ TEST(ActionsWithGamepad)
     Keyboard keyboard;
     Gamepads pads;
     Input input(keyboard, pads);
-    pads.AddPad(kPad, nullptr, "Test", SDL_GAMEPAD_TYPE_XBOXONE);
+    pads.AddPad(kPad, nullptr, "Test", GamepadType::XboxOne);
     input.BindAction("Fire", {Key::Space});
     input.BindAction("Fire", {GamepadButton::South, GamepadButton::RightTrigger});
     CHECK(input.GetActionButtons("Fire").size() == 2);
@@ -233,13 +233,13 @@ TEST(ActionsWithGamepad)
     // Key pressed while the button is held: not a new press; releasing only one: no release.
     keyboard.BeginFrame();
     pads.BeginFrame();
-    keyboard.OnKeyDown(SDL_SCANCODE_SPACE);
+    keyboard.OnKeyDown(Key::Space);
     CHECK(!input.WasActionPressed("Fire"));
     pads.OnButton(kPad, GamepadButton::South, false);
     CHECK(input.IsActionDown("Fire") && !input.WasActionReleased("Fire"));
     keyboard.BeginFrame();
     pads.BeginFrame();
-    keyboard.OnKeyUp(SDL_SCANCODE_SPACE);
+    keyboard.OnKeyUp(Key::Space);
     CHECK(input.WasActionReleased("Fire"));
 
     // Trigger as a button.
@@ -258,7 +258,7 @@ TEST(AxisTakesLargestMagnitude)
     Keyboard keyboard;
     Gamepads pads;
     Input input(keyboard, pads);
-    pads.AddPad(kPad, nullptr, "Test", SDL_GAMEPAD_TYPE_XBOXONE);
+    pads.AddPad(kPad, nullptr, "Test", GamepadType::XboxOne);
     input.BindAxis("Rotate", Key::A, Key::D);
     input.BindAxis("Rotate", GamepadButton::DPadLeft, GamepadButton::DPadRight);
     input.BindAxis("Rotate", GamepadAxis::LeftX);
@@ -266,9 +266,9 @@ TEST(AxisTakesLargestMagnitude)
 
     pads.OnAxis(kPad, GamepadAxis::LeftX, 0.6f);
     CHECK_NEAR(input.GetAxis("Rotate"), 0.5f); // analog, after the deadzone
-    keyboard.OnKeyDown(SDL_SCANCODE_A);
+    keyboard.OnKeyDown(Key::A);
     CHECK_NEAR(input.GetAxis("Rotate"), -1.0f); // the full key press is larger
-    keyboard.OnKeyUp(SDL_SCANCODE_A);
+    keyboard.OnKeyUp(Key::A);
     pads.OnButton(kPad, GamepadButton::DPadRight, true);
     CHECK_NEAR(input.GetAxis("Rotate"), 1.0f);
     pads.OnButton(kPad, GamepadButton::DPadRight, false);

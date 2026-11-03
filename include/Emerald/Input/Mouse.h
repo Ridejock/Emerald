@@ -1,20 +1,18 @@
 #pragma once
 
-#include <SDL3/SDL_mouse.h>
-
 #include "Emerald/Core/Defines.h"
 #include "Emerald/Input/ButtonStates.h"
 #include "Emerald/Math/Vec2.h"
 
 namespace Emerald {
 
-// Mouse buttons; the values are SDL's button numbers (SDL_BUTTON_LEFT, ...).
+// Mouse buttons. Left is 1, matching the button index events report. Do not renumber.
 enum class MouseButton : u8 {
-    Left = SDL_BUTTON_LEFT,
-    Middle = SDL_BUTTON_MIDDLE,
-    Right = SDL_BUTTON_RIGHT,
-    X1 = SDL_BUTTON_X1, // the "back" side button
-    X2 = SDL_BUTTON_X2, // the "forward" side button
+    Left = 1,
+    Middle = 2,
+    Right = 3,
+    X1 = 4, // the "back" side button
+    X2 = 5, // the "forward" side button
 };
 
 // Low-level mouse state with edge tracking, fed from SDL events by the Application (like
@@ -77,7 +75,7 @@ public:
 private:
     [[nodiscard]] static usize Index(MouseButton b) { return static_cast<usize>(b); }
 
-    ButtonStates<8> m_Buttons; // indexed by SDL button number (1..5)
+    ButtonStates<8> m_Buttons; // indexed by button number (1..5)
     Vec2 m_Position{};
     bool m_Moved = false;
     bool m_InWindow = false;

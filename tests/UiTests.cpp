@@ -350,8 +350,8 @@ TEST(UiReadsActions)
     Input input(keyboard, gamepads, &mouse);
     BindDefaultUiActions(input);
     keyboard.BeginFrame();
-    keyboard.OnKeyDown(SDL_SCANCODE_DOWN);
-    keyboard.OnKeyDown(SDL_SCANCODE_RETURN);
+    keyboard.OnKeyDown(Key::Down);
+    keyboard.OnKeyDown(Key::Enter);
     mouse.BeginFrame();
     mouse.OnMotion({5.0f, 6.0f});
     mouse.OnButton(MouseButton::Left, true);

@@ -24,7 +24,7 @@ TEST(KeyboardPressAndRelease)
 {
     Keyboard keyboard;
     keyboard.BeginFrame();
-    keyboard.OnKeyDown(SDL_SCANCODE_SPACE);
+    keyboard.OnKeyDown(Key::Space);
     CHECK(keyboard.IsKeyDown(Key::Space));
     CHECK(keyboard.WasKeyPressed(Key::Space));
     CHECK(!keyboard.WasKeyReleased(Key::Space));
@@ -36,7 +36,7 @@ TEST(KeyboardPressAndRelease)
     CHECK(!keyboard.WasKeyPressed(Key::Space));
 
     keyboard.BeginFrame();
-    keyboard.OnKeyUp(SDL_SCANCODE_SPACE);
+    keyboard.OnKeyUp(Key::Space);
     CHECK(!keyboard.IsKeyDown(Key::Space));
     CHECK(keyboard.WasKeyReleased(Key::Space));
 }
@@ -46,8 +46,8 @@ TEST(KeyboardTapWithinOneFrame)
     // Down and up before the frame is processed: not held, but the press is not lost.
     Keyboard keyboard;
     keyboard.BeginFrame();
-    keyboard.OnKeyDown(SDL_SCANCODE_A);
-    keyboard.OnKeyUp(SDL_SCANCODE_A);
+    keyboard.OnKeyDown(Key::A);
+    keyboard.OnKeyUp(Key::A);
     CHECK(!keyboard.IsKeyDown(Key::A));
     CHECK(keyboard.WasKeyPressed(Key::A));
     CHECK(keyboard.WasKeyReleased(Key::A));
@@ -56,11 +56,11 @@ TEST(KeyboardTapWithinOneFrame)
 TEST(KeyboardIgnoresDuplicateEvents)
 {
     Keyboard keyboard;
-    keyboard.OnKeyDown(SDL_SCANCODE_W);
+    keyboard.OnKeyDown(Key::W);
     keyboard.BeginFrame();
-    keyboard.OnKeyDown(SDL_SCANCODE_W); // already down: not a new press
+    keyboard.OnKeyDown(Key::W); // already down: not a new press
     CHECK(!keyboard.WasKeyPressed(Key::W));
-    keyboard.OnKeyUp(SDL_SCANCODE_S); // was never down
+    keyboard.OnKeyUp(Key::S); // was never down
     CHECK(!keyboard.WasKeyReleased(Key::S));
 }
 
@@ -70,7 +70,7 @@ TEST(KeyboardFixedStepEdges)
 
     // Frame 1 runs no fixed step: the press is visible to OnUpdate...
     keyboard.BeginFrame();
-    keyboard.OnKeyDown(SDL_SCANCODE_SPACE);
+    keyboard.OnKeyDown(Key::Space);
     CHECK(keyboard.WasKeyPressed(Key::Space));
 
     // ...and frame 2's first fixed step still sees it, the second one does not.
@@ -89,8 +89,8 @@ TEST(KeyboardFixedStepEdges)
 TEST(KeyboardReleaseAll)
 {
     Keyboard keyboard;
-    keyboard.OnKeyDown(SDL_SCANCODE_LEFT);
-    keyboard.OnKeyDown(SDL_SCANCODE_UP);
+    keyboard.OnKeyDown(Key::Left);
+    keyboard.OnKeyDown(Key::Up);
     keyboard.BeginFrame();
     keyboard.ReleaseAll();
     CHECK(!keyboard.IsKeyDown(Key::Left) && !keyboard.IsKeyDown(Key::Up));
@@ -106,22 +106,22 @@ TEST(ActionsWithSeveralKeys)
     input.BindAction("Fire", {Key::Space, Key::J});
 
     keyboard.BeginFrame();
-    keyboard.OnKeyDown(SDL_SCANCODE_J);
+    keyboard.OnKeyDown(Key::J);
     CHECK(input.IsActionDown("Fire"));
     CHECK(input.WasActionPressed("Fire"));
 
     // Pressing the second key while the first is held is not a new press...
     keyboard.BeginFrame();
-    keyboard.OnKeyDown(SDL_SCANCODE_SPACE);
+    keyboard.OnKeyDown(Key::Space);
     CHECK(!input.WasActionPressed("Fire"));
     // ...and releasing one of two held keys is not a release.
     keyboard.BeginFrame();
-    keyboard.OnKeyUp(SDL_SCANCODE_J);
+    keyboard.OnKeyUp(Key::J);
     CHECK(input.IsActionDown("Fire"));
     CHECK(!input.WasActionReleased("Fire"));
 
     keyboard.BeginFrame();
-    keyboard.OnKeyUp(SDL_SCANCODE_SPACE);
+    keyboard.OnKeyUp(Key::Space);
     CHECK(!input.IsActionDown("Fire"));
     CHECK(input.WasActionReleased("Fire"));
 
@@ -146,9 +146,9 @@ TEST(ActionsWithMouseButtons)
     // Space while the button is held is not a new press.
     keyboard.BeginFrame();
     mouse.BeginFrame();
-    keyboard.OnKeyDown(SDL_SCANCODE_SPACE);
+    keyboard.OnKeyDown(Key::Space);
     CHECK(!input.WasActionPressed("Fire"));
-    keyboard.OnKeyUp(SDL_SCANCODE_SPACE);
+    keyboard.OnKeyUp(Key::Space);
     mouse.OnButton(MouseButton::Left, false);
     CHECK(!input.IsActionDown("Fire") && input.WasActionReleased("Fire"));
 
@@ -205,8 +205,8 @@ TEST(ActionsTapAndFixedSteps)
 
     // A tap within one frame that runs no fixed step reaches the next step exactly once.
     keyboard.BeginFrame();
-    keyboard.OnKeyDown(SDL_SCANCODE_SPACE);
-    keyboard.OnKeyUp(SDL_SCANCODE_SPACE);
+    keyboard.OnKeyDown(Key::Space);
+    keyboard.OnKeyUp(Key::Space);
     CHECK(input.WasActionPressed("Fire") && input.WasActionReleased("Fire"));
     keyboard.BeginFrame();
     keyboard.BeginFixedStep();
@@ -226,14 +226,14 @@ TEST(ActionsAxis)
     input.BindAxis("Rotate", Key::Left, Key::Right);
 
     CHECK(input.GetAxis("Rotate") == 0.0f);
-    keyboard.OnKeyDown(SDL_SCANCODE_A);
+    keyboard.OnKeyDown(Key::A);
     CHECK(input.GetAxis("Rotate") == -1.0f);
-    keyboard.OnKeyDown(SDL_SCANCODE_LEFT); // two negative keys still give -1
+    keyboard.OnKeyDown(Key::Left); // two negative keys still give -1
     CHECK(input.GetAxis("Rotate") == -1.0f);
-    keyboard.OnKeyDown(SDL_SCANCODE_RIGHT); // opposite keys cancel out
+    keyboard.OnKeyDown(Key::Right); // opposite keys cancel out
     CHECK(input.GetAxis("Rotate") == 0.0f);
-    keyboard.OnKeyUp(SDL_SCANCODE_A);
-    keyboard.OnKeyUp(SDL_SCANCODE_LEFT);
+    keyboard.OnKeyUp(Key::A);
+    keyboard.OnKeyUp(Key::Left);
     CHECK(input.GetAxis("Rotate") == 1.0f);
 }
 
@@ -302,16 +302,16 @@ TEST(ActionsRebind)
 
     input.RebindAction("Thrust", {Key::K});
     CHECK(input.GetActionKeys("Thrust").size() == 1 && input.GetActionKeys("Thrust")[0] == Key::K);
-    keyboard.OnKeyDown(SDL_SCANCODE_W);
+    keyboard.OnKeyDown(Key::W);
     CHECK(!input.IsActionDown("Thrust"));
-    keyboard.OnKeyDown(SDL_SCANCODE_K);
+    keyboard.OnKeyDown(Key::K);
     CHECK(input.IsActionDown("Thrust"));
 
     input.BindAxis("Turn", Key::A, Key::D);
     input.RebindAxis("Turn", Key::J, Key::L);
-    keyboard.OnKeyDown(SDL_SCANCODE_D);
+    keyboard.OnKeyDown(Key::D);
     CHECK(input.GetAxis("Turn") == 0.0f); // D is no longer bound
-    keyboard.OnKeyDown(SDL_SCANCODE_L);
+    keyboard.OnKeyDown(Key::L);
     CHECK(input.GetAxis("Turn") == 1.0f);
 
     input.Unbind("Thrust");
@@ -407,8 +407,8 @@ TEST(InputBindingNamesRoundTrip)
     CHECK(GetKeyName(Key::Space) == "Space");
     CHECK(GetKeyName(Key::LeftShift) == "Left Shift");
     CHECK(FindKey("Left Shift") == Key::LeftShift);
-    CHECK(FindKey(",") == Key(SDL_SCANCODE_COMMA));
-    for (u32 code = 1; code < SDL_SCANCODE_COUNT; ++code) {
+    CHECK(FindKey(",") == Key::Comma);
+    for (u32 code = 1; code < kKeyCount; ++code) {
         const Key key = Key(code);
         if (FindKey(GetKeyName(key)) != key) {
             std::printf("  key %u: '%s' does not read back\n", code, GetKeyName(key).c_str());
@@ -445,7 +445,7 @@ TEST(InputBindingsSaveAndLoad)
     Gamepads pads;
     Input input(keyboard, pads);
     bindDefaults(input);
-    input.RebindAction("Jump", {Key(SDL_SCANCODE_COMMA), Key::Up});
+    input.RebindAction("Jump", {Key::Comma, Key::Up});
     input.RebindAction("Fire", {GamepadButton::RightTrigger});
     input.RebindAction("Pause", std::span<const Key>()); // keys cleared: pad only
 
@@ -493,13 +493,13 @@ TEST(InputPressedKeyAndButton)
     Keyboard keyboard;
     keyboard.BeginFrame();
     CHECK(!keyboard.GetPressedKey());
-    keyboard.OnKeyDown(SDL_SCANCODE_SEMICOLON);
-    CHECK(keyboard.GetPressedKey() == Key(SDL_SCANCODE_SEMICOLON));
+    keyboard.OnKeyDown(Key::Semicolon);
+    CHECK(keyboard.GetPressedKey() == Key::Semicolon);
     keyboard.BeginFrame();
     CHECK(!keyboard.GetPressedKey()); // still held, not a new press
 
     Gamepads pads;
-    pads.AddPad(1, nullptr, "Test pad", SDL_GAMEPAD_TYPE_PS4);
+    pads.AddPad(1, nullptr, "Test pad", GamepadType::PS4);
     pads.BeginFrame();
     CHECK(!pads.GetPressedButton());
     pads.OnAxis(1, GamepadAxis::RightTrigger, 1.0f); // virtual buttons count too
@@ -608,7 +608,7 @@ TEST(InputKeyNamesPinned)
         {Key::Tab, "Tab"},
         {Key::Backspace, "Backspace"},
         {Key::F1, "F1"},
-        {Key(SDL_SCANCODE_RETURN), "Return"},
+        {Key::Enter, "Return"},
     }};
     for (const auto& [key, name] : names)
         CHECK(GetKeyName(key) == name);

@@ -8,11 +8,10 @@
 #include <string>
 #include <vector>
 
-#include <SDL3/SDL_pixels.h>
-
 #include "Emerald/Assets/Assets.h"
 #include "Emerald/Audio/Audio.h"
 #include "Emerald/Core/Defines.h"
+#include "Emerald/Core/Event.h"
 #include "Emerald/Core/DevOptions.h"
 #include "Emerald/Core/FixedTimestep.h"
 #include "Emerald/Core/Log.h"
@@ -29,22 +28,18 @@
 #include "Emerald/Renderer/Renderer2D.h"
 #include "Emerald/Scene/SceneStack.h"
 
-union SDL_Event;
-struct SDL_GPURenderPass;
-
 namespace Emerald {
 
 struct ApplicationSpec {
     WindowSpec Window;
     // Color the swapchain is cleared to at the start of every frame.
-    SDL_FColor ClearColor{0.07f, 0.094f, 0.086f, 1.0f};
+    Color ClearColor{0.07f, 0.094f, 0.086f, 1.0f};
     // Shader formats the application ships (see cmake/Shaders.cmake). Only GPU backends that
     // accept one of these are considered. emerald_add_shaders() defines EMERALD_SHADER_FORMATS
-    // for its target with exactly the formats it generated.
-    SDL_GPUShaderFormat ShaderFormats =
-        SDL_GPU_SHADERFORMAT_SPIRV | SDL_GPU_SHADERFORMAT_DXIL | SDL_GPU_SHADERFORMAT_MSL;
+    // for its target with exactly the formats it generated; assign it with ShaderFormatFromMask.
+    ShaderFormat ShaderFormats = ShaderFormat::Spirv | ShaderFormat::Dxil | ShaderFormat::Msl;
     // The command line (main's argv), for engine options; other arguments are ignored:
-    //   --gpu vulkan|d3d12|direct3d12|metal|auto   GPU backend (wins over SDL_GPU_DRIVER)
+    //   --gpu vulkan|d3d12|direct3d12|metal|auto   GPU backend (wins over the backend env var)
     //   --frames, --screenshot, --capture, --record, --replay, --profile: see DevOptions.h
     // Set it with `spec.Args = {argv, static_cast<usize>(argc)};`. It must outlive the constructor.
     std::span<char* const> Args;
@@ -176,7 +171,7 @@ public:
 protected:
     // Create GPU resources (buffers, pipelines) here; the renderer is ready.
     virtual void OnStart() {}
-    virtual void OnEvent(const SDL_Event& /*event*/) {}
+    virtual void OnEvent(const Event& /*event*/) {}
     // Game logic at a fixed rate (ApplicationSpec::FixedUpdateRate); dt is always the same.
     // Runs zero or more times per frame, before OnUpdate.
     virtual void OnFixedUpdate(f32 /*dt*/) {}
@@ -187,7 +182,7 @@ protected:
     virtual void OnRender2D(Renderer2D& /*renderer2D*/) {}
     // Record draw calls into the frame's main render pass (already cleared to ClearColor).
     // OnRender2D/OnRender are not called for skipped frames, e.g. while the window is minimized.
-    virtual void OnRender(SDL_GPURenderPass* /*renderPass*/) {}
+    virtual void OnRender(GpuRenderPass* /*renderPass*/) {}
     virtual void OnImGui() {} // Only called when built with EMERALD_USE_IMGUI=ON
     // Release GPU resources here; the renderer is still alive.
     virtual void OnShutdown() {}
@@ -195,7 +190,9 @@ protected:
 private:
     void InitImGui();
     void ShutdownImGui();
-    void ProcessEvent(const SDL_Event& event);
+    // Polls backend events, updates keyboard/mouse/gamepad state, then dispatches each one.
+    void IngestPolledEvents();
+    void ProcessEvent(const Event& event);
     FrameStatus RenderFrame();
     // The dev options' parts of the loop: start recording / replaying (after OnStart), screenshot
     // and capture requests for the coming frame, and what is left after it was drawn.
@@ -222,10 +219,10 @@ private:
     CrtParams m_CrtParams;            // kept while CRT is off; live params while it is on
     std::unique_ptr<Assets> m_Assets; // after the renderer: its textures need the GPU device
     f32 m_FrameSeconds = 0.0f;        // last frame's time, for post effects (e.g. CRT afterglow)
-    Keyboard m_Keyboard;              // raw key state, fed from SDL events
-    std::vector<std::string> m_TextInput; // SDL_EVENT_TEXT_INPUT strings this frame
-    Gamepads m_Gamepads;              // raw gamepad state, fed from SDL events
-    Mouse m_Mouse;                    // raw mouse state, fed from SDL events
+    Keyboard m_Keyboard;              // raw key state, fed from events
+    std::vector<std::string> m_TextInput; // text committed this frame
+    Gamepads m_Gamepads;              // raw gamepad state, fed from events
+    Mouse m_Mouse;                    // raw mouse state, fed from events
     Audio m_Audio;
     Input m_Input{m_Keyboard, m_Gamepads, &m_Mouse}; // actions on top of all three
     SceneStack m_Scenes{&m_Input};                   // empties itself before the assets go

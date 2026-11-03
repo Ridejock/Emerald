@@ -8,6 +8,7 @@
 #include "Emerald/Core/Log.h"
 #include "Emerald/Renderer/Pipeline.h"
 #include "Emerald/Renderer/Shader.h"
+#include "Platform/SdlCast.h"
 
 namespace Emerald {
 
@@ -45,21 +46,22 @@ SDL_GPUTexture* CreateTarget(SDL_GPUDevice* device, SDL_GPUTextureFormat format,
 SDL_GPUGraphicsPipeline* CreateFullscreenPipeline(SDL_GPUDevice* device, const char* fragmentName,
                                                   SDL_GPUTextureFormat format)
 {
-    SDL_GPUShader* vertex = LoadShader(device, {.Name = "Fullscreen.vert"});
-    SDL_GPUShader* fragment = LoadShader(device, {.Name = fragmentName});
+    GpuDevice* gpu = FromSdl(device);
+    GpuShader* vertex = LoadShader(gpu, {.Name = "Fullscreen.vert"});
+    GpuShader* fragment = LoadShader(gpu, {.Name = fragmentName});
     SDL_GPUGraphicsPipeline* pipeline = nullptr;
     if (vertex && fragment) {
         // No vertex buffers: the vertex shader makes the triangle from SV_VertexID.
-        pipeline = CreateGraphicsPipeline(device, {.VertexShader = vertex,
-                                                   .FragmentShader = fragment,
-                                                   .VertexBuffers = {},
-                                                   .VertexAttributes = {},
-                                                   .ColorFormat = format});
+        pipeline = Sdl(CreateGraphicsPipeline(gpu, {.VertexShader = vertex,
+                                                    .FragmentShader = fragment,
+                                                    .VertexBuffers = {},
+                                                    .VertexAttributes = {},
+                                                    .ColorFormat = FromSdl(format)}));
     }
     if (vertex)
-        SDL_ReleaseGPUShader(device, vertex);
+        SDL_ReleaseGPUShader(device, Sdl(vertex));
     if (fragment)
-        SDL_ReleaseGPUShader(device, fragment);
+        SDL_ReleaseGPUShader(device, Sdl(fragment));
     return pipeline;
 }
 
@@ -70,23 +72,25 @@ CrtEffect::~CrtEffect()
     Shutdown();
 }
 
-bool CrtEffect::Init(SDL_GPUDevice* device, SDL_GPUTextureFormat outputFormat)
+bool CrtEffect::Init(GpuDevice* device, GpuTextureFormat outputFormat)
 {
     Shutdown();
     m_Device = device;
     m_OutputFormat = outputFormat;
+    SDL_GPUDevice* sdl = Sdl(device);
 
     // Float targets keep faint afterglow and glow gradients smooth; 8-bit is the fallback.
     constexpr SDL_GPUTextureUsageFlags usage =
         SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER;
-    m_WorkFormat = SDL_GPUTextureSupportsFormat(device, SDL_GPU_TEXTUREFORMAT_R16G16B16A16_FLOAT,
+    m_WorkFormat = SDL_GPUTextureSupportsFormat(sdl, Sdl(GpuTextureFormat::R16G16B16A16Float),
                                                 SDL_GPU_TEXTURETYPE_2D, usage)
-                       ? SDL_GPU_TEXTUREFORMAT_R16G16B16A16_FLOAT
+                       ? GpuTextureFormat::R16G16B16A16Float
                        : outputFormat;
 
-    m_PhosphorPipeline = CreateFullscreenPipeline(device, "CrtPhosphor.frag", m_WorkFormat);
-    m_BlurPipeline = CreateFullscreenPipeline(device, "CrtBlur.frag", m_WorkFormat);
-    m_CompositePipeline = CreateFullscreenPipeline(device, "Crt.frag", outputFormat);
+    m_PhosphorPipeline =
+        FromSdl(CreateFullscreenPipeline(sdl, "CrtPhosphor.frag", Sdl(m_WorkFormat)));
+    m_BlurPipeline = FromSdl(CreateFullscreenPipeline(sdl, "CrtBlur.frag", Sdl(m_WorkFormat)));
+    m_CompositePipeline = FromSdl(CreateFullscreenPipeline(sdl, "Crt.frag", Sdl(outputFormat)));
 
     SDL_GPUSamplerCreateInfo sampler{};
     sampler.min_filter = SDL_GPU_FILTER_LINEAR;
@@ -95,7 +99,7 @@ bool CrtEffect::Init(SDL_GPUDevice* device, SDL_GPUTextureFormat outputFormat)
     sampler.address_mode_u = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
     sampler.address_mode_v = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
     sampler.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
-    m_Sampler = SDL_CreateGPUSampler(device, &sampler);
+    m_Sampler = FromSdl(SDL_CreateGPUSampler(sdl, &sampler));
 
     if (!m_PhosphorPipeline || !m_BlurPipeline || !m_CompositePipeline || !m_Sampler) {
         EM_CORE_ERROR("CrtEffect: could not create its pipelines (are the engine shaders "
@@ -112,14 +116,15 @@ void CrtEffect::Shutdown()
         return;
     // SDL defers releasing GPU objects until in-flight frames are done with them.
     ReleaseTargets();
-    for (SDL_GPUGraphicsPipeline** pipeline :
+    SDL_GPUDevice* sdl = Sdl(m_Device);
+    for (GpuGraphicsPipeline** pipeline :
          {&m_PhosphorPipeline, &m_BlurPipeline, &m_CompositePipeline}) {
         if (*pipeline)
-            SDL_ReleaseGPUGraphicsPipeline(m_Device, *pipeline);
+            SDL_ReleaseGPUGraphicsPipeline(sdl, Sdl(*pipeline));
         *pipeline = nullptr;
     }
     if (m_Sampler)
-        SDL_ReleaseGPUSampler(m_Device, m_Sampler);
+        SDL_ReleaseGPUSampler(sdl, Sdl(m_Sampler));
     m_Sampler = nullptr;
     m_Device = nullptr;
 }
@@ -128,9 +133,10 @@ void CrtEffect::ReleaseTargets()
 {
     Target* targets[] = {&m_History[0], &m_History[1], &m_Bloom[0],
                          &m_Bloom[1],   &m_Bloom[2],   &m_Bloom[3]};
+    SDL_GPUDevice* sdl = Sdl(m_Device);
     for (Target* target : targets) {
         if (target->Texture)
-            SDL_ReleaseGPUTexture(m_Device, target->Texture);
+            SDL_ReleaseGPUTexture(sdl, Sdl(target->Texture));
         *target = {};
     }
     m_HistoryValid = false;
@@ -139,8 +145,9 @@ void CrtEffect::ReleaseTargets()
 bool CrtEffect::CreateTargets(u32 width, u32 height)
 {
     ReleaseTargets();
-    const auto make = [&](Target& target, SDL_GPUTextureFormat format, u32 w, u32 h) {
-        target = {.Texture = CreateTarget(m_Device, format, w, h),
+    SDL_GPUDevice* sdl = Sdl(m_Device);
+    const auto make = [&](Target& target, GpuTextureFormat format, u32 w, u32 h) {
+        target = {.Texture = FromSdl(CreateTarget(sdl, Sdl(format), w, h)),
                   .Width = std::max(w, 1u),
                   .Height = std::max(h, 1u)};
         return target.Texture != nullptr;
@@ -159,28 +166,29 @@ bool CrtEffect::CreateTargets(u32 width, u32 height)
     return ok;
 }
 
-void CrtEffect::RunPass(SDL_GPUCommandBuffer* commandBuffer, SDL_GPUGraphicsPipeline* pipeline,
-                        const Target& target, std::span<SDL_GPUTexture* const> sources,
+void CrtEffect::RunPass(GpuCommandBuffer* commandBuffer, GpuGraphicsPipeline* pipeline,
+                        const Target& target, std::span<GpuTexture* const> sources,
                         const void* uniforms, u32 uniformSize)
 {
+    SDL_GPUCommandBuffer* cmd = Sdl(commandBuffer);
     SDL_GPUColorTargetInfo color{};
-    color.texture = target.Texture;
+    color.texture = Sdl(target.Texture);
     color.load_op = SDL_GPU_LOADOP_DONT_CARE; // every pixel is overwritten
     color.store_op = SDL_GPU_STOREOP_STORE;
-    SDL_GPURenderPass* pass = SDL_BeginGPURenderPass(commandBuffer, &color, 1, nullptr);
-    SDL_BindGPUGraphicsPipeline(pass, pipeline);
+    SDL_GPURenderPass* pass = SDL_BeginGPURenderPass(cmd, &color, 1, nullptr);
+    SDL_BindGPUGraphicsPipeline(pass, Sdl(pipeline));
     SDL_GPUTextureSamplerBinding bindings[3]{};
     const u32 count = static_cast<u32>(std::min<usize>(sources.size(), 3));
     for (u32 i = 0; i < count; ++i)
-        bindings[i] = {.texture = sources[i], .sampler = m_Sampler};
+        bindings[i] = {.texture = Sdl(sources[i]), .sampler = Sdl(m_Sampler)};
     SDL_BindGPUFragmentSamplers(pass, 0, bindings, count);
-    SDL_PushGPUFragmentUniformData(commandBuffer, 0, uniforms, uniformSize);
+    SDL_PushGPUFragmentUniformData(cmd, 0, uniforms, uniformSize);
     SDL_DrawGPUPrimitives(pass, 3, 1, 0, 0);
     SDL_EndGPURenderPass(pass);
 }
 
-bool CrtEffect::Apply(SDL_GPUCommandBuffer* commandBuffer, SDL_GPUTexture* source,
-                      SDL_GPUTexture* target, u32 width, u32 height, f32 deltaSeconds)
+bool CrtEffect::Apply(GpuCommandBuffer* commandBuffer, GpuTexture* source, GpuTexture* target,
+                      u32 width, u32 height, f32 deltaSeconds)
 {
     if (!m_Device || !source || !target)
         return false;
@@ -196,7 +204,7 @@ bool CrtEffect::Apply(SDL_GPUCommandBuffer* commandBuffer, SDL_GPUTexture* sourc
     const PhosphorUniforms phosphor{
         .Decay = afterglow ? AfterglowDecay(m_Params.Afterglow, deltaSeconds) : 0.0f,
         .Padding = {}};
-    SDL_GPUTexture* const phosphorSources[] = {source, afterglow ? previous.Texture : source};
+    GpuTexture* const phosphorSources[] = {source, afterglow ? previous.Texture : source};
     RunPass(commandBuffer, m_PhosphorPipeline, history, phosphorSources, &phosphor,
             sizeof(phosphor));
     m_HistoryValid = m_Params.Afterglow > 0.0f;
@@ -205,7 +213,7 @@ bool CrtEffect::Apply(SDL_GPUCommandBuffer* commandBuffer, SDL_GPUTexture* sourc
     // 2. Bloom: horizontal then vertical blur, near glow at 1/2 size, wide glow at 1/4.
     for (u32 level = 0; level < 2; ++level) {
         const f32 step = BlurStepPixels(m_Params, height, level == 1);
-        SDL_GPUTexture* const blurSource = level == 0 ? history.Texture : m_Bloom[1].Texture;
+        GpuTexture* const blurSource = level == 0 ? history.Texture : m_Bloom[1].Texture;
         const BlurUniforms horizontal{.Step = {step / static_cast<f32>(width), 0.0f},
                                       .Padding = {}};
         const BlurUniforms vertical{.Step = {0.0f, step / static_cast<f32>(height)}, .Padding = {}};
@@ -219,7 +227,7 @@ bool CrtEffect::Apply(SDL_GPUCommandBuffer* commandBuffer, SDL_GPUTexture* sourc
 
     // 3. Composite into the real target.
     const CrtUniforms uniforms = MakeUniforms(m_Params, width, height);
-    SDL_GPUTexture* const sources[] = {history.Texture, m_Bloom[1].Texture, m_Bloom[3].Texture};
+    GpuTexture* const sources[] = {history.Texture, m_Bloom[1].Texture, m_Bloom[3].Texture};
     const Target output{.Texture = target, .Width = width, .Height = height};
     RunPass(commandBuffer, m_CompositePipeline, output, sources, &uniforms, sizeof(uniforms));
     return true;

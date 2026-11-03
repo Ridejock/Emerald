@@ -104,9 +104,9 @@ public:
         : m_Name(std::move(name)), m_Log(log)
     {
     }
-    bool Init(SDL_GPUDevice*, SDL_GPUTextureFormat) override { return true; }
+    bool Init(GpuDevice*, GpuTextureFormat) override { return true; }
     void Shutdown() override {}
-    bool Apply(SDL_GPUCommandBuffer*, SDL_GPUTexture*, SDL_GPUTexture*, u32, u32, f32) override
+    bool Apply(GpuCommandBuffer*, GpuTexture*, GpuTexture*, u32, u32, f32) override
     {
         m_Log->push_back(m_Name);
         return true;

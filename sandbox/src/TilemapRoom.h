@@ -10,13 +10,12 @@
 // --bench option), --pan makes the camera sweep across it on its own, and --stats logs frame
 // rate, tiles drawn and the time spent in Tilemap::DrawLayer every two seconds.
 
+#include <chrono>
 #include <cmath>
 #include <filesystem>
 #include <string>
 #include <variant>
 #include <vector>
-
-#include <SDL3/SDL.h>
 
 #include <Emerald/Emerald.h>
 
@@ -97,7 +96,7 @@ public:
         // Culled to what the camera sees, or (for the benchmark) the whole map.
         const Emerald::Rect2D view = m_Cull ? m_Camera.GetVisibleBounds() : map.GetBounds();
         r.Begin(m_Camera);
-        const u64 start = SDL_GetTicksNS();
+        const auto start = std::chrono::steady_clock::now();
         m_TilesDrawn = 0;
         bool heroDrawn = false;
         for (usize i = 0; i < layers.size(); ++i) {
@@ -108,7 +107,9 @@ public:
             if (layers[i].Visible && m_LayerShown[i])
                 m_TilesDrawn += map.DrawLayer(r, i, view);
         }
-        m_DrawMs = static_cast<f64>(SDL_GetTicksNS() - start) / 1e6;
+        m_DrawMs =
+            std::chrono::duration<f64, std::milli>(std::chrono::steady_clock::now() - start)
+                .count();
         if (!heroDrawn)
             drawHero(m_Feet, m_FacingLeft);
 
@@ -225,13 +226,13 @@ private:
     {
         if (!m_Options.Stats)
             return;
-        const u64 now = SDL_GetTicksNS();
-        if (m_StatsStart == 0)
+        const auto now = std::chrono::steady_clock::now();
+        if (m_StatsStart == std::chrono::steady_clock::time_point{})
             m_StatsStart = now;
         ++m_StatsFrames;
         m_StatsTiles += m_TilesDrawn;
         m_StatsDrawMs += m_DrawMs;
-        const f64 seconds = static_cast<f64>(now - m_StatsStart) / 1e9;
+        const f64 seconds = std::chrono::duration<f64>(now - m_StatsStart).count();
         if (seconds < 2.0)
             return;
         const f64 frames = static_cast<f64>(m_StatsFrames);
@@ -258,7 +259,7 @@ private:
     u32 m_TilesDrawn = 0;
     f64 m_DrawMs = 0.0;
     f32 m_PanTime = 0.0f;
-    u64 m_StatsStart = 0;
+    std::chrono::steady_clock::time_point m_StatsStart{};
     u64 m_StatsFrames = 0;
     u64 m_StatsTiles = 0;
     f64 m_StatsDrawMs = 0.0;

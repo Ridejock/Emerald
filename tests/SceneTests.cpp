@@ -265,7 +265,7 @@ TEST(ScenesBlockInputWithoutFocus)
     Gamepads pads;
     Input input(keyboard, pads);
     input.BindAction("Jump", {Key::Space});
-    keyboard.OnKeyDown(SDL_SCANCODE_SPACE);
+    keyboard.OnKeyDown(Key::Space);
 
     // The log first: the stack's destructor exits the scenes, which still write to it.
     Log_ log;

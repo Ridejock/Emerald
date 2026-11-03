@@ -4,39 +4,19 @@
 
 #include <SDL3/SDL_error.h>
 
+#include "Audio/MixFormat.h"
 #include "Emerald/Core/Log.h"
+#include "Platform/SdlCast.h"
 
 namespace Emerald {
 
-bool Audio::Init()
-{
-    // One stream in the mix format on the default device; SDL converts it to whatever the
-    // device really uses and calls Callback whenever it needs more data.
-    m_Stream =
-        SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &kMixSpec, Callback, this);
-    if (!m_Stream) {
-        EM_CORE_WARN("No audio output: {}", SDL_GetError());
-        return false;
-    }
-    const SDL_AudioDeviceID device = SDL_GetAudioStreamDevice(m_Stream);
-    SDL_AudioSpec deviceSpec{};
-    SDL_GetAudioDeviceFormat(device, &deviceSpec, nullptr);
-    EM_CORE_INFO("Audio output: {} ({} Hz, {} channels)", SDL_GetAudioDeviceName(device),
-                 deviceSpec.freq, deviceSpec.channels);
-    SDL_ResumeAudioStreamDevice(m_Stream); // devices opened this way start paused
-    return true;
-}
+struct AudioCallback {
+    static void SDLCALL Run(void* userdata, SDL_AudioStream* stream, int additionalBytes,
+                            int totalBytes);
+};
 
-void Audio::Shutdown()
-{
-    if (m_Stream) {
-        SDL_DestroyAudioStream(m_Stream); // also closes the device and stops the callback
-        m_Stream = nullptr;
-    }
-}
-
-void SDLCALL Audio::Callback(void* userdata, SDL_AudioStream* stream, int additionalBytes,
-                             int /*totalBytes*/)
+void SDLCALL AudioCallback::Run(void* userdata, SDL_AudioStream* stream, int additionalBytes,
+                                int /*totalBytes*/)
 {
     // Runs on the audio thread with the stream locked. Mixes in blocks on the stack: no
     // allocations here.
@@ -49,6 +29,46 @@ void SDLCALL Audio::Callback(void* userdata, SDL_AudioStream* stream, int additi
         audio->m_Mixer.Mix(block.data(), n);
         SDL_PutAudioStreamData(stream, block.data(), static_cast<int>(n * sizeof(f32) * 2));
         frames -= n;
+    }
+}
+
+Audio::Lock::Lock(AudioStream* stream) : m_Stream(stream)
+{
+    if (m_Stream)
+        SDL_LockAudioStream(Sdl(m_Stream));
+}
+
+Audio::Lock::~Lock()
+{
+    if (m_Stream)
+        SDL_UnlockAudioStream(Sdl(m_Stream));
+}
+
+bool Audio::Init()
+{
+    // One stream in the mix format on the default device; SDL converts it to whatever the
+    // device really uses and calls Callback whenever it needs more data.
+    const SDL_AudioSpec spec = MixSpec();
+    m_Stream = FromSdl(SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec,
+                                                 &AudioCallback::Run, this));
+    if (!m_Stream) {
+        EM_CORE_WARN("No audio output: {}", SDL_GetError());
+        return false;
+    }
+    const SDL_AudioDeviceID device = SDL_GetAudioStreamDevice(Sdl(m_Stream));
+    SDL_AudioSpec deviceSpec{};
+    SDL_GetAudioDeviceFormat(device, &deviceSpec, nullptr);
+    EM_CORE_INFO("Audio output: {} ({} Hz, {} channels)", SDL_GetAudioDeviceName(device),
+                 deviceSpec.freq, deviceSpec.channels);
+    SDL_ResumeAudioStreamDevice(Sdl(m_Stream)); // devices opened this way start paused
+    return true;
+}
+
+void Audio::Shutdown()
+{
+    if (m_Stream) {
+        SDL_DestroyAudioStream(Sdl(m_Stream)); // also closes the device and stops the callback
+        m_Stream = nullptr;
     }
 }
 

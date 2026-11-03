@@ -9,6 +9,7 @@
 #include <SDL3/SDL_stdinc.h>
 #include <dr_mp3.h>
 
+#include "Audio/MixFormat.h"
 #include "Emerald/Core/Log.h"
 
 namespace Emerald {
@@ -30,12 +31,13 @@ std::string ToUtf8(const std::filesystem::path& path)
 }
 
 // Converts any SDL audio data to the mix format with SDL_ConvertAudioSamples.
-std::optional<Sound> Convert(const SDL_AudioSpec& spec, const void* data, usize bytes)
+std::optional<Sound> Convert(const SDL_AudioSpec& src, const void* data, usize bytes)
 {
     Uint8* converted = nullptr;
     int convertedBytes = 0;
-    if (!SDL_ConvertAudioSamples(&spec, static_cast<const Uint8*>(data), static_cast<int>(bytes),
-                                 &kMixSpec, &converted, &convertedBytes)) {
+    const SDL_AudioSpec spec = MixSpec();
+    if (!SDL_ConvertAudioSamples(&src, static_cast<const Uint8*>(data), static_cast<int>(bytes),
+                                 &spec, &converted, &convertedBytes)) {
         LogError("Audio conversion failed: {}", SDL_GetError());
         return std::nullopt;
     }

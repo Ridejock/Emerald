@@ -170,7 +170,7 @@ template <typename Fn> void SceneStack::ForEach(usize first, Fn&& fn)
         m_Input->SetBlocked(wasBlocked);
 }
 
-void SceneStack::OnEvent(const SDL_Event& event)
+void SceneStack::OnEvent(const Event& event)
 {
     if (Scene* top = GetTop(); top && top->HasFocus())
         top->OnEvent(event);
@@ -203,7 +203,7 @@ void SceneStack::Update(f32 dt)
     ApplyPending();
 }
 
-void SceneStack::Render(SDL_GPURenderPass* pass)
+void SceneStack::Render(GpuRenderPass* pass)
 {
     ForEach(GetFirst(true), [pass](Scene& s) { s.OnRender(pass); });
 }

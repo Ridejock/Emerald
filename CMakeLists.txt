@@ -99,6 +99,7 @@ target_compile_definitions(EmeraldMath INTERFACE EMERALD_MATH_SIMD=$<BOOL:${EMER
 # ---------------------------------------------------------------------------
 add_library(Emerald STATIC
     src/Core/Log.cpp
+    src/Core/Events.cpp
     src/Core/Paths.cpp
     src/Core/Platform.cpp
     src/Core/Window.cpp
@@ -113,6 +114,7 @@ add_library(Emerald STATIC
     src/Input/InputRecording.cpp
     src/Memory/FrameArena.cpp
     src/Memory/TrackingResource.cpp
+    src/Renderer/Gpu.cpp
     src/Renderer/Renderer.cpp
     src/Renderer/Shader.cpp
     src/Renderer/Pipeline.cpp
@@ -160,10 +162,14 @@ add_library(Emerald::Emerald ALIAS Emerald)
 target_include_directories(Emerald PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
 )
+# Engine translation headers (Platform/SdlCast.h). Not part of the public include path.
+target_include_directories(Emerald PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
 
 target_link_libraries(Emerald
-    PUBLIC  Emerald::Math SDL3::SDL3 spdlog::spdlog EnTT::EnTT Threads::Threads
-    PRIVATE Emerald::Vorbis Emerald::stb Emerald::dr_libs nlohmann_json::nlohmann_json
+    PUBLIC  Emerald::Math spdlog::spdlog EnTT::EnTT Threads::Threads
+    PRIVATE SDL3::SDL3 Emerald::Vorbis Emerald::stb Emerald::dr_libs nlohmann_json::nlohmann_json
 )
 
 target_compile_definitions(Emerald PUBLIC

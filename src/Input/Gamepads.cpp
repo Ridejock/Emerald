@@ -7,6 +7,7 @@
 #include <SDL3/SDL_error.h>
 
 #include "Emerald/Core/Log.h"
+#include "Platform/SdlCast.h"
 
 namespace Emerald {
 
@@ -23,18 +24,18 @@ constexpr f32 kReleaseMargin = 0.1f;
 
 enum class Family : u8 { Xbox, PlayStation, Nintendo };
 
-Family GetFamily(SDL_GamepadType type)
+Family GetFamily(GamepadType type)
 {
     switch (type) {
-    case SDL_GAMEPAD_TYPE_PS3:
-    case SDL_GAMEPAD_TYPE_PS4:
-    case SDL_GAMEPAD_TYPE_PS5:
+    case GamepadType::PS3:
+    case GamepadType::PS4:
+    case GamepadType::PS5:
         return Family::PlayStation;
-    case SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_PRO:
-    case SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_LEFT:
-    case SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_RIGHT:
-    case SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_PAIR:
-    case SDL_GAMEPAD_TYPE_GAMECUBE:
+    case GamepadType::SwitchPro:
+    case GamepadType::JoyConLeft:
+    case GamepadType::JoyConRight:
+    case GamepadType::JoyConPair:
+    case GamepadType::GameCube:
         return Family::Nintendo;
     default:
         return Family::Xbox; // Xbox-style labels for Xbox and generic pads
@@ -42,7 +43,7 @@ Family GetFamily(SDL_GamepadType type)
 }
 
 // Picks the label for the pad's family.
-const char* Pick(SDL_GamepadType type, const char* xbox, const char* playStation,
+const char* Pick(GamepadType type, const char* xbox, const char* playStation,
                  const char* nintendo)
 {
     switch (GetFamily(type)) {
@@ -103,37 +104,38 @@ Vec2 ApplyRadialDeadzone(Vec2 stick, f32 deadzone)
     return stick * (scaled / length);
 }
 
-const char* GetGamepadTypeName(SDL_GamepadType type)
+const char* GetGamepadTypeName(GamepadType type)
 {
     switch (type) {
-    case SDL_GAMEPAD_TYPE_XBOX360:
+    case GamepadType::Xbox360:
         return "Xbox 360";
-    case SDL_GAMEPAD_TYPE_XBOXONE:
+    case GamepadType::XboxOne:
         return "Xbox One/Series";
-    case SDL_GAMEPAD_TYPE_PS3:
+    case GamepadType::PS3:
         return "PS3";
-    case SDL_GAMEPAD_TYPE_PS4:
+    case GamepadType::PS4:
         return "PS4";
-    case SDL_GAMEPAD_TYPE_PS5:
+    case GamepadType::PS5:
         return "PS5";
-    case SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_PRO:
+    case GamepadType::SwitchPro:
         return "Switch Pro";
-    case SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_LEFT:
+    case GamepadType::JoyConLeft:
         return "Joy-Con (L)";
-    case SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_RIGHT:
+    case GamepadType::JoyConRight:
         return "Joy-Con (R)";
-    case SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_PAIR:
+    case GamepadType::JoyConPair:
         return "Joy-Con pair";
-    case SDL_GAMEPAD_TYPE_GAMECUBE:
+    case GamepadType::GameCube:
         return "GameCube";
-    case SDL_GAMEPAD_TYPE_STANDARD:
+    case GamepadType::Standard:
         return "Standard";
+    case GamepadType::Unknown:
     default:
         return "Unknown";
     }
 }
 
-const char* GetGamepadButtonLabel(GamepadButton button, SDL_GamepadType type)
+const char* GetGamepadButtonLabel(GamepadButton button, GamepadType type)
 {
     using B = GamepadButton;
     switch (button) {
@@ -142,15 +144,14 @@ const char* GetGamepadButtonLabel(GamepadButton button, SDL_GamepadType type)
     case B::West:
     case B::North:
         // SDL knows the face button labels, including Nintendo's swapped A/B and X/Y.
-        return FaceLabel(
-            SDL_GetGamepadButtonLabelForType(type, static_cast<SDL_GamepadButton>(button)));
+        return FaceLabel(SDL_GetGamepadButtonLabelForType(Sdl(type), Sdl(button)));
     case B::Back:
-        return Pick(type, type == SDL_GAMEPAD_TYPE_XBOX360 ? "Back" : "View",
-                    type == SDL_GAMEPAD_TYPE_PS5 ? "Create" : "Share", "-");
+        return Pick(type, type == GamepadType::Xbox360 ? "Back" : "View",
+                    type == GamepadType::PS5 ? "Create" : "Share", "-");
     case B::Guide:
         return Pick(type, "Xbox", "PS", "Home");
     case B::Start:
-        return Pick(type, type == SDL_GAMEPAD_TYPE_XBOX360 ? "Start" : "Menu", "Options", "+");
+        return Pick(type, type == GamepadType::Xbox360 ? "Start" : "Menu", "Options", "+");
     case B::LeftStick:
         return Pick(type, "LS", "L3", "LS");
     case B::RightStick:
@@ -229,7 +230,7 @@ const char* GetSteamDeckButtonLabel(GamepadButton button)
     case B::West:
     case B::North:
         // Printed on the Deck, and the same positions SDL's STANDARD type already uses.
-        return GetGamepadButtonLabel(button, SDL_GAMEPAD_TYPE_XBOXONE);
+        return GetGamepadButtonLabel(button, GamepadType::XboxOne);
     case B::Back:
         return "View";
     case B::Guide:
@@ -259,7 +260,7 @@ const char* GetSteamDeckButtonLabel(GamepadButton button)
     case B::Misc2:
         return "Right Pad";
     default:
-        return GetGamepadButtonLabel(button, SDL_GAMEPAD_TYPE_XBOXONE);
+        return GetGamepadButtonLabel(button, GamepadType::XboxOne);
     }
 }
 
@@ -296,25 +297,25 @@ void Gamepads::Rumble(f32 low, f32 high, u32 milliseconds)
     };
     for (const Pad& pad : m_Pads) {
         if (pad.Handle)
-            SDL_RumbleGamepad(pad.Handle, toMotor(low), toMotor(high), milliseconds);
+            SDL_RumbleGamepad(Sdl(pad.Handle), toMotor(low), toMotor(high), milliseconds);
     }
 }
 
-void Gamepads::Open(SDL_JoystickID id)
+void Gamepads::Open(GamepadId id)
 {
     if (Find(id))
         return;
-    SDL_Gamepad* handle = SDL_OpenGamepad(id);
+    SDL_Gamepad* handle = SDL_OpenGamepad(static_cast<SDL_JoystickID>(id));
     if (!handle) {
         EM_CORE_WARN("Could not open gamepad {}: {}", id, SDL_GetError());
         return;
     }
     const char* name = SDL_GetGamepadName(handle);
-    const SDL_GamepadType type = SDL_GetGamepadType(handle);
+    const GamepadType type = FromSdl(SDL_GetGamepadType(handle));
     const std::string padName = name ? name : "Gamepad";
     const bool deck = IsSteamDeckGamepad(padName, static_cast<u16>(SDL_GetGamepadVendor(handle)),
                                          static_cast<u16>(SDL_GetGamepadProduct(handle)));
-    AddPad(id, handle, padName, type);
+    AddPad(id, FromSdl(handle), padName, type);
     EM_CORE_INFO("Gamepad connected: {} ({}), rumble: {}", padName,
                  deck ? "Steam Deck" : GetGamepadTypeName(type),
                  SDL_GetBooleanProperty(SDL_GetGamepadProperties(handle),
@@ -323,7 +324,7 @@ void Gamepads::Open(SDL_JoystickID id)
                      : "no");
 }
 
-void Gamepads::Close(SDL_JoystickID id)
+void Gamepads::Close(GamepadId id)
 {
     Pad* pad = Find(id);
     if (!pad)
@@ -331,7 +332,7 @@ void Gamepads::Close(SDL_JoystickID id)
     if (pad->Handle) {
         EM_CORE_INFO("Gamepad disconnected: {} ({})", pad->Info.Name,
                      GetGamepadTypeName(pad->Info.Type));
-        SDL_CloseGamepad(pad->Handle);
+        SDL_CloseGamepad(Sdl(pad->Handle));
     }
     const std::bitset<kButtonCount> held = pad->Buttons;
     std::erase_if(m_Pads, [id](const Pad& p) { return p.Info.Id == id; });
@@ -350,12 +351,10 @@ void Gamepads::CloseAll()
 
 void Gamepads::AddSyntheticPad(u32 id, std::string name, GamepadType type)
 {
-    AddPad(static_cast<SDL_JoystickID>(id), nullptr, std::move(name),
-           static_cast<SDL_GamepadType>(type));
+    AddPad(id, nullptr, std::move(name), type);
 }
 
-void Gamepads::AddPad(SDL_JoystickID id, SDL_Gamepad* handle, std::string name,
-                      SDL_GamepadType type)
+void Gamepads::AddPad(GamepadId id, GamepadDevice* handle, std::string name, GamepadType type)
 {
     if (Find(id))
         return;
@@ -363,21 +362,21 @@ void Gamepads::AddPad(SDL_JoystickID id, SDL_Gamepad* handle, std::string name,
     pad.Info = {id, std::move(name), type};
     pad.Handle = handle;
     m_Pads.push_back(std::move(pad));
-    if (m_LastUsedType == SDL_GAMEPAD_TYPE_UNKNOWN)
+    if (m_LastUsedType == GamepadType::Unknown)
         Remember(m_Pads.back());
 }
 
-void Gamepads::OnButton(SDL_JoystickID id, GamepadButton button, bool down)
+void Gamepads::OnButton(GamepadId id, GamepadButton button, bool down)
 {
     Pad* pad = Find(id);
-    if (!pad || Index(button) >= static_cast<usize>(SDL_GAMEPAD_BUTTON_COUNT))
+    if (!pad || Index(button) >= static_cast<usize>(GamepadButton::LeftTrigger))
         return; // virtual buttons only come from axes
     if (down)
         Remember(*pad);
     SetPadButton(*pad, Index(button), down);
 }
 
-void Gamepads::OnAxis(SDL_JoystickID id, GamepadAxis axis, f32 value)
+void Gamepads::OnAxis(GamepadId id, GamepadAxis axis, f32 value)
 {
     Pad* pad = Find(id);
     if (!pad || static_cast<usize>(axis) >= kAxisCount)
@@ -409,8 +408,8 @@ bool Gamepads::PadIsSteamDeck(const Pad& pad) const
     u16 vendor = 0;
     u16 product = 0;
     if (pad.Handle) {
-        vendor = static_cast<u16>(SDL_GetGamepadVendor(pad.Handle));
-        product = static_cast<u16>(SDL_GetGamepadProduct(pad.Handle));
+        vendor = static_cast<u16>(SDL_GetGamepadVendor(Sdl(pad.Handle)));
+        product = static_cast<u16>(SDL_GetGamepadProduct(Sdl(pad.Handle)));
     }
     return IsSteamDeckGamepad(pad.Info.Name, vendor, product);
 }
@@ -421,7 +420,7 @@ void Gamepads::Remember(const Pad& pad)
     m_LastUsedSteamDeck = PadIsSteamDeck(pad);
 }
 
-Gamepads::Pad* Gamepads::Find(SDL_JoystickID id)
+Gamepads::Pad* Gamepads::Find(GamepadId id)
 {
     for (Pad& pad : m_Pads) {
         if (pad.Info.Id == id)

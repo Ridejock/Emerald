@@ -16,6 +16,7 @@
 
 #include <array>
 #include <charconv>
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <filesystem>
@@ -23,12 +24,11 @@
 #include <memory>
 #include <numeric>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
-
-#include <SDL3/SDL.h>
 
 #include <Emerald/Emerald.h>
 
@@ -95,7 +95,7 @@ constexpr f32 kQuadSize = 50.0f; // pixels
 // One draw call, collected into a per-frame list before recording (see OnRender).
 struct DrawItem {
     Mat4 Transform; // projection * model
-    SDL_GPUBuffer* Vertices = nullptr;
+    Emerald::GpuBuffer* Vertices = nullptr;
     u32 VertexCount = 0;
 };
 
@@ -241,12 +241,12 @@ protected:
         GetWorld().Flush();
     }
 
-    // Under every scene: the triangle and the app-level entity quads (raw SDL GPU draws, below
+    // Under every scene: the triangle and the app-level entity quads (raw GPU draws, below
     // the 2D).
-    void OnRender(SDL_GPURenderPass* pass) override
+    void OnRender(Emerald::GpuRenderPass* pass) override
     {
-        SDL_GPUCommandBuffer* cmd = GetRenderer().GetCommandBuffer();
-        SDL_BindGPUGraphicsPipeline(pass, m_Pipeline);
+        Emerald::GpuCommandBuffer* cmd = GetRenderer().GetCommandBuffer();
+        Emerald::BindGraphicsPipeline(pass, m_Pipeline);
 
         // Everything is drawn in pixel space: (0, 0) top-left, window size bottom-right, +Y down.
         // Window size is in the same units as mouse/window coordinates; the projection maps it to
@@ -276,10 +276,11 @@ protected:
             // Uniform data is pushed into the command buffer and applies to the draws that follow
             // (slot 0 = register(b0, space1)).
             const Uniforms uniforms{draw.Transform};
-            SDL_PushGPUVertexUniformData(cmd, 0, &uniforms, sizeof(uniforms));
-            const SDL_GPUBufferBinding binding{draw.Vertices, 0};
-            SDL_BindGPUVertexBuffers(pass, 0, &binding, 1);
-            SDL_DrawGPUPrimitives(pass, draw.VertexCount, 1, 0, 0);
+            Emerald::PushVertexUniformData(cmd, 0, &uniforms, sizeof(uniforms));
+            const Emerald::GpuBufferBinding binding{draw.Vertices, 0};
+            Emerald::BindVertexBuffers(
+                pass, 0, std::span<const Emerald::GpuBufferBinding>(&binding, 1));
+            Emerald::DrawPrimitives(pass, draw.VertexCount, 1, 0, 0);
         }
     }
 
@@ -508,13 +509,13 @@ protected:
 
     void OnShutdown() override
     {
-        SDL_GPUDevice* device = GetRenderer().GetDevice();
+        Emerald::GpuDevice* device = GetRenderer().GetDevice();
         if (m_Pipeline)
-            SDL_ReleaseGPUGraphicsPipeline(device, m_Pipeline);
+            Emerald::ReleaseGraphicsPipeline(device, m_Pipeline);
         if (m_TriangleBuffer)
-            SDL_ReleaseGPUBuffer(device, m_TriangleBuffer);
+            Emerald::ReleaseBuffer(device, m_TriangleBuffer);
         if (m_QuadBuffer)
-            SDL_ReleaseGPUBuffer(device, m_QuadBuffer);
+            Emerald::ReleaseBuffer(device, m_QuadBuffer);
         EM_INFO("Sandbox shutting down after {:.2f}s", m_Time);
     }
 
@@ -600,7 +601,7 @@ private:
 
         // Sprites: upload the generated sheet (nearest filtering: crisp pixel art) and name its
         // two regions, like an atlas.json would.
-        SDL_GPUDevice* device = GetRenderer().GetDevice();
+        Emerald::GpuDevice* device = GetRenderer().GetDevice();
         if (std::optional<Emerald::Texture> sheet =
                 Emerald::Texture::Create(device, MakeSpriteSheet())) {
             m_Shared.Atlas = Emerald::TextureAtlas::Create(
@@ -630,14 +631,16 @@ private:
         constexpr usize kCount = 1'000'000;
         std::vector<f32> values(kCount);
 
-        const u64 start = SDL_GetTicksNS();
+        const auto start = std::chrono::steady_clock::now();
         // Each index is written by exactly one thread, so no locking is needed.
         pool.ParallelFor(kCount,
                          [&values](usize i) { values[i] = std::sqrt(static_cast<f32>(i)); });
         std::future<f64> sum =
             pool.Submit([&values] { return std::accumulate(values.begin(), values.end(), 0.0); });
         const f64 total = sum.get(); // blocks until the task has run
-        const f64 ms = static_cast<f64>(SDL_GetTicksNS() - start) / 1e6;
+        const f64 ms =
+            std::chrono::duration<f64, std::milli>(std::chrono::steady_clock::now() - start)
+                .count();
 
         EM_INFO("Thread pool demo: {} square roots on {} workers + main thread, summed by a task: "
                 "{:.0f} ({:.2f} ms)",
@@ -665,28 +668,28 @@ private:
     bool CreateGpuResources()
     {
         Emerald::Renderer& renderer = GetRenderer();
-        SDL_GPUDevice* device = renderer.GetDevice();
+        Emerald::GpuDevice* device = renderer.GetDevice();
 
         // Resource counts (1 uniform buffer in the vertex shader) come from the .json reflection.
-        SDL_GPUShader* vertex = Emerald::LoadShader(device, {.Name = "Triangle.vert"});
-        SDL_GPUShader* fragment = Emerald::LoadShader(device, {.Name = "Triangle.frag"});
+        Emerald::GpuShader* vertex = Emerald::LoadShader(device, {.Name = "Triangle.vert"});
+        Emerald::GpuShader* fragment = Emerald::LoadShader(device, {.Name = "Triangle.frag"});
 
         // One vertex buffer (slot 0) with interleaved position + color.
-        const SDL_GPUVertexBufferDescription buffers[] = {{
-            .slot = 0,
-            .pitch = sizeof(Vertex),
-            .input_rate = SDL_GPU_VERTEXINPUTRATE_VERTEX,
-            .instance_step_rate = 0,
+        const Emerald::VertexBufferDesc buffers[] = {{
+            .Slot = 0,
+            .Pitch = sizeof(Vertex),
+            .InputRate = Emerald::VertexInputRate::Vertex,
+            .InstanceStepRate = 0,
         }};
-        const SDL_GPUVertexAttribute attributes[] = {
-            {.location = 0, // TEXCOORD0
-             .buffer_slot = 0,
-             .format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2,
-             .offset = offsetof(Vertex, Position)},
-            {.location = 1, // TEXCOORD1
-             .buffer_slot = 0,
-             .format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3,
-             .offset = offsetof(Vertex, Color)},
+        const Emerald::VertexAttribute attributes[] = {
+            {.Location = 0, // TEXCOORD0
+             .BufferSlot = 0,
+             .Format = Emerald::VertexElementFormat::Float2,
+             .Offset = offsetof(Vertex, Position)},
+            {.Location = 1, // TEXCOORD1
+             .BufferSlot = 0,
+             .Format = Emerald::VertexElementFormat::Float3,
+             .Offset = offsetof(Vertex, Color)},
         };
 
         if (vertex && fragment) {
@@ -699,13 +702,13 @@ private:
         }
         // The pipeline keeps what it needs; the shader objects can go.
         if (vertex)
-            SDL_ReleaseGPUShader(device, vertex);
+            Emerald::ReleaseShader(device, vertex);
         if (fragment)
-            SDL_ReleaseGPUShader(device, fragment);
+            Emerald::ReleaseShader(device, fragment);
 
-        m_TriangleBuffer = renderer.CreateBuffer(SDL_GPU_BUFFERUSAGE_VERTEX, kTriangle.data(),
+        m_TriangleBuffer = renderer.CreateBuffer(Emerald::GpuBufferUsage::Vertex, kTriangle.data(),
                                                  static_cast<u32>(sizeof(kTriangle)));
-        m_QuadBuffer = renderer.CreateBuffer(SDL_GPU_BUFFERUSAGE_VERTEX, kQuad.data(),
+        m_QuadBuffer = renderer.CreateBuffer(Emerald::GpuBufferUsage::Vertex, kQuad.data(),
                                              static_cast<u32>(sizeof(kQuad)));
         if (!m_QuadBuffer)
             return false;
@@ -719,9 +722,9 @@ private:
 #if EMERALD_WITH_IMGUI
     Emerald::Easing m_PreviewEasing = Emerald::Easing::BounceOut; // picked in the ImGui panel
 #endif
-    SDL_GPUGraphicsPipeline* m_Pipeline = nullptr;
-    SDL_GPUBuffer* m_TriangleBuffer = nullptr;
-    SDL_GPUBuffer* m_QuadBuffer = nullptr;
+    Emerald::GpuGraphicsPipeline* m_Pipeline = nullptr;
+    Emerald::GpuBuffer* m_TriangleBuffer = nullptr;
+    Emerald::GpuBuffer* m_QuadBuffer = nullptr;
 };
 
 SandboxOptions ParseOptions(i32 argc, char** argv)
@@ -782,7 +785,8 @@ int main(int argc, char** argv)
     // a saved options file can still switch back to a window (Shared.h). Untested on hardware.
     if (Emerald::IsSteamDeck())
         spec.Window.Fullscreen = true;
-    spec.ShaderFormats = EMERALD_SHADER_FORMATS; // formats generated by emerald_add_shaders()
+    spec.ShaderFormats =
+        Emerald::ShaderFormatFromMask(EMERALD_SHADER_FORMATS); // formats generated by emerald_add_shaders()
     // Engine options: --gpu vulkan, --frames N, --screenshot, --capture, --record, --replay.
     spec.Args = {argv, static_cast<usize>(argc)};
 

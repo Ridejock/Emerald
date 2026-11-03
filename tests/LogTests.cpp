@@ -6,8 +6,6 @@
 #include <sstream>
 #include <string>
 
-#include <SDL3/SDL_filesystem.h>
-
 #include <Emerald/Core/Log.h>
 #include <Emerald/Core/Paths.h>
 #include <Emerald/Core/Platform.h>
@@ -97,8 +95,7 @@ TEST(LogFileEmptyPathDisablesFile)
 TEST(LogRelativePathIsNextToExecutable)
 {
     Log::Init("logs/EmeraldLogTests.log");
-    const fs::path expected =
-        fs::path(reinterpret_cast<const char8_t*>(SDL_GetBasePath())) / "logs/EmeraldLogTests.log";
+    const fs::path expected = Emerald::Paths::GetBasePath() / "logs/EmeraldLogTests.log";
     CHECK(Log::GetFilePath() == expected);
     EM_INFO("relative path");
     Log::Shutdown();
@@ -109,7 +106,7 @@ TEST(LogRelativePathIsNextToExecutable)
 TEST(PathsBaseAndPref)
 {
     const fs::path base = Emerald::Paths::GetBasePath();
-    CHECK(base == fs::path(reinterpret_cast<const char8_t*>(SDL_GetBasePath())));
+    CHECK(!base.empty());
     CHECK(fs::is_directory(base));
 
     // Creates a real per-user folder, so clean it up again.

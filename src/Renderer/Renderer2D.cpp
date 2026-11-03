@@ -16,6 +16,7 @@
 #include "Emerald/Renderer/Pipeline.h"
 #include "Emerald/Renderer/Shader.h"
 #include "Emerald/Renderer/Texture.h"
+#include "Platform/SdlCast.h"
 
 namespace Emerald {
 
@@ -39,29 +40,29 @@ Renderer2D::~Renderer2D()
     Shutdown();
 }
 
-bool Renderer2D::Init(SDL_GPUDevice* device, SDL_GPUTextureFormat colorFormat)
+bool Renderer2D::Init(GpuDevice* device, GpuTextureFormat colorFormat)
 {
     m_Device = device;
 
     // Resource counts (1 vertex uniform buffer) come from the .json reflection files.
-    SDL_GPUShader* vertex = LoadShader(device, {.Name = "Renderer2D.vert"});
-    SDL_GPUShader* fragment = LoadShader(device, {.Name = "Renderer2D.frag"});
+    GpuShader* vertex = LoadShader(device, {.Name = "Renderer2D.vert"});
+    GpuShader* fragment = LoadShader(device, {.Name = "Renderer2D.frag"});
 
-    const SDL_GPUVertexBufferDescription buffers[] = {{
-        .slot = 0,
-        .pitch = sizeof(Vertex),
-        .input_rate = SDL_GPU_VERTEXINPUTRATE_VERTEX,
-        .instance_step_rate = 0,
+    const VertexBufferDesc buffers[] = {{
+        .Slot = 0,
+        .Pitch = sizeof(Vertex),
+        .InputRate = VertexInputRate::Vertex,
+        .InstanceStepRate = 0,
     }};
-    const SDL_GPUVertexAttribute attributes[] = {
-        {.location = 0,
-         .buffer_slot = 0,
-         .format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2,
-         .offset = offsetof(Vertex, Position)},
-        {.location = 1,
-         .buffer_slot = 0,
-         .format = SDL_GPU_VERTEXELEMENTFORMAT_UBYTE4_NORM,
-         .offset = offsetof(Vertex, Color)},
+    const VertexAttribute attributes[] = {
+        {.Location = 0,
+         .BufferSlot = 0,
+         .Format = VertexElementFormat::Float2,
+         .Offset = offsetof(Vertex, Position)},
+        {.Location = 1,
+         .BufferSlot = 0,
+         .Format = VertexElementFormat::UByte4Norm,
+         .Offset = offsetof(Vertex, Color)},
     };
 
     if (vertex && fragment) {
@@ -70,16 +71,16 @@ bool Renderer2D::Init(SDL_GPUDevice* device, SDL_GPUTextureFormat colorFormat)
                                   .VertexBuffers = buffers,
                                   .VertexAttributes = attributes,
                                   .ColorFormat = colorFormat,
-                                  .Primitive = SDL_GPU_PRIMITIVETYPE_LINELIST,
+                                  .Primitive = PrimitiveType::LineList,
                                   .AlphaBlend = true};
         m_Pipeline = CreateGraphicsPipeline(device, desc);
         desc.AdditiveBlend = true; // same shaders, different blend state
         m_AdditivePipeline = CreateGraphicsPipeline(device, desc);
     }
     if (vertex)
-        SDL_ReleaseGPUShader(device, vertex);
+        SDL_ReleaseGPUShader(Sdl(device), Sdl(vertex));
     if (fragment)
-        SDL_ReleaseGPUShader(device, fragment);
+        SDL_ReleaseGPUShader(Sdl(device), Sdl(fragment));
 
     if (!m_Pipeline || !m_AdditivePipeline) {
         EM_CORE_ERROR("Renderer2D: could not create its pipeline; 2D shapes will not be drawn. "
@@ -89,27 +90,27 @@ bool Renderer2D::Init(SDL_GPUDevice* device, SDL_GPUTextureFormat colorFormat)
 
     // Sprites: textured triangles. The fragment shader samples one texture (reflection: 1
     // sampler).
-    SDL_GPUShader* spriteVertex = LoadShader(device, {.Name = "Sprite.vert"});
-    SDL_GPUShader* spriteFragment = LoadShader(device, {.Name = "Sprite.frag"});
-    const SDL_GPUVertexBufferDescription spriteBuffers[] = {{
-        .slot = 0,
-        .pitch = sizeof(SpriteVertex),
-        .input_rate = SDL_GPU_VERTEXINPUTRATE_VERTEX,
-        .instance_step_rate = 0,
+    GpuShader* spriteVertex = LoadShader(device, {.Name = "Sprite.vert"});
+    GpuShader* spriteFragment = LoadShader(device, {.Name = "Sprite.frag"});
+    const VertexBufferDesc spriteBuffers[] = {{
+        .Slot = 0,
+        .Pitch = sizeof(SpriteVertex),
+        .InputRate = VertexInputRate::Vertex,
+        .InstanceStepRate = 0,
     }};
-    const SDL_GPUVertexAttribute spriteAttributes[] = {
-        {.location = 0,
-         .buffer_slot = 0,
-         .format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2,
-         .offset = offsetof(SpriteVertex, Position)},
-        {.location = 1,
-         .buffer_slot = 0,
-         .format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2,
-         .offset = offsetof(SpriteVertex, TexCoord)},
-        {.location = 2,
-         .buffer_slot = 0,
-         .format = SDL_GPU_VERTEXELEMENTFORMAT_UBYTE4_NORM,
-         .offset = offsetof(SpriteVertex, Color)},
+    const VertexAttribute spriteAttributes[] = {
+        {.Location = 0,
+         .BufferSlot = 0,
+         .Format = VertexElementFormat::Float2,
+         .Offset = offsetof(SpriteVertex, Position)},
+        {.Location = 1,
+         .BufferSlot = 0,
+         .Format = VertexElementFormat::Float2,
+         .Offset = offsetof(SpriteVertex, TexCoord)},
+        {.Location = 2,
+         .BufferSlot = 0,
+         .Format = VertexElementFormat::UByte4Norm,
+         .Offset = offsetof(SpriteVertex, Color)},
     };
     if (spriteVertex && spriteFragment) {
         GraphicsPipelineDesc desc{.VertexShader = spriteVertex,
@@ -117,16 +118,16 @@ bool Renderer2D::Init(SDL_GPUDevice* device, SDL_GPUTextureFormat colorFormat)
                                   .VertexBuffers = spriteBuffers,
                                   .VertexAttributes = spriteAttributes,
                                   .ColorFormat = colorFormat,
-                                  .Primitive = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST,
+                                  .Primitive = PrimitiveType::TriangleList,
                                   .AlphaBlend = true};
         m_SpritePipeline = CreateGraphicsPipeline(device, desc);
         desc.AdditiveBlend = true;
         m_AdditiveSpritePipeline = CreateGraphicsPipeline(device, desc);
     }
     if (spriteVertex)
-        SDL_ReleaseGPUShader(device, spriteVertex);
+        SDL_ReleaseGPUShader(Sdl(device), Sdl(spriteVertex));
     if (spriteFragment)
-        SDL_ReleaseGPUShader(device, spriteFragment);
+        SDL_ReleaseGPUShader(Sdl(device), Sdl(spriteFragment));
     if (!m_SpritePipeline || !m_AdditiveSpritePipeline) {
         EM_CORE_ERROR("Renderer2D: could not create the sprite pipeline; sprites will not be "
                       "drawn (lines still work)");
@@ -135,25 +136,25 @@ bool Renderer2D::Init(SDL_GPUDevice* device, SDL_GPUTextureFormat colorFormat)
 
     // Lit sprites: same vertex layout plus CosSin; fragment samples albedo + normal and applies
     // the light uniforms. Only used while SetLightingEnabled(true).
-    SDL_GPUShader* litVertex = LoadShader(device, {.Name = "SpriteLit.vert"});
-    SDL_GPUShader* litFragment = LoadShader(device, {.Name = "SpriteLit.frag"});
-    const SDL_GPUVertexAttribute litAttributes[] = {
-        {.location = 0,
-         .buffer_slot = 0,
-         .format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2,
-         .offset = offsetof(SpriteVertex, Position)},
-        {.location = 1,
-         .buffer_slot = 0,
-         .format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2,
-         .offset = offsetof(SpriteVertex, TexCoord)},
-        {.location = 2,
-         .buffer_slot = 0,
-         .format = SDL_GPU_VERTEXELEMENTFORMAT_UBYTE4_NORM,
-         .offset = offsetof(SpriteVertex, Color)},
-        {.location = 3,
-         .buffer_slot = 0,
-         .format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2,
-         .offset = offsetof(SpriteVertex, CosSin)},
+    GpuShader* litVertex = LoadShader(device, {.Name = "SpriteLit.vert"});
+    GpuShader* litFragment = LoadShader(device, {.Name = "SpriteLit.frag"});
+    const VertexAttribute litAttributes[] = {
+        {.Location = 0,
+         .BufferSlot = 0,
+         .Format = VertexElementFormat::Float2,
+         .Offset = offsetof(SpriteVertex, Position)},
+        {.Location = 1,
+         .BufferSlot = 0,
+         .Format = VertexElementFormat::Float2,
+         .Offset = offsetof(SpriteVertex, TexCoord)},
+        {.Location = 2,
+         .BufferSlot = 0,
+         .Format = VertexElementFormat::UByte4Norm,
+         .Offset = offsetof(SpriteVertex, Color)},
+        {.Location = 3,
+         .BufferSlot = 0,
+         .Format = VertexElementFormat::Float2,
+         .Offset = offsetof(SpriteVertex, CosSin)},
     };
     if (litVertex && litFragment) {
         GraphicsPipelineDesc desc{.VertexShader = litVertex,
@@ -161,16 +162,16 @@ bool Renderer2D::Init(SDL_GPUDevice* device, SDL_GPUTextureFormat colorFormat)
                                   .VertexBuffers = spriteBuffers,
                                   .VertexAttributes = litAttributes,
                                   .ColorFormat = colorFormat,
-                                  .Primitive = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST,
+                                  .Primitive = PrimitiveType::TriangleList,
                                   .AlphaBlend = true};
         m_LitSpritePipeline = CreateGraphicsPipeline(device, desc);
         desc.AdditiveBlend = true;
         m_AdditiveLitSpritePipeline = CreateGraphicsPipeline(device, desc);
     }
     if (litVertex)
-        SDL_ReleaseGPUShader(device, litVertex);
+        SDL_ReleaseGPUShader(Sdl(device), Sdl(litVertex));
     if (litFragment)
-        SDL_ReleaseGPUShader(device, litFragment);
+        SDL_ReleaseGPUShader(Sdl(device), Sdl(litFragment));
     if (!m_LitSpritePipeline || !m_AdditiveLitSpritePipeline) {
         EM_CORE_ERROR("Renderer2D: could not create the lit sprite pipeline; lighting will not "
                       "work (unlit sprites still do)");
@@ -192,11 +193,11 @@ void Renderer2D::Shutdown()
     if (!m_Device)
         return;
     // The caller (Application) waits for the GPU to be idle before shutting renderers down.
-    for (SDL_GPUGraphicsPipeline* pipeline :
+    for (GpuGraphicsPipeline* pipeline :
          {m_Pipeline, m_SpritePipeline, m_AdditivePipeline, m_AdditiveSpritePipeline,
           m_LitSpritePipeline, m_AdditiveLitSpritePipeline})
         if (pipeline)
-            SDL_ReleaseGPUGraphicsPipeline(m_Device, pipeline);
+            SDL_ReleaseGPUGraphicsPipeline(Sdl(m_Device), Sdl(pipeline));
     m_LineStream.Release(m_Device);
     m_SpriteStream.Release(m_Device);
     m_White.reset();
@@ -210,7 +211,7 @@ void Renderer2D::Shutdown()
     m_Device = nullptr;
 }
 
-void Renderer2D::Begin(const Mat4& viewProjection, const SDL_Rect& clip)
+void Renderer2D::Begin(const Mat4& viewProjection, const PixelRect& clip)
 {
     assert(!m_InBatch && "Renderer2D::Begin called twice without End");
     Batch batch;
@@ -487,7 +488,7 @@ u32 Renderer2D::PackColor(const Vec4& color)
            channel(color.w) << 24;
 }
 
-bool Renderer2D::GpuStream::Ensure(SDL_GPUDevice* device, u32 bytes)
+bool Renderer2D::GpuStream::Ensure(GpuDevice* device, u32 bytes)
 {
     if (bytes <= Capacity)
         return true;
@@ -503,12 +504,12 @@ bool Renderer2D::GpuStream::Ensure(SDL_GPUDevice* device, u32 bytes)
     SDL_GPUBufferCreateInfo bufferInfo{};
     bufferInfo.usage = SDL_GPU_BUFFERUSAGE_VERTEX;
     bufferInfo.size = capacity;
-    Buffer = SDL_CreateGPUBuffer(device, &bufferInfo);
+    Buffer = FromSdl(SDL_CreateGPUBuffer(Sdl(device), &bufferInfo));
 
     SDL_GPUTransferBufferCreateInfo transferInfo{};
     transferInfo.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
     transferInfo.size = capacity;
-    Transfer = SDL_CreateGPUTransferBuffer(device, &transferInfo);
+    Transfer = FromSdl(SDL_CreateGPUTransferBuffer(Sdl(device), &transferInfo));
 
     if (!Buffer || !Transfer) {
         EM_CORE_ERROR("Renderer2D: could not allocate {} byte buffers: {}", capacity,
@@ -520,34 +521,34 @@ bool Renderer2D::GpuStream::Ensure(SDL_GPUDevice* device, u32 bytes)
     return true;
 }
 
-bool Renderer2D::GpuStream::Fill(SDL_GPUDevice* device, const void* data, u32 bytes)
+bool Renderer2D::GpuStream::Fill(GpuDevice* device, const void* data, u32 bytes)
 {
     if (!Ensure(device, bytes))
         return false;
     // cycle = true: if the GPU is still reading last frame's data, SDL hands us a fresh
     // internal buffer instead of making us wait (or overwriting data in use).
-    void* mapped = SDL_MapGPUTransferBuffer(device, Transfer, true);
+    void* mapped = SDL_MapGPUTransferBuffer(Sdl(device), Sdl(Transfer), true);
     if (!mapped) {
         EM_CORE_ERROR("Renderer2D: SDL_MapGPUTransferBuffer failed: {}", SDL_GetError());
         return false;
     }
     std::memcpy(mapped, data, bytes);
-    SDL_UnmapGPUTransferBuffer(device, Transfer);
+    SDL_UnmapGPUTransferBuffer(Sdl(device), Sdl(Transfer));
     return true;
 }
 
-void Renderer2D::GpuStream::Release(SDL_GPUDevice* device)
+void Renderer2D::GpuStream::Release(GpuDevice* device)
 {
     if (Buffer)
-        SDL_ReleaseGPUBuffer(device, Buffer);
+        SDL_ReleaseGPUBuffer(Sdl(device), Sdl(Buffer));
     if (Transfer)
-        SDL_ReleaseGPUTransferBuffer(device, Transfer);
+        SDL_ReleaseGPUTransferBuffer(Sdl(device), Sdl(Transfer));
     Buffer = nullptr;
     Transfer = nullptr;
     Capacity = 0;
 }
 
-void Renderer2D::Upload(SDL_GPUCommandBuffer* commandBuffer)
+void Renderer2D::Upload(GpuCommandBuffer* commandBuffer)
 {
     End(); // tolerate a missing End()
     m_LinesUploaded = false;
@@ -565,15 +566,15 @@ void Renderer2D::Upload(SDL_GPUCommandBuffer* commandBuffer)
         return;
 
     // One copy pass for both.
-    SDL_GPUCopyPass* copy = SDL_BeginGPUCopyPass(commandBuffer);
+    SDL_GPUCopyPass* copy = SDL_BeginGPUCopyPass(Sdl(commandBuffer));
     if (lines) {
-        const SDL_GPUTransferBufferLocation source{m_LineStream.Transfer, 0};
-        const SDL_GPUBufferRegion destination{m_LineStream.Buffer, 0, lineBytes};
+        const SDL_GPUTransferBufferLocation source{Sdl(m_LineStream.Transfer), 0};
+        const SDL_GPUBufferRegion destination{Sdl(m_LineStream.Buffer), 0, lineBytes};
         SDL_UploadToGPUBuffer(copy, &source, &destination, true);
     }
     if (sprites) {
-        const SDL_GPUTransferBufferLocation source{m_SpriteStream.Transfer, 0};
-        const SDL_GPUBufferRegion destination{m_SpriteStream.Buffer, 0, spriteBytes};
+        const SDL_GPUTransferBufferLocation source{Sdl(m_SpriteStream.Transfer), 0};
+        const SDL_GPUBufferRegion destination{Sdl(m_SpriteStream.Buffer), 0, spriteBytes};
         SDL_UploadToGPUBuffer(copy, &source, &destination, true);
     }
     SDL_EndGPUCopyPass(copy);
@@ -581,13 +582,13 @@ void Renderer2D::Upload(SDL_GPUCommandBuffer* commandBuffer)
     m_SpritesUploaded = sprites;
 }
 
-void Renderer2D::Render(SDL_GPUCommandBuffer* commandBuffer, SDL_GPURenderPass* renderPass,
+void Renderer2D::Render(GpuCommandBuffer* commandBuffer, GpuRenderPass* renderPass,
                         u32 targetWidth, u32 targetHeight)
 {
     m_LastFrameLines = m_LinesUploaded ? GetLineCount() : 0;
     m_LastFrameSprites = m_SpritesUploaded ? GetSpriteCount() : 0;
     m_LastFrameDrawCalls = 0;
-    SDL_GPUGraphicsPipeline* bound = nullptr;
+    GpuGraphicsPipeline* bound = nullptr;
     // The same for every lit draw this frame.
     const LightingUniforms lights = LightingUniforms::Make(m_Ambient, m_Lights);
     const SDL_Rect full{0, 0, static_cast<i32>(targetWidth), static_cast<i32>(targetHeight)};
@@ -598,10 +599,10 @@ void Renderer2D::Render(SDL_GPUCommandBuffer* commandBuffer, SDL_GPURenderPass* 
         // The scissor rectangle stays set for later draws, so set it for every batch: the
         // clip rectangle (kept inside the target, as Metal requires), or the whole target.
         SDL_Rect scissor = full;
-        if (batch.Clip.w > 0 && batch.Clip.h > 0 &&
-            !SDL_GetRectIntersection(&batch.Clip, &full, &scissor))
+        const SDL_Rect clip = Sdl(batch.Clip);
+        if (clip.w > 0 && clip.h > 0 && !SDL_GetRectIntersection(&clip, &full, &scissor))
             continue; // clipped away entirely
-        SDL_SetGPUScissor(renderPass, &scissor);
+        SDL_SetGPUScissor(Sdl(renderPass), &scissor);
 
         for (u32 i = 0; i < batch.CommandCount; ++i) {
             const DrawCommand& command = m_Commands[batch.FirstCommand + i];
@@ -614,41 +615,43 @@ void Renderer2D::Render(SDL_GPUCommandBuffer* commandBuffer, SDL_GPURenderPass* 
             // changes. Lighting is what it was when the sprites were drawn (see Lit).
             const bool additive = command.Blend == BlendMode::Additive;
             const bool lit = !isLines && command.Lit && m_LitSpritePipeline;
-            SDL_GPUGraphicsPipeline* pipeline =
+            GpuGraphicsPipeline* pipeline =
                 isLines ? (additive ? m_AdditivePipeline : m_Pipeline)
                 : lit   ? (additive ? m_AdditiveLitSpritePipeline : m_LitSpritePipeline)
                         : (additive ? m_AdditiveSpritePipeline : m_SpritePipeline);
             if (pipeline != bound) {
-                SDL_BindGPUGraphicsPipeline(renderPass, pipeline);
+                SDL_BindGPUGraphicsPipeline(Sdl(renderPass), Sdl(pipeline));
                 const SDL_GPUBufferBinding binding{
-                    isLines ? m_LineStream.Buffer : m_SpriteStream.Buffer, 0};
-                SDL_BindGPUVertexBuffers(renderPass, 0, &binding, 1);
+                    isLines ? Sdl(m_LineStream.Buffer) : Sdl(m_SpriteStream.Buffer), 0};
+                SDL_BindGPUVertexBuffers(Sdl(renderPass), 0, &binding, 1);
                 bound = pipeline;
             }
             if (!isLines) {
                 if (lit) {
                     // t0 = albedo, t1 = normal (SpriteLit.frag.hlsl).
                     const SDL_GPUTextureSamplerBinding textures[2] = {
-                        {command.GpuTexture, command.Sampler},
-                        {command.NormalTexture ? command.NormalTexture : command.GpuTexture,
-                         command.NormalSampler ? command.NormalSampler : command.Sampler}};
-                    SDL_BindGPUFragmentSamplers(renderPass, 0, textures, 2);
-                    SDL_PushGPUFragmentUniformData(commandBuffer, 0, &lights, sizeof(lights));
+                        {Sdl(command.GpuTexture), Sdl(command.Sampler)},
+                        {Sdl(command.NormalTexture ? command.NormalTexture : command.GpuTexture),
+                         Sdl(command.NormalSampler ? command.NormalSampler : command.Sampler)}};
+                    SDL_BindGPUFragmentSamplers(Sdl(renderPass), 0, textures, 2);
+                    SDL_PushGPUFragmentUniformData(Sdl(commandBuffer), 0, &lights, sizeof(lights));
                 } else {
                     // Sampler slot 0 = register(t0/s0, space2) in Sprite.frag.hlsl.
-                    const SDL_GPUTextureSamplerBinding texture{command.GpuTexture, command.Sampler};
-                    SDL_BindGPUFragmentSamplers(renderPass, 0, &texture, 1);
+                    const SDL_GPUTextureSamplerBinding texture{Sdl(command.GpuTexture),
+                                                                Sdl(command.Sampler)};
+                    SDL_BindGPUFragmentSamplers(Sdl(renderPass), 0, &texture, 1);
                 }
             }
             // Uniform slot 0 = register(b0, space1) in both vertex shaders.
-            SDL_PushGPUVertexUniformData(commandBuffer, 0, &batch.ViewProjection, sizeof(Mat4));
-            SDL_DrawGPUPrimitives(renderPass, command.VertexCount, 1, command.FirstVertex, 0);
+            SDL_PushGPUVertexUniformData(Sdl(commandBuffer), 0, &batch.ViewProjection,
+                                         sizeof(Mat4));
+            SDL_DrawGPUPrimitives(Sdl(renderPass), command.VertexCount, 1, command.FirstVertex, 0);
             ++m_LastFrameDrawCalls;
         }
     }
     // Leave the whole target drawable for whatever records into this pass next.
     if (!m_Batches.empty())
-        SDL_SetGPUScissor(renderPass, &full);
+        SDL_SetGPUScissor(Sdl(renderPass), &full);
     Clear();
 }
 

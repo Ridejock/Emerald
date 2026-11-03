@@ -9,6 +9,7 @@
 #include "Emerald/Assets/Image.h"
 #include "Emerald/Core/Log.h"
 #include "Emerald/Renderer/Sprite.h"
+#include "Platform/SdlCast.h"
 
 namespace Emerald {
 
@@ -75,10 +76,11 @@ void Texture::Release()
 {
     // Safe while the GPU still uses them: SDL releases them once in-flight work is done.
     if (m_Device) {
+        SDL_GPUDevice* sdl = Sdl(m_Device);
         if (m_Sampler)
-            SDL_ReleaseGPUSampler(m_Device, m_Sampler);
+            SDL_ReleaseGPUSampler(sdl, Sdl(m_Sampler));
         if (m_Texture)
-            SDL_ReleaseGPUTexture(m_Device, m_Texture);
+            SDL_ReleaseGPUTexture(sdl, Sdl(m_Texture));
     }
     m_Device = nullptr;
     m_Texture = nullptr;
@@ -94,7 +96,7 @@ Texture Texture::CreateWithoutGpu(u32 width, u32 height)
     return texture;
 }
 
-std::optional<Texture> Texture::Create(SDL_GPUDevice* device, const Image& image,
+std::optional<Texture> Texture::Create(GpuDevice* device, const Image& image,
                                        const TextureOptions& options)
 {
     // SDL GPU only guarantees 16384 px on a side on every backend; the limit also keeps the
@@ -113,6 +115,7 @@ std::optional<Texture> Texture::Create(SDL_GPUDevice* device, const Image& image
 
     Texture texture = CreateWithoutGpu(width, height);
     texture.m_Device = device;
+    SDL_GPUDevice* sdl = Sdl(device);
 
     SDL_GPUTextureCreateInfo info{};
     info.type = SDL_GPU_TEXTURETYPE_2D;
@@ -122,8 +125,8 @@ std::optional<Texture> Texture::Create(SDL_GPUDevice* device, const Image& image
     info.height = height;
     info.layer_count_or_depth = 1;
     info.num_levels = 1;
-    texture.m_Texture = SDL_CreateGPUTexture(device, &info);
-    texture.m_Sampler = CreateSampler(device, options);
+    texture.m_Texture = FromSdl(SDL_CreateGPUTexture(sdl, &info));
+    texture.m_Sampler = FromSdl(CreateSampler(sdl, options));
     if (!texture.m_Texture || !texture.m_Sampler) {
         EM_CORE_ERROR("Texture::Create: {}", SDL_GetError());
         return std::nullopt; // `texture` releases whatever was created
@@ -133,21 +136,21 @@ std::optional<Texture> Texture::Create(SDL_GPUDevice* device, const Image& image
     SDL_GPUTransferBufferCreateInfo transferInfo{};
     transferInfo.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
     transferInfo.size = bytes;
-    SDL_GPUTransferBuffer* transfer = SDL_CreateGPUTransferBuffer(device, &transferInfo);
-    void* mapped = transfer ? SDL_MapGPUTransferBuffer(device, transfer, false) : nullptr;
+    SDL_GPUTransferBuffer* transfer = SDL_CreateGPUTransferBuffer(sdl, &transferInfo);
+    void* mapped = transfer ? SDL_MapGPUTransferBuffer(sdl, transfer, false) : nullptr;
     if (!mapped) {
         EM_CORE_ERROR("Texture::Create: could not create the upload buffer: {}", SDL_GetError());
         if (transfer)
-            SDL_ReleaseGPUTransferBuffer(device, transfer);
+            SDL_ReleaseGPUTransferBuffer(sdl, transfer);
         return std::nullopt;
     }
     std::memcpy(mapped, image.Pixels.data(), bytes);
-    SDL_UnmapGPUTransferBuffer(device, transfer);
+    SDL_UnmapGPUTransferBuffer(sdl, transfer);
 
-    SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(device);
+    SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(sdl);
     if (!cmd) {
         EM_CORE_ERROR("Texture::Create: SDL_AcquireGPUCommandBuffer failed: {}", SDL_GetError());
-        SDL_ReleaseGPUTransferBuffer(device, transfer);
+        SDL_ReleaseGPUTransferBuffer(sdl, transfer);
         return std::nullopt;
     }
     SDL_GPUCopyPass* copy = SDL_BeginGPUCopyPass(cmd);
@@ -156,19 +159,19 @@ std::optional<Texture> Texture::Create(SDL_GPUDevice* device, const Image& image
     source.pixels_per_row = width; // tightly packed rows
     source.rows_per_layer = height;
     SDL_GPUTextureRegion destination{};
-    destination.texture = texture.m_Texture;
+    destination.texture = Sdl(texture.m_Texture);
     destination.w = width;
     destination.h = height;
     destination.d = 1;
     SDL_UploadToGPUTexture(copy, &source, &destination, false);
     SDL_EndGPUCopyPass(copy);
     SDL_SubmitGPUCommandBuffer(cmd);
-    SDL_ReleaseGPUTransferBuffer(device, transfer); // released once the upload is done
+    SDL_ReleaseGPUTransferBuffer(sdl, transfer); // released once the upload is done
 
     return texture;
 }
 
-std::optional<Texture> Texture::Load(SDL_GPUDevice* device, const std::filesystem::path& path,
+std::optional<Texture> Texture::Load(GpuDevice* device, const std::filesystem::path& path,
                                      const TextureOptions& options)
 {
     const std::optional<Image> image = Image::LoadFromFile(path); // logs failures

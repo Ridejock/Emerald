@@ -150,7 +150,7 @@ Viewport Camera2D::GetViewport() const
     return {.Position = (m_TargetSize - size) * 0.5f, .Size = size};
 }
 
-SDL_Rect Camera2D::GetClip() const
+PixelRect Camera2D::GetClip() const
 {
     const Viewport vp = GetViewport();
     const i32 left = static_cast<i32>(std::floor(vp.Position.x));

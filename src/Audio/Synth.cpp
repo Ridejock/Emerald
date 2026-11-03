@@ -9,7 +9,7 @@ namespace Emerald::Synth {
 
 namespace {
 
-constexpr f32 kRate = static_cast<f32>(kMixSpec.freq);
+constexpr f32 kRate = static_cast<f32>(kMixSampleRate);
 
 usize FrameCount(f32 seconds)
 {

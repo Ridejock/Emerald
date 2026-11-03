@@ -147,6 +147,14 @@ public:
     // Filled rectangle (panels, fades, bars). It is a sprite of a 1x1 white texture, so it keeps
     // the call order with other sprites and uses the sprite pipeline's blend modes.
     void FillRect(const Vec2& topLeft, const Vec2& size, const Vec4& color);
+    // Filled rectangle with a 1px outline on its edge.
+    void FillPanel(const Vec2& topLeft, const Vec2& size, const Vec4& fill, const Vec4& edge);
+    // Outline plus a left-aligned fill of `amount` (0..1) inside a 1px border. A size below
+    // 2px is raised to 2 so the border still has an inside.
+    void DrawMeter(const Vec2& topLeft, const Vec2& size, f32 amount, const Vec4& color);
+    // A band of `thickness` around the rectangle, outside it. Nothing when `thickness` is not
+    // positive.
+    void DrawFrame(const Vec2& topLeft, const Vec2& size, f32 thickness, const Vec4& color);
 
     // A textured quad; see SpriteOptions for size, rotation, origin, tint, flipping and pixel
     // snapping. `position` is where the sprite's origin (by default its center) goes.

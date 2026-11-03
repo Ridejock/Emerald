@@ -38,8 +38,17 @@ enum class Key : u16 {
     F1 = SDL_SCANCODE_F1, F2 = SDL_SCANCODE_F2, F3 = SDL_SCANCODE_F3, F4 = SDL_SCANCODE_F4,
     F5 = SDL_SCANCODE_F5, F6 = SDL_SCANCODE_F6, F7 = SDL_SCANCODE_F7, F8 = SDL_SCANCODE_F8,
     F9 = SDL_SCANCODE_F9, F10 = SDL_SCANCODE_F10, F11 = SDL_SCANCODE_F11, F12 = SDL_SCANCODE_F12,
+
+    Minus = SDL_SCANCODE_MINUS, Apostrophe = SDL_SCANCODE_APOSTROPHE,
+    KpEnter = SDL_SCANCODE_KP_ENTER,
 };
 // clang-format on
+
+// Physical letter keys are contiguous: 0 is A and 25 is Z.
+[[nodiscard]] constexpr Key LetterKey(i32 index)
+{
+    return static_cast<Key>(static_cast<u16>(Key::A) + static_cast<u16>(index));
+}
 
 // Low-level keyboard state with edge tracking, fed from SDL events by the Application. Games
 // normally use actions instead (Input.h), which are built on top of this. Pressed/released follow
@@ -64,6 +73,8 @@ public:
     // Key repeats (holding a key down) must not be passed in; they are not new presses.
     void OnKeyDown(SDL_Scancode scancode) { m_Keys.Set(static_cast<usize>(scancode), true); }
     void OnKeyUp(SDL_Scancode scancode) { m_Keys.Set(static_cast<usize>(scancode), false); }
+    void OnKeyDown(Key key) { OnKeyDown(static_cast<SDL_Scancode>(key)); }
+    void OnKeyUp(Key key) { OnKeyUp(static_cast<SDL_Scancode>(key)); }
     // Releases every held key, e.g. when the window loses focus and would miss the key-up events.
     void ReleaseAll() { m_Keys.ReleaseAll(); }
     void BeginFrame() { m_Keys.BeginFrame(); }

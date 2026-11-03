@@ -76,6 +76,23 @@ struct GamepadSettings {
 [[nodiscard]] f32 ApplyDeadzone(f32 value, f32 deadzone);
 [[nodiscard]] Vec2 ApplyRadialDeadzone(Vec2 stick, f32 deadzone);
 
+// The pad families games name. The values are SDL's gamepad types, so a stored type still
+// matches what the device reports. Games use this instead of the SDL enum.
+enum class GamepadType : i32 {
+    Unknown = SDL_GAMEPAD_TYPE_UNKNOWN,
+    Xbox360 = SDL_GAMEPAD_TYPE_XBOX360,
+    XboxOne = SDL_GAMEPAD_TYPE_XBOXONE,
+    PS3 = SDL_GAMEPAD_TYPE_PS3,
+    PS4 = SDL_GAMEPAD_TYPE_PS4,
+    PS5 = SDL_GAMEPAD_TYPE_PS5,
+    SwitchPro = SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_PRO,
+    JoyConLeft = SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_LEFT,
+    JoyConRight = SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_RIGHT,
+    JoyConPair = SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_PAIR,
+    GameCube = SDL_GAMEPAD_TYPE_GAMECUBE,
+    Standard = SDL_GAMEPAD_TYPE_STANDARD,
+};
+
 // Names for UI: "Xbox One", "PS4", "Switch Pro", ...
 [[nodiscard]] const char* GetGamepadTypeName(SDL_GamepadType type);
 // What is printed on a button of that type of pad, for prompts: South is "A" on Xbox, "Cross" on
@@ -157,6 +174,8 @@ public:
     void CloseAll();
     // Registers a pad without SDL (handle may be null): used by Open and by tests.
     void AddPad(SDL_JoystickID id, SDL_Gamepad* handle, std::string name, SDL_GamepadType type);
+    // A pad with no device handle. Tests and tools use this so they never name an SDL type.
+    void AddSyntheticPad(u32 id, std::string name, GamepadType type);
     void OnButton(SDL_JoystickID id, GamepadButton button, bool down);
     // `value`: -1..1 for sticks, 0..1 for triggers (SDL's integer values divided by 32767).
     void OnAxis(SDL_JoystickID id, GamepadAxis axis, f32 value);

@@ -64,6 +64,17 @@ bool Window::IsFullscreen() const
     return (SDL_GetWindowFlags(m_Window) & SDL_WINDOW_FULLSCREEN) != 0;
 }
 
+void Window::SetTextInputEnabled(bool enabled)
+{
+    if (m_Window == nullptr || enabled == m_TextInput)
+        return;
+    if (enabled)
+        SDL_StartTextInput(m_Window);
+    else
+        SDL_StopTextInput(m_Window);
+    m_TextInput = enabled;
+}
+
 bool Window::SetIcon(const Image& image)
 {
     if (image.Width <= 0 || image.Height <= 0 ||

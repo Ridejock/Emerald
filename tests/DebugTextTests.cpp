@@ -520,6 +520,16 @@ u64 Mask(const char* rows)
 
 TEST(DebugTextMeasuresLinesAndScale)
 {
+    CHECK(FitDebugText("HELLO", 1, 1000.0f) == "HELLO");
+    CHECK(FitDebugText("HELLO", 1, 0.0f).empty());
+    CHECK(FitDebugText("HELLO", 0, 100.0f).empty());
+    CHECK(FitDebugText("HELLO", 1, 12.0f) == "HE"); // six pixels a glyph
+    CHECK(FitDebugText("A B", 1, 12.0f) == "A");    // the cut drops the trailing space
+    CHECK(ClipDebugText("AA BB", 1, 12.0f, 9.0f) == "AA");
+    CHECK(ClipDebugText("AA BB", 1, 12.0f, 18.0f) == "AA BB");
+    CHECK(ClipDebugText("HELLO", 1, 12.0f, 9.0f) == "HELLO"); // a long word stays one line
+    CHECK(ClipDebugText("AA", 1, 12.0f, 0.0f).empty());
+
     CHECK(DebugTextLineHeight(1) == 9.0f);
     CHECK(DebugTextLineHeight(2) == 18.0f);
     CHECK(DebugTextLineHeight(0) == 0.0f);

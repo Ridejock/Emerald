@@ -348,6 +348,12 @@ void Gamepads::CloseAll()
         Close(m_Pads.back().Info.Id);
 }
 
+void Gamepads::AddSyntheticPad(u32 id, std::string name, GamepadType type)
+{
+    AddPad(static_cast<SDL_JoystickID>(id), nullptr, std::move(name),
+           static_cast<SDL_GamepadType>(type));
+}
+
 void Gamepads::AddPad(SDL_JoystickID id, SDL_Gamepad* handle, std::string name,
                       SDL_GamepadType type)
 {

@@ -8,6 +8,7 @@
 // Space advances and draws nothing. '\n' starts a line, '\r' is skipped. Any other byte is a
 // hollow box. For real UI text, use Font and DrawString.
 
+#include <string>
 #include <string_view>
 
 #include "Emerald/Core/Defines.h"
@@ -38,6 +39,16 @@ inline constexpr i32 kDebugTextLineHeight = 9; // rows, plus a two-row gap
 // True when DrawDebugText draws `code` as itself. Space, newline, and carriage return are
 // layout. A letter matches in either case. A byte that draws the hollow box is false.
 [[nodiscard]] bool DebugTextHasGlyph(char code);
+
+// The longest prefix of `text` that fits in `maxWidth`. Trailing spaces on that prefix are
+// dropped. Empty when `scale` or `maxWidth` is not positive, or when even one glyph is too wide.
+[[nodiscard]] std::string FitDebugText(std::string_view text, i32 scale, f32 maxWidth);
+
+// Words from `text` that still fit in `maxWidth` by `maxHeight` once wrapped the way
+// DrawDebugText wraps. A word longer than the width stays on its line. Empty when `scale`,
+// `maxWidth`, or `maxHeight` is not positive.
+[[nodiscard]] std::string ClipDebugText(std::string_view text, i32 scale, f32 maxWidth,
+                                        f32 maxHeight);
 
 // Top-left of the first line. `maxWidth` of 0 draws one line per '\n' and does not wrap; a
 // positive width wraps on spaces before a word that would pass the right edge. A word longer

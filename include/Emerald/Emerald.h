@@ -6,6 +6,7 @@
 #include "Emerald/Assets/AssetLoader.h"
 #include "Emerald/Assets/Assets.h"
 #include "Emerald/Assets/Image.h"
+#include "Emerald/IO/Pak.h"
 #include "Emerald/Audio/Audio.h"
 #include "Emerald/Audio/Mixer.h"
 #include "Emerald/Audio/Music.h"

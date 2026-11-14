@@ -294,7 +294,8 @@ void MusicPlayer::RampTo(Slot& slot, f32 target, f32 ms) const
 }
 
 bool MusicPlayer::StartSlot(usize index, const std::filesystem::path& path, f32 fadeMs,
-                            bool fromMemory, std::span<const u8> data, std::string_view hint)
+                            bool fromMemory, std::span<const u8> data, std::string_view hint,
+                            bool loop)
 {
     Slot& slot = m_Slots[index];
     slot.Stream.Close();
@@ -303,7 +304,7 @@ bool MusicPlayer::StartSlot(usize index, const std::filesystem::path& path, f32 
         slot.Active = false;
         return false;
     }
-    slot.Stream.SetLoop(true);
+    slot.Stream.SetLoop(loop);
     slot.Active = true;
     slot.Gain = 0.0f;
     RampTo(slot, 1.0f, fadeMs);
@@ -311,34 +312,36 @@ bool MusicPlayer::StartSlot(usize index, const std::filesystem::path& path, f32 
     return true;
 }
 
-bool MusicPlayer::Play(const std::filesystem::path& path, f32 fadeMs)
+bool MusicPlayer::Play(const std::filesystem::path& path, f32 fadeMs, bool loop)
 {
     Stop(fadeMs);
     const usize slot = m_Current == 0 ? 1 : 0; // prefer the free one
-    return StartSlot(slot, path, fadeMs, false, {}, {});
+    return StartSlot(slot, path, fadeMs, false, {}, {}, loop);
 }
 
-bool MusicPlayer::Crossfade(const std::filesystem::path& path, f32 fadeMs)
+bool MusicPlayer::Crossfade(const std::filesystem::path& path, f32 fadeMs, bool loop)
 {
     if (m_Slots[m_Current].Active)
         RampTo(m_Slots[m_Current], 0.0f, fadeMs);
     const usize next = 1 - m_Current;
-    return StartSlot(next, path, fadeMs, false, {}, {});
+    return StartSlot(next, path, fadeMs, false, {}, {}, loop);
 }
 
-bool MusicPlayer::PlayMemory(std::span<const u8> data, std::string_view formatHint, f32 fadeMs)
+bool MusicPlayer::PlayMemory(std::span<const u8> data, std::string_view formatHint, f32 fadeMs,
+                             bool loop)
 {
     Stop(fadeMs);
     const usize slot = m_Current == 0 ? 1 : 0;
-    return StartSlot(slot, {}, fadeMs, true, data, formatHint);
+    return StartSlot(slot, {}, fadeMs, true, data, formatHint, loop);
 }
 
-bool MusicPlayer::CrossfadeMemory(std::span<const u8> data, std::string_view formatHint, f32 fadeMs)
+bool MusicPlayer::CrossfadeMemory(std::span<const u8> data, std::string_view formatHint, f32 fadeMs,
+                                  bool loop)
 {
     if (m_Slots[m_Current].Active)
         RampTo(m_Slots[m_Current], 0.0f, fadeMs);
     const usize next = 1 - m_Current;
-    return StartSlot(next, {}, fadeMs, true, data, formatHint);
+    return StartSlot(next, {}, fadeMs, true, data, formatHint, loop);
 }
 
 void MusicPlayer::Stop(f32 fadeMs)
@@ -417,6 +420,33 @@ void MusicPlayer::MixAdd(f32* out, usize frames, f32 groupGain, f32 groupTarget,
         }
         offset += n;
     }
+}
+
+std::optional<Sound> LoadOggFromMemory(const void* data, usize size)
+{
+    if (data == nullptr || size == 0 || size > static_cast<usize>(0x7FFFFFFF))
+        return std::nullopt;
+    int error = 0;
+    stb_vorbis* ogg = stb_vorbis_open_memory(static_cast<const unsigned char*>(data),
+                                             static_cast<int>(size), &error, nullptr);
+    if (ogg == nullptr)
+        return std::nullopt;
+    const stb_vorbis_info info = stb_vorbis_get_info(ogg);
+    const int channels = info.channels;
+    const int rate = static_cast<int>(info.sample_rate);
+    const unsigned int frames = stb_vorbis_stream_length_in_samples(ogg);
+    if (channels < 1 || rate < 1 || frames == 0) {
+        stb_vorbis_close(ogg);
+        return std::nullopt;
+    }
+    std::vector<f32> samples(static_cast<usize>(frames) * static_cast<usize>(channels));
+    const int got = stb_vorbis_get_samples_float_interleaved(ogg, channels, samples.data(),
+                                                             static_cast<int>(samples.size()));
+    stb_vorbis_close(ogg);
+    if (got <= 0)
+        return std::nullopt;
+    samples.resize(static_cast<usize>(got) * static_cast<usize>(channels));
+    return MakeSound(samples, channels, rate);
 }
 
 } // namespace Emerald

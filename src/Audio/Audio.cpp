@@ -164,6 +164,20 @@ bool Audio::CrossfadeMusic(const std::filesystem::path& path, f32 fadeMs)
     return m_Mixer.GetMusic().Crossfade(path, fadeMs);
 }
 
+bool Audio::PlayMusicMemory(std::span<const u8> data, std::string_view formatHint, f32 fadeMs,
+                            bool loop)
+{
+    Lock lock(m_Stream);
+    return m_Mixer.GetMusic().PlayMemory(data, formatHint, fadeMs, loop);
+}
+
+bool Audio::CrossfadeMusicMemory(std::span<const u8> data, std::string_view formatHint, f32 fadeMs,
+                                 bool loop)
+{
+    Lock lock(m_Stream);
+    return m_Mixer.GetMusic().CrossfadeMemory(data, formatHint, fadeMs, loop);
+}
+
 void Audio::StopMusic(f32 fadeMs)
 {
     Lock lock(m_Stream);

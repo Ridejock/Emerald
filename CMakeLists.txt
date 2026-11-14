@@ -143,6 +143,7 @@ add_library(Emerald STATIC
     src/Assets/AssetLoader.cpp
     src/Assets/Assets.cpp
     src/Assets/Image.cpp
+    src/IO/Pak.cpp
     src/Audio/Audio.cpp
     src/Audio/Mixer.cpp
     src/Audio/Synth.cpp

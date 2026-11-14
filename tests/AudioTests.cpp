@@ -11,6 +11,7 @@
 
 #include "Test.h"
 #include "TinyMp3.h"
+#include "TinyOgg.h"
 
 using namespace Emerald;
 
@@ -118,7 +119,17 @@ TEST(LoadSoundPicksByExtension)
     }
     CHECK(LoadSound(mp3).has_value());
 
-    CHECK(!LoadSound(dir / "music.ogg").has_value()); // unsupported type
+    const std::filesystem::path ogg = dir / "tiny.ogg";
+    {
+        std::ofstream f(ogg, std::ios::binary);
+        f.write(reinterpret_cast<const char*>(kTinyOgg), sizeof(kTinyOgg));
+    }
+    const std::optional<Sound> oggSound = LoadSound(ogg);
+    CHECK(oggSound.has_value());
+    if (oggSound)
+        CHECK(oggSound->GetDurationSeconds() > 0.05f);
+
+    CHECK(!LoadSound(dir / "music.txt").has_value());
     CHECK(!LoadSound(dir / "missing.mp3").has_value());
     CHECK(!LoadSound(dir / "missing.wav").has_value());
     std::filesystem::remove_all(dir);

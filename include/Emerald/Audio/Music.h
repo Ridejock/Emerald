@@ -72,16 +72,17 @@ public:
     MusicPlayer& operator=(const MusicPlayer&) = delete;
 
     // Starts `path` fading in; stops anything already playing (with the same fade).
-    bool Play(const std::filesystem::path& path, f32 fadeMs = kDefaultFadeMs);
+    bool Play(const std::filesystem::path& path, f32 fadeMs = kDefaultFadeMs, bool loop = true);
     // Fades the current track out and `path` in over `fadeMs`.
-    bool Crossfade(const std::filesystem::path& path, f32 fadeMs = kDefaultFadeMs);
+    bool Crossfade(const std::filesystem::path& path, f32 fadeMs = kDefaultFadeMs,
+                   bool loop = true);
     void Stop(f32 fadeMs = kDefaultFadeMs);
 
-    // From memory (tests). formatHint is "mp3" or "ogg".
+    // From memory (a pack entry, or tests). formatHint is "mp3" or "ogg". The bytes are copied.
     bool PlayMemory(std::span<const u8> data, std::string_view formatHint,
-                    f32 fadeMs = kDefaultFadeMs);
+                    f32 fadeMs = kDefaultFadeMs, bool loop = true);
     bool CrossfadeMemory(std::span<const u8> data, std::string_view formatHint,
-                         f32 fadeMs = kDefaultFadeMs);
+                         f32 fadeMs = kDefaultFadeMs, bool loop = true);
 
     void SetVolume(f32 volume); // 0..1, ramped
     [[nodiscard]] f32 GetVolume() const { return m_Volume; }
@@ -108,7 +109,7 @@ private:
     };
 
     bool StartSlot(usize index, const std::filesystem::path& path, f32 fadeMs, bool fromMemory,
-                   std::span<const u8> data, std::string_view hint);
+                   std::span<const u8> data, std::string_view hint, bool loop);
     void RampTo(Slot& slot, f32 target, f32 ms) const;
 
     Slot m_Slots[2]{};

@@ -23,7 +23,7 @@ What is planned next is in [ROADMAP.md](ROADMAP.md), with one GitHub issue per f
 | Animation and effects | Sprite animation, tweens with easing, timers, particles with effect files | [Animation and effects](docs/animation-and-effects.md) |
 | Physics and world | Collision shapes and a spatial hash, Tiled tilemaps, platformer character physics | [Physics and world](docs/physics.md) |
 | Gameplay | Scene stack with transitions, entities and components (EnTT), action-based input (keyboard and gamepad), UI widgets, branching dialogue | [Gameplay systems](docs/gameplay.md) |
-| Assets, audio, saves | Asset manager, audio, save files | [Assets, audio and saves](docs/assets-audio-saves.md) |
+| Assets, audio, saves | Asset manager, APAK v1 packs, audio, save files | [Assets, audio and saves](docs/assets-audio-saves.md) |
 | Core | Logging, thread pool, `std::pmr` memory helpers, math library, application loop with a fixed-timestep update | [Core](docs/core.md) |
 | Tooling | ImGui editor tools, input record/replay, asset checker, text-to-Tiled-map tool, Tracy profiling, AddressSanitizer | [Tools](docs/tools.md), [Testing and profiling](docs/testing-and-profiling.md) |
 

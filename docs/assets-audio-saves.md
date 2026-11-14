@@ -80,12 +80,52 @@ In the debug sandbox, the assets come straight from `sandbox/assets/`:
 - The ImGui panel lists every asset with its reference count, reloads and whether it is a
   placeholder.
 
+## Packs (`Pak`)
+
+`include/Emerald/IO/Pak.h` reads an APAK version 1 file. The engine owns the file. A game asks for
+`manifest.json` and for each asset path. Nothing is written back to disk.
+
+The file is little-endian and uncompressed. `flags` is 0 in version 1. Bit 0 is reserved for a
+future zstd payload and bit 1 for a future XOR. A reader rejects a version other than 1 and a
+`flags` value it does not understand.
+
+```
+header  32 bytes
+toc     toc_size bytes
+blobs   raw file bytes, each starting on an 8-byte file offset
+```
+
+| Offset | Type | Value |
+|---|---|---|
+| 0 | u8[4] | magic `APAK` (`0x41 0x50 0x41 0x4B`) |
+| 4 | u16 | version `1` |
+| 6 | u16 | flags `0` |
+| 8 | u32 | entry count |
+| 12 | u64 | toc_offset (`32` in version 1) |
+| 20 | u64 | toc_size |
+| 28 | u32 | reserved `0` |
+
+Each table entry is a u16 path length, the UTF-8 path, a u64 absolute blob offset, a u64 size,
+a zlib CRC-32 of the raw blob, and a u32 of per-entry flags (`0` in version 1). Paths are unique,
+sorted as UTF-8 bytes, relative, use `/`, and have no `.` or `..` segment. `manifest.json` is
+required. A missing path is not an error. A bad header, table, or CRC names the file and the field.
+
+```cpp
+std::string error;
+Emerald::Pak pak;
+if (!pak.Open(path, &error))
+    return; // error names the file and the field
+std::optional<std::vector<Emerald::u8>> manifest = pak.Read("manifest.json", &error);
+```
+
+`Open` reads the file and checks the header and the table. `Read` checks that entry's CRC.
+
 ## Audio
 
 `include/Emerald/Audio/`: load or generate sounds, then play them through `Application::GetAudio()`.
 
 ```cpp
-std::optional<Emerald::Sound> boom = Emerald::LoadSound("assets/boom.mp3"); // .wav or .mp3
+std::optional<Emerald::Sound> boom = Emerald::LoadSound("assets/boom.mp3"); // .wav, .mp3, or .ogg
 Emerald::Audio& audio = GetAudio();
 if (boom)
     audio.Play(*boom, {.Volume = 0.8f, .Pan = -0.3f});          // fire and forget
@@ -106,12 +146,13 @@ audio.CrossfadeMusic("assets/audio/loop_b.ogg", 800.0f);
 
 - **Loading**: `LoadSound(path)` picks the loader by extension (case-insensitive): `.wav` →
   `LoadWav` (`SDL_LoadWAV`), `.mp3` → `LoadMp3` ([dr_mp3](https://github.com/mackron/dr_libs),
-  compiled once in `src/Vendor/dr_mp3.cpp`). MP3s are decoded to f32 at the file's own rate and
-  channel count, then everything is converted with `SDL_ConvertAudioSamples` to the **mix format**
-  the mix format (`kMixChannels` 2, `kMixSampleRate` 48000, f32). Failures return `std::nullopt` and are logged.
-  `LoadMp3FromMemory` decodes embedded data, `MakeSound(samples, channels, rate)` converts
-  generated samples. A `Sound` shares its (immutable) samples, so copies are cheap and a playing
-  sound stays valid even if the game drops its `Sound`.
+  compiled once in `src/Vendor/dr_mp3.cpp`), `.ogg` → `LoadOggFromMemory` (stb_vorbis). Files are
+  decoded to f32 at the file's own rate and channel count, then converted with
+  `SDL_ConvertAudioSamples` to the **mix format** (`kMixChannels` 2, `kMixSampleRate` 48000, f32).
+  Failures return `std::nullopt` and are logged. `LoadMp3FromMemory` and `LoadOggFromMemory` decode
+  bytes a pack already holds, so a cue does not have to be copied out to a temporary file.
+  `MakeSound(samples, channels, rate)` converts generated samples. A `Sound` shares its (immutable)
+  samples, so copies are cheap and a playing sound stays valid even if the game drops its `Sound`.
 - **Synth** (`Synth.h`): `Generate(Tone)` makes sine, square/pulse (`Duty`), triangle, saw or
   noise with an optional exponential pitch sweep (`StartHz` → `EndHz`; for noise the frequency sets
   how bright it is) and vibrato (`VibratoHz`, `VibratoDepth`: e.g. 5 Hz, ±20% for a UFO warble); shape it with `ApplyDecay`, `ApplyAdsr`, `LowPass` (one-pole) and `MixInto`,
@@ -132,7 +173,9 @@ audio.CrossfadeMusic("assets/audio/loop_b.ogg", 800.0f);
   Pure CPU math — covered by `AudioExtrasTests` with no device.
 - **Music** (`Music.h`): `MusicStream` decodes `.mp3` (dr_mp3) or `.ogg` (stb_vorbis) a chunk at a
   time into a fixed ~0.25 s stereo ring (constant PCM memory); `MusicPlayer` holds two streams for
-  Play / Crossfade / Stop. Prefer SDL3 core audio only (no SDL_mixer). Via `Audio`:
+  Play / Crossfade / Stop. `PlayMusicMemory` and `CrossfadeMusicMemory` take the same formats from
+  bytes (copied into the stream) so a pack can play an Ogg without writing a temporary file.
+  `loop` is false for a one-shot sting. Prefer SDL3 core audio only (no SDL_mixer). Via `Audio`:
   `PlayMusic` / `CrossfadeMusic` / `StopMusic` / `SetMusicVolume`. The sandbox Options screen has
   Music group / track sliders and Play A / Crossfade B / Stop using `assets/audio/loop_*.ogg`.
 - **Threads**: SDL calls the mixer from its audio thread with the audio stream locked; every

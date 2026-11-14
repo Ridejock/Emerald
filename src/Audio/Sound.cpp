@@ -58,7 +58,20 @@ std::optional<Sound> LoadSound(const std::filesystem::path& path)
         return LoadWav(path);
     if (ext == ".mp3")
         return LoadMp3(path);
-    LogError("LoadSound: '{}' is not a .wav or .mp3 file", path.string());
+    if (ext == ".ogg") {
+        usize size = 0;
+        void* file = SDL_LoadFile(ToUtf8(path).c_str(), &size);
+        if (!file) {
+            LogError("Failed to load '{}': {}", path.string(), SDL_GetError());
+            return std::nullopt;
+        }
+        std::optional<Sound> sound = LoadOggFromMemory(file, size);
+        SDL_free(file);
+        if (!sound)
+            LogError("Failed to decode Ogg '{}'", path.string());
+        return sound;
+    }
+    LogError("LoadSound: '{}' is not a .wav, .mp3, or .ogg file", path.string());
     return std::nullopt;
 }
 

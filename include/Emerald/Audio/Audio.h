@@ -1,6 +1,8 @@
 #pragma once
 
 #include <filesystem>
+#include <span>
+#include <string_view>
 
 #include "Emerald/Audio/Mixer.h"
 #include "Emerald/Audio/Sound.h"
@@ -65,6 +67,12 @@ public:
     bool PlayMusic(const std::filesystem::path& path, f32 fadeMs = MusicPlayer::kDefaultFadeMs);
     bool CrossfadeMusic(const std::filesystem::path& path,
                         f32 fadeMs = MusicPlayer::kDefaultFadeMs);
+    // The same, from bytes the caller already has (an APAK entry). `formatHint` is "ogg" or
+    // "mp3". The bytes are copied. `loop` is false for a sting that should play once.
+    bool PlayMusicMemory(std::span<const u8> data, std::string_view formatHint,
+                         f32 fadeMs = MusicPlayer::kDefaultFadeMs, bool loop = true);
+    bool CrossfadeMusicMemory(std::span<const u8> data, std::string_view formatHint,
+                              f32 fadeMs = MusicPlayer::kDefaultFadeMs, bool loop = true);
     void StopMusic(f32 fadeMs = MusicPlayer::kDefaultFadeMs);
     void SetMusicVolume(f32 volume);
     [[nodiscard]] f32 GetMusicVolume() const;

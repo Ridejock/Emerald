@@ -147,6 +147,12 @@ target_link_libraries(EmeraldLightingTests PRIVATE Emerald::Emerald)
 emerald_set_warnings(EmeraldLightingTests)
 add_test(NAME LightingTests COMMAND EmeraldLightingTests)
 
+# APAK v1: header, table, CRC, and path lookup. No window or device.
+add_executable(EmeraldPakTests TestMain.cpp PakTests.cpp)
+target_link_libraries(EmeraldPakTests PRIVATE Emerald::Emerald)
+emerald_set_warnings(EmeraldPakTests)
+add_test(NAME PakTests COMMAND EmeraldPakTests)
+
 # Audio extras: spatial math, mixer groups, music streaming / crossfade (no device).
 add_executable(EmeraldAudioExtrasTests TestMain.cpp AudioExtrasTests.cpp)
 target_link_libraries(EmeraldAudioExtrasTests PRIVATE Emerald::Emerald)

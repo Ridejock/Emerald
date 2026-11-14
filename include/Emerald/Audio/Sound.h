@@ -55,6 +55,8 @@ private:
 [[nodiscard]] std::optional<Sound> LoadMp3(const std::filesystem::path& path);
 // Decodes an MP3 that is already in memory (e.g. embedded in the executable).
 [[nodiscard]] std::optional<Sound> LoadMp3FromMemory(const void* data, usize size);
+// Decodes an Ogg Vorbis file that is already in memory (a pack entry, or tests).
+[[nodiscard]] std::optional<Sound> LoadOggFromMemory(const void* data, usize size);
 // Converts interleaved f32 samples in any rate/channel count to a Sound, e.g. for sounds that
 // are generated in code (see also Synth.h).
 [[nodiscard]] std::optional<Sound> MakeSound(std::span<const f32> samples, i32 channels,

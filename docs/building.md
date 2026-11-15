@@ -29,6 +29,7 @@ Dependencies, build options, per-platform setup, presets and the sandbox command
 | Option | Default | Description |
 |---|---|---|
 | `EMERALD_BUILD_SANDBOX` | `ON` | Build the sandbox example executable |
+| `EMERALD_BUILD_EXAMPLES` | `ON` | Build the small examples. The hello-world program is [Hello, world](hello-world.md). Off when Emerald is a subproject; CI passes it on |
 | `EMERALD_USE_IMGUI` | `OFF` | Fetch Dear ImGui (docking) and integrate it into the app loop, with the editor tools (see [Editor tools](tools.md#editor-tools-editor-imgui-builds)) |
 | `EMERALD_BUILD_SHADERCROSS` | `ON` | Build the `shadercross` tool from source if `EMERALD_SHADERCROSS_EXECUTABLE` is empty |
 | `EMERALD_SHADERCROSS_EXECUTABLE` | *(empty)* | Use this prebuilt `shadercross` instead of building it |
@@ -111,7 +112,7 @@ cmake --build --preset debug
 
 Options can also be passed directly, e.g. `cmake --preset release -DEMERALD_USE_IMGUI=ON`.
 
-CI passes `-DEMERALD_WARNINGS_AS_ERRORS=ON` for every preset. Windows runs `debug`, `debug-asan`, `debug-full`, `release` and `profile`. Linux (GCC and Clang) runs `debug`, `release`, `debug-ubsan`, `debug-tsan` and `profile`, and the `linux-release` package job does too. A game that calls the reusable workflow gets the same flag on every preset it lists. The flag applies to a game target only when that target calls `emerald_set_warnings` ([Releasing](releasing.md#warnings)).
+CI passes `-DEMERALD_WARNINGS_AS_ERRORS=ON` for every preset. Windows runs `debug`, `debug-asan`, `debug-full`, `release` and `profile`. Linux (GCC and Clang) runs `debug`, `release`, `debug-ubsan`, `debug-tsan` and `profile`, and the `linux-release` package job does too. A game that calls the reusable workflow gets the same flag on every preset it lists. The flag applies to a game target only when that target calls `emerald_set_warnings` ([Releasing](releasing.md#warnings)). The engine's own configures also pass `-DEMERALD_BUILD_EXAMPLES=ON`, so the hello-world example is built on those presets. A game that fetches Emerald does not build it unless it opts in: the option defaults off for a subproject.
 
 ### Linux release package
 

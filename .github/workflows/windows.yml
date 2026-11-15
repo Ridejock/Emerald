@@ -2,7 +2,8 @@
 # in the debug and debug-asan presets (no ImGui: the editor tools compile out), debug-full
 # (ImGui on: the editor tools, their tests and the sandbox's panels), release (no hot reload,
 # NDEBUG) and profile (Tracy). Every preset in CMakePresets.json is built with
-# EMERALD_WARNINGS_AS_ERRORS on either this workflow or Linux CI.
+# EMERALD_WARNINGS_AS_ERRORS on either this workflow or Linux CI. Configures pass
+# EMERALD_BUILD_EXAMPLES=ON.
 # GPU frames use SwiftShader (CPU Vulkan). The Chrome build also ships vulkan-1.dll. SDL is told
 # that exact file via SDL_VULKAN_LIBRARY (a directory on PATH was not enough for SDL_LoadObject).
 # The dll stays in the CI cache: it is not copied next to the game or into any package.
@@ -127,7 +128,7 @@ jobs:
           echo "Vulkan loader: $loader"
 
       - name: Configure
-        run: cmake --preset ${{ matrix.preset }} -DEMERALD_WARNINGS_AS_ERRORS=ON
+        run: cmake --preset ${{ matrix.preset }} -DEMERALD_WARNINGS_AS_ERRORS=ON -DEMERALD_BUILD_EXAMPLES=ON
 
       - name: Build
         id: build

@@ -200,3 +200,10 @@ if(NOT EMERALD_TSAN)
     add_test(NAME RenderSmoke COMMAND EmeraldRenderSmoke)
     set_tests_properties(RenderSmoke PROPERTIES SKIP_RETURN_CODE 77)
 endif()
+
+# The hello-world doc lists examples/hello/main.cpp in full. Fail if the two drift.
+add_test(NAME HelloDocMatches
+    COMMAND ${CMAKE_COMMAND}
+        -DHELLO_SOURCE=${PROJECT_SOURCE_DIR}/examples/hello/main.cpp
+        -DHELLO_DOC=${PROJECT_SOURCE_DIR}/docs/hello-world.md
+        -P ${PROJECT_SOURCE_DIR}/cmake/CheckHelloDoc.cmake)

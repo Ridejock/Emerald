@@ -1,8 +1,9 @@
 # Windows tests: configure, build (warnings in Emerald's own code are errors) and run the tests,
 # in the debug and debug-asan presets (no ImGui: the editor tools compile out), debug-full
 # (ImGui on: the editor tools, their tests and the sandbox's panels), release (no hot reload,
-# NDEBUG) and profile (Tracy). Every preset in CMakePresets.json is built with
-# EMERALD_WARNINGS_AS_ERRORS on either this workflow or Linux CI.
+# NDEBUG) and profile (Tracy). Every preset is configured with EMERALD_BUILD_EXAMPLES=ON.
+# Every preset in CMakePresets.json is built with EMERALD_WARNINGS_AS_ERRORS on either this
+# workflow or Linux CI.
 name: Windows
 
 on:
@@ -59,7 +60,7 @@ jobs:
           restore-keys: shadercross-bin-windows-${{ env.VCToolsVersion }}-
 
       - name: Configure
-        run: cmake --preset ${{ matrix.preset }} -DEMERALD_WARNINGS_AS_ERRORS=ON
+        run: cmake --preset ${{ matrix.preset }} -DEMERALD_WARNINGS_AS_ERRORS=ON -DEMERALD_BUILD_EXAMPLES=ON
 
       - name: Build
         id: build

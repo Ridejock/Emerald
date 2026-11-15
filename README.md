@@ -11,6 +11,8 @@ platformer physics, scenes, UI, dialogue and audio. All dependencies are fetched
 - **`Emerald::Math`**: a header-only math library (vectors, `Mat4`, optional SSE), included by the engine.
 - **`sandbox/`**: an example app, organised as scenes on the scene stack (title, camera demo, tilemap room,
   entity swarm, platformer, pause, options, lighting, dialogue, particles, pop-ups). It is also the quickest way to see the engine run.
+- **`examples/hello/`**: the smallest program, a window and one line of debug text.
+  [Hello, world](docs/hello-world.md) walks through it.
 - **`tests/`**: unit-test executables run with `ctest`.
 
 What is planned next is in [ROADMAP.md](ROADMAP.md), with one GitHub issue per feature.
@@ -53,6 +55,20 @@ The renderer needs a real GPU backend (Vulkan, Direct3D 12 or Metal), so a displ
 list, how to choose the backend, and how to run on a machine without a GPU are in
 [Building and running](docs/building.md#running).
 
+## Hello, world
+
+The smallest program is [Hello, world](docs/hello-world.md): open a window, clear it, draw one line
+with the built-in debug font, and quit on Escape or when the window closes. `EMERALD_BUILD_EXAMPLES`
+is on when you build this repository (and in CI):
+
+```sh
+cmake --preset debug
+cmake --build --preset debug --target Hello
+./build/debug/bin/Hello        # Hello.exe on Windows
+```
+
+That page is also the walkthrough for adding Emerald to a new CMake project. The source it shows is `examples/hello/main.cpp`.
+
 ## Using Emerald in your own project
 
 ```cmake
@@ -69,8 +85,9 @@ target_link_libraries(MyGame PRIVATE Emerald::Emerald)
 emerald_add_shaders(MyGame)                                # engine shaders (+ your own .hlsl files)
 ```
 
-As a subproject Emerald does not build its sandbox and tests (`EMERALD_BUILD_SANDBOX`/`_TESTS`
-default to on only when Emerald is the top-level project), keeps the parent's output directories,
+As a subproject Emerald does not build its sandbox, examples and tests (`EMERALD_BUILD_SANDBOX`,
+`EMERALD_BUILD_EXAMPLES` and `EMERALD_BUILD_TESTS` default to on only when Emerald is the top-level
+project), keeps the parent's output directories,
 and builds shadercross once per machine in a per-user cache folder that every preset and project
 shares (see [The shader compiler](docs/building.md#the-shader-compiler)). To work on a local Emerald checkout instead of the pinned commit, configure with
 `-DFETCHCONTENT_SOURCE_DIR_EMERALD=/path/to/Emerald`.
@@ -86,10 +103,14 @@ class MyGame : public Emerald::Application {
 int main() { return MyGame{}.Run(); }
 ```
 
+[Hello, world](docs/hello-world.md) is that program written out: the CMake, the source, and how to
+build it on Windows and Linux.
+
 ## Documentation
 
 | File | Contents |
 |---|---|
+| [docs/hello-world.md](docs/hello-world.md) | A one-file window, clear and debug-text program, and how to build it on Windows and Linux |
 | [docs/building.md](docs/building.md) | Dependencies, build options, per-platform setup, presets, the Linux release package, sandbox command line |
 | [docs/releasing.md](docs/releasing.md) | Reusable game CI: build, test, package, and publish a tag to itch.io with butler |
 | [docs/platforms.md](docs/platforms.md) | Linux paths (XDG), borderless fullscreen, Steam Deck controls and Steam Input. Deck support is untested on real hardware |
@@ -107,6 +128,7 @@ int main() { return MyGame{}.Run(); }
 
 ```
 docs/              Documentation (one file per topic, see above)
+examples/hello/    Smallest public-API program (EMERALD_BUILD_EXAMPLES). Walkthrough: docs/hello-world.md
 include/Emerald/   Public engine headers (Core/, Input/, Audio/, Renderer/, Particles/, Physics/, Tilemap/, Scene/, Entity/, Assets/, Tween/, UI/, Dialogue/, Save/, Editor/, Math/, Memory/)
 src/               Engine implementation
 shaders/           The engine's HLSL shaders (Renderer2D lines, Sprite, lit sprites, tint, the CRT post-process; compiled at build time for every app)

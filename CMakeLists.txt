@@ -27,9 +27,10 @@ if(NOT DEFINED CMAKE_ARCHIVE_OUTPUT_DIRECTORY)
     set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 endif()
 
-# Sandbox and tests are only built by default when Emerald is the top-level project, not when a
-# game pulls it in.
+# Sandbox, examples and tests are only built by default when Emerald is the top-level project,
+# not when a game pulls it in.
 option(EMERALD_BUILD_SANDBOX "Build the sandbox example application" ${PROJECT_IS_TOP_LEVEL})
+option(EMERALD_BUILD_EXAMPLES "Build the small examples (hello world)" ${PROJECT_IS_TOP_LEVEL})
 option(EMERALD_USE_IMGUI     "Enable Dear ImGui (SDL3 + SDL GPU backends)" OFF)
 option(EMERALD_MATH_SIMD     "Use the SSE code paths of the math library on x86/x64" ON)
 option(EMERALD_BUILD_TESTS   "Build the unit tests (run with ctest)" ${PROJECT_IS_TOP_LEVEL})
@@ -207,6 +208,10 @@ emerald_set_warnings(Emerald)
 # ---------------------------------------------------------------------------
 if(EMERALD_BUILD_SANDBOX)
     add_subdirectory(sandbox)
+endif()
+
+if(EMERALD_BUILD_EXAMPLES)
+    add_subdirectory(examples)
 endif()
 
 # ---------------------------------------------------------------------------

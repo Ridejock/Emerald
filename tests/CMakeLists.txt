@@ -185,3 +185,10 @@ add_executable(EmeraldEditorTests TestMain.cpp EditorTests.cpp)
 target_link_libraries(EmeraldEditorTests PRIVATE Emerald::Emerald)
 emerald_set_warnings(EmeraldEditorTests)
 add_test(NAME EditorTests COMMAND EmeraldEditorTests)
+
+# The hello-world doc lists examples/hello/main.cpp in full. Fail if the two drift.
+add_test(NAME HelloDocMatches
+    COMMAND ${CMAKE_COMMAND}
+        -DHELLO_SOURCE=${PROJECT_SOURCE_DIR}/examples/hello/main.cpp
+        -DHELLO_DOC=${PROJECT_SOURCE_DIR}/docs/hello-world.md
+        -P ${PROJECT_SOURCE_DIR}/cmake/CheckHelloDoc.cmake)

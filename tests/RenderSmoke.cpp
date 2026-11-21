@@ -14,6 +14,16 @@
 //                                 write the frame over the reference. Refused unless the device
 //                                 name contains "SwiftShader", so another driver cannot replace it.
 
+#if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
+
 #include <cctype>
 #include <cstdlib>
 #include <cstring>
@@ -78,8 +88,18 @@ constexpr const char* kActualName = "render-smoke-actual.png";
 
 bool EnvFlag(const char* name)
 {
+    // getenv is deprecated on MSVC (C4996) and the Windows jobs treat warnings as errors.
+#if defined(_WIN32)
+    char value[32] = {};
+    const DWORD length = GetEnvironmentVariableA(name, value, static_cast<DWORD>(sizeof(value)));
+    if (length == 0 || length >= sizeof(value))
+        return false;
+#else
     const char* value = std::getenv(name);
-    return value != nullptr && value[0] != '\0' && std::strcmp(value, "0") != 0;
+    if (value == nullptr)
+        return false;
+#endif
+    return value[0] != '\0' && std::strcmp(value, "0") != 0;
 }
 
 bool ContainsIgnoreCase(std::string_view haystack, std::string_view needle)

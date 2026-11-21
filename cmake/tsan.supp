@@ -8,3 +8,11 @@
 # touches that mutex. Seen with the pinned SDL 3.4.16 and PulseAudio 16 on
 # Ubuntu 24.04, under xvfb, and not on every run.
 race:pa_mutex_lock
+
+# Mesa lavapipe (the software Vulkan driver) races with itself when SDL creates
+# a device. One llvmpipe thread calls pthread_mutex_destroy and another calls
+# pthread_mutex_lock; both frames are inside libvulkan_lvp.so, reached from
+# SDL's VULKAN_CreateDevice. The .so has no symbol names, so the pattern matches
+# that library on the racing stack (TSan compares it to the module). Emerald's
+# own frames are not in that library, so they still report.
+race:libvulkan_lvp.so

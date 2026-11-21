@@ -78,8 +78,9 @@ VK_DRIVER_FILES="$icd" VK_ICD_FILENAMES="$icd" VK_ADD_DRIVER_FILES= \
 ```
 
 That overwrites `tests/data/render_smoke.png`. The update is refused unless the device name
-contains `SwiftShader`, so a machine GPU or lavapipe cannot replace the file. On Windows, put
-`vulkan-1.dll` (it sits next to the ICD) on `PATH` and run the same command.
+contains `SwiftShader`, so a machine GPU or lavapipe cannot replace the file. On Windows, set
+`SDL_VULKAN_LIBRARY` to the `vulkan-1.dll` that sits next to the ICD (SDL does not find that
+loader from `PATH` alone) and run the same command.
 
 ThreadSanitizer and UndefinedBehaviorSanitizer runs (GCC/Clang; see
 [Sanitizers](#addresssanitizer)):

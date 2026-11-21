@@ -1,0 +1,279 @@
+# AddressSanitizer + UndefinedBehaviorSanitizer together, and ThreadSanitizer
+# on its own. Both are Linux + Clang. TSan cannot be combined with ASan
+# (cmake/Sanitizers.cmake rejects that), so it is a separate job.
+#
+# linux.yml already runs UBSan alone and TSan, for GCC and Clang. This file
+# does not edit that workflow: the combined ASan+UBSan preset is new, and the
+# TSan job here is where a suppression file is applied. A SwiftShader headless
+# render test can be added next to the lavapipe step in linux.yml without
+# touching these jobs.
+#
+# The shadercross cache key matches linux.yml's Clang key, so whichever
+# workflow builds the tool first, the other restores it.
+name: Sanitizers
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  EMERALD_CACHE_DIR: /home/runner/emerald-cache
+  DEBIAN_FRONTEND: noninteractive
+  CCACHE_DIR: /home/runner/.cache/ccache
+  CCACHE_COMPRESS: "1"
+  CCACHE_MAXSIZE: 500M
+
+jobs:
+  shadercross:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    name: shadercross (clang)
+    outputs:
+      key: ${{ steps.key.outputs.key }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Packages
+        run: |
+          tools/ci/install-linux-packages.sh
+          sudo apt-get install -y ccache clang
+
+      - name: Compiler
+        run: |
+          echo "CC=clang" >> "$GITHUB_ENV"
+          echo "CXX=clang++" >> "$GITHUB_ENV"
+
+      - name: Cache key
+        id: key
+        run: |
+          version=$(clang++ -dumpversion)
+          # Same string linux.yml uses for its Clang tool, so the two workflows share a cache.
+          key="shadercross-bin-linux-clang-${version}-${{ hashFiles('tools/shadercross/**') }}"
+          echo "key=${key}" >> "$GITHUB_OUTPUT"
+          echo "KEY=${key}" >> "$GITHUB_ENV"
+
+      - name: Restore shadercross
+        id: cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: /home/runner/emerald-cache/shadercross/*/bin
+          key: ${{ env.KEY }}
+
+      - name: Build shadercross
+        id: build
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          cmake -S . -B build/tool -G Ninja -DEMERALD_BUILD_TESTS=OFF \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+          cmake --build build/tool --target emerald_shadercross
+
+      # linux.yml uses this same key. Whichever job finishes the build second
+      # loses the save; the binary is already in the cache.
+      - name: Save shadercross
+        if: steps.cache.outputs.cache-hit != 'true' && steps.build.outcome == 'success'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        continue-on-error: true
+        with:
+          path: /home/runner/emerald-cache/shadercross/*/bin
+          key: ${{ env.KEY }}
+
+  asan-ubsan:
+    needs: shadercross
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    name: clang ASan + UBSan
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Packages
+        run: |
+          tools/ci/install-linux-packages.sh
+          sudo apt-get install -y ccache clang
+          ver=$(clang++ -dumpversion | cut -d. -f1)
+          sudo apt-get install -y "libclang-rt-${ver}-dev" "llvm-${ver}"
+          sudo ln -sfn "/usr/bin/llvm-symbolizer-${ver}" /usr/local/bin/llvm-symbolizer
+
+      - name: Compiler
+        run: |
+          echo "CC=clang" >> "$GITHUB_ENV"
+          echo "CXX=clang++" >> "$GITHUB_ENV"
+
+      - name: ccache
+        id: ccache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: /home/runner/.cache/ccache-asan-ubsan
+          key: ccache-linux-clang-asan-ubsan-${{ github.sha }}
+          restore-keys: |
+            ccache-linux-clang-asan-ubsan-
+
+      - name: Restore shadercross
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: /home/runner/emerald-cache/shadercross/*/bin
+          key: ${{ needs.shadercross.outputs.key }}
+          fail-on-cache-miss: true
+
+      # SPIR-V only, same as linux.yml: lavapipe is the GPU used for the smoke
+      # run. DXIL is covered by the Windows jobs.
+      - name: Configure
+        env:
+          CCACHE_DIR: /home/runner/.cache/ccache-asan-ubsan
+        run: |
+          ccache --zero-stats || true
+          cmake --preset debug-asan-ubsan -DEMERALD_WARNINGS_AS_ERRORS=ON \
+            -DEMERALD_SHADER_FORMATS=SPIRV \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+
+      - name: Build
+        id: build
+        env:
+          CCACHE_DIR: /home/runner/.cache/ccache-asan-ubsan
+        run: cmake --build --preset debug-asan-ubsan 2>&1 | tee build-log.txt; exit ${PIPESTATUS[0]}
+
+      - name: ccache stats
+        if: always()
+        env:
+          CCACHE_DIR: /home/runner/.cache/ccache-asan-ubsan
+        run: ccache --show-stats || true
+
+      - name: Save ccache
+        if: steps.build.outcome == 'success'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        continue-on-error: true
+        with:
+          path: /home/runner/.cache/ccache-asan-ubsan
+          key: ${{ steps.ccache.outputs.cache-primary-key }}
+
+      - name: Test
+        run: ctest --preset debug-asan-ubsan
+
+      # Leak detection stays on for the tests. The sandbox smoke turns it off:
+      # Mesa's software Vulkan driver leaves allocations in an unloaded module
+      # (see docs/testing-and-profiling.md). That is not an Emerald leak.
+      - name: Sandbox smoke (lavapipe)
+        env:
+          ASAN_OPTIONS: halt_on_error=1:detect_leaks=0
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+        run: |
+          xvfb-run -a -s "-screen 0 1280x720x24" \
+            tools/ci/gpu-smoke.sh --bin build/debug-asan-ubsan/bin/Sandbox --gpu vulkan \
+              --frames 20 --screenshot asan-ubsan.png --log asan-ubsan-smoke.log
+
+      - name: Upload logs
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: logs-asan-ubsan
+          path: |
+            build-log.txt
+            build/debug-asan-ubsan/Testing/Temporary/LastTest.log
+            asan-ubsan-smoke.log
+          if-no-files-found: ignore
+
+  tsan:
+    needs: shadercross
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    name: clang TSan
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Packages
+        run: |
+          tools/ci/install-linux-packages.sh
+          sudo apt-get install -y ccache clang
+          ver=$(clang++ -dumpversion | cut -d. -f1)
+          sudo apt-get install -y "libclang-rt-${ver}-dev" "llvm-${ver}"
+          sudo ln -sfn "/usr/bin/llvm-symbolizer-${ver}" /usr/local/bin/llvm-symbolizer
+
+      - name: Compiler
+        run: |
+          echo "CC=clang" >> "$GITHUB_ENV"
+          echo "CXX=clang++" >> "$GITHUB_ENV"
+
+      # The runner kernel's ASLR entropy is too high for TSan's shadow mapping.
+      - name: Allow TSan
+        run: sudo sysctl vm.mmap_rnd_bits=28
+
+      - name: ccache
+        id: ccache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: /home/runner/.cache/ccache-tsan
+          key: ccache-linux-clang-tsan-${{ github.sha }}
+          restore-keys: |
+            ccache-linux-clang-tsan-
+
+      - name: Restore shadercross
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: /home/runner/emerald-cache/shadercross/*/bin
+          key: ${{ needs.shadercross.outputs.key }}
+          fail-on-cache-miss: true
+
+      - name: Configure
+        env:
+          CCACHE_DIR: /home/runner/.cache/ccache-tsan
+        run: |
+          ccache --zero-stats || true
+          cmake --preset debug-tsan -DEMERALD_WARNINGS_AS_ERRORS=ON \
+            -DEMERALD_SHADER_FORMATS=SPIRV \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+
+      - name: Build
+        id: build
+        env:
+          CCACHE_DIR: /home/runner/.cache/ccache-tsan
+        run: cmake --build --preset debug-tsan 2>&1 | tee build-log.txt; exit ${PIPESTATUS[0]}
+
+      - name: ccache stats
+        if: always()
+        env:
+          CCACHE_DIR: /home/runner/.cache/ccache-tsan
+        run: ccache --show-stats || true
+
+      - name: Save ccache
+        if: steps.build.outcome == 'success'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        continue-on-error: true
+        with:
+          path: /home/runner/.cache/ccache-tsan
+          key: ${{ steps.ccache.outputs.cache-primary-key }}
+
+      # ctest --preset applies the TSAN_OPTIONS from CMakePresets.json, including
+      # suppressions=${sourceDir}/cmake/tsan.supp when that line is present.
+      # The smoke run is not ctest, so it sets the same variable itself.
+      - name: Test
+        run: ctest --preset debug-tsan
+
+      - name: Sandbox smoke (lavapipe)
+        run: |
+          supp=""
+          if [ -f cmake/tsan.supp ]; then
+            supp=":suppressions=${GITHUB_WORKSPACE}/cmake/tsan.supp"
+          fi
+          export TSAN_OPTIONS="halt_on_error=1:second_deadlock_stack=1${supp}"
+          xvfb-run -a -s "-screen 0 1280x720x24" \
+            tools/ci/gpu-smoke.sh --bin build/debug-tsan/bin/Sandbox --gpu vulkan \
+              --frames 20 --screenshot tsan.png --log tsan-smoke.log
+
+      - name: Upload logs
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: logs-tsan
+          path: |
+            build-log.txt
+            build/debug-tsan/Testing/Temporary/LastTest.log
+            tsan-smoke.log
+          if-no-files-found: ignore

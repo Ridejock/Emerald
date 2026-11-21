@@ -55,6 +55,7 @@ ThreadSanitizer and UndefinedBehaviorSanitizer runs (GCC/Clang; see
 ```sh
 cmake --preset debug-tsan && cmake --build --preset debug-tsan && ctest --preset debug-tsan
 cmake --preset debug-ubsan && cmake --build --preset debug-ubsan && ctest --preset debug-ubsan
+cmake --preset debug-asan-ubsan && cmake --build --preset debug-asan-ubsan && ctest --preset debug-asan-ubsan
 ```
 
 Benchmark (release build recommended; numbers vary a lot between machines):
@@ -161,8 +162,12 @@ null access, float-to-int casts out of range) and stops at the first report. `de
 on it). Like ASan, the flags go on everything and on the `Emerald` target's interface. Their test
 presets set `UBSAN_OPTIONS` / `TSAN_OPTIONS` (stack traces, stop at the first report). On kernels
 with high ASLR entropy TSan fails to start ("unexpected memory mapping"):
-`sudo sysctl vm.mmap_rnd_bits=28` fixes it until the next reboot. Linux CI runs both with GCC
-and Clang.
+`sudo sysctl vm.mmap_rnd_bits=28` fixes it until the next reboot. Linux CI runs UBSan and TSan
+with GCC and Clang (`.github/workflows/linux.yml`). `.github/workflows/sanitizers.yml` runs
+Clang again with ASan and UBSan in one build (`debug-asan-ubsan`), and TSan in its own job,
+because the two sanitizers cannot be linked together. `cmake/tsan.supp` is loaded by the
+`debug-tsan` test preset. It only lists third-party noise (PulseAudio's mutex during
+`SDL_Init`); Emerald frames are not suppressed.
 
 - **GCC / Clang:** `-fsanitize=address -fno-omit-frame-pointer`. On Linux with Mesa's drivers the
   sandbox reports about 50 KB of leaks from inside the unloaded GPU driver ("unknown module") at

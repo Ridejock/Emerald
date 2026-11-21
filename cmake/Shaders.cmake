@@ -128,6 +128,14 @@ function(_emerald_setup_shadercross)
                 endif()
             endif()
             list(APPEND tool_args -DCMAKE_C_COMPILER=${tool_c} -DCMAKE_CXX_COMPILER=${tool_cxx})
+            # ccache/sccache, when the caller set a launcher. The tool is its own CMake
+            # project, so it does not inherit the engine's launcher on its own.
+            if(CMAKE_C_COMPILER_LAUNCHER)
+                list(APPEND tool_args -DCMAKE_C_COMPILER_LAUNCHER=${CMAKE_C_COMPILER_LAUNCHER})
+            endif()
+            if(CMAKE_CXX_COMPILER_LAUNCHER)
+                list(APPEND tool_args -DCMAKE_CXX_COMPILER_LAUNCHER=${CMAKE_CXX_COMPILER_LAUNCHER})
+            endif()
         endif()
         # The tool's source must be the same path for every build sharing the tool dir, or its
         # CMake cache refuses it (a game that FetchContent's Emerald has one Emerald copy per build

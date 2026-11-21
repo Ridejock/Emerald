@@ -1,0 +1,10 @@
+# ThreadSanitizer suppressions for third-party code only.
+# A line here hides a report. Do not add Emerald frames.
+
+# SDL_Init starts PulseAudio's threaded mainloop (SDL_pulseaudio.c,
+# PULSEAUDIO_Init). libpulse allocates a pa_mutex on its PulseMainloop thread
+# and the thread that called SDL_Init locks it. TSan reports that as a data
+# race in pa_mutex_lock / pa_xmalloc, inside libpulsecommon. Emerald never
+# touches that mutex. Seen with the pinned SDL 3.4.16 and PulseAudio 16 on
+# Ubuntu 24.04, under xvfb, and not on every run.
+race:pa_mutex_lock

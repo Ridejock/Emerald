@@ -106,12 +106,13 @@ cmake --build --preset debug
 | `profile` | Optimized with debug info (`RelWithDebInfo`) and `EMERALD_PROFILE=ON` (Tracy) |
 | `debug-asan` | Debug build with `EMERALD_ASAN=ON` (AddressSanitizer) |
 | `debug-ubsan` | Debug build with `EMERALD_UBSAN=ON` (UndefinedBehaviorSanitizer; GCC/Clang) |
+| `debug-asan-ubsan` | Debug build with ASan and UBSan together (GCC/Clang; TSan stays separate) |
 | `debug-tsan` | Debug build with `EMERALD_TSAN=ON` (ThreadSanitizer; GCC/Clang) |
 | `linux-release` | Linux only. Release, SPIR-V shaders, `EMERALD_LINUX_PACKAGE=ON`. The build preset produces the archive |
 
 Options can also be passed directly, e.g. `cmake --preset release -DEMERALD_USE_IMGUI=ON`.
 
-CI passes `-DEMERALD_WARNINGS_AS_ERRORS=ON` for every preset. Windows runs `debug`, `debug-asan`, `debug-full`, `release` and `profile`. Linux (GCC and Clang) runs `debug`, `release`, `debug-ubsan`, `debug-tsan` and `profile`, and the `linux-release` package job does too. A game that calls the reusable workflow gets the same flag on every preset it lists. The flag applies to a game target only when that target calls `emerald_set_warnings` ([Releasing](releasing.md#warnings)).
+CI passes `-DEMERALD_WARNINGS_AS_ERRORS=ON` for every preset. Windows runs `debug`, `debug-asan`, `debug-full`, `release` and `profile`. Linux (GCC and Clang) runs `debug`, `release`, `debug-ubsan`, `debug-tsan` and `profile`, and the `linux-release` package job does too. macOS (Apple Silicon, `macos.yml`) runs `debug` and `release` with MSL shaders for Metal. A separate sanitizer workflow runs Clang `debug-asan-ubsan` and `debug-tsan`. `clang-tidy.yml` checks the engine's own sources and uploads the report; it does not fail the run yet. A game that calls the reusable workflow gets the same warnings-as-errors flag on every preset it lists. The flag applies to a game target only when that target calls `emerald_set_warnings` ([Releasing](releasing.md#warnings)).
 
 ### Linux release package
 

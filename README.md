@@ -1,6 +1,10 @@
 # Emerald
 
 [![Windows](https://github.com/Ridejock/Emerald/actions/workflows/windows.yml/badge.svg)](https://github.com/Ridejock/Emerald/actions/workflows/windows.yml)
+[![Linux](https://github.com/Ridejock/Emerald/actions/workflows/linux.yml/badge.svg)](https://github.com/Ridejock/Emerald/actions/workflows/linux.yml)
+[![macOS](https://github.com/Ridejock/Emerald/actions/workflows/macos.yml/badge.svg)](https://github.com/Ridejock/Emerald/actions/workflows/macos.yml)
+[![Sanitizers](https://github.com/Ridejock/Emerald/actions/workflows/sanitizers.yml/badge.svg)](https://github.com/Ridejock/Emerald/actions/workflows/sanitizers.yml)
+[![clang-tidy](https://github.com/Ridejock/Emerald/actions/workflows/clang-tidy.yml/badge.svg)](https://github.com/Ridejock/Emerald/actions/workflows/clang-tidy.yml)
 
 Emerald is a small, modern C++20 game engine built on [SDL3](https://github.com/libsdl-org/SDL) and its GPU API.
 It gives you a window, a batched 2D renderer, sprites and animation, a camera, tilemaps, entities,

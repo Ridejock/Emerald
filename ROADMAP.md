@@ -4,7 +4,9 @@ Where the engine is going, in phases. **Principle: each phase ends with a small 
 features**, so every feature is proven in a real game before the next phase starts.
 
 Every planned item has a GitHub issue (labels `roadmap` + `phase-N`, one milestone per phase) with
-the same scope and acceptance criteria; tick the criteria off there.
+the same scope and acceptance criteria; tick the criteria off there. The lists after the phases
+([Core and rendering](#core-and-rendering), [Tooling and shipping](#tooling-and-shipping),
+[Later](#later)) are not issues yet.
 
 ## Phase 1 - Essentials
 
@@ -303,6 +305,132 @@ Done when:
 - Windows + Linux builds published to itch.io from CI on a tag
 - Web demo of at least one game if the Emscripten build is viable
 - Profiler overlay available in the debug builds of each game
+
+## Core and rendering
+
+Rendering, the camera and text. Not in a phase yet.
+
+### Render interpolation between fixed steps
+
+The fixed update (`ApplicationSpec::FixedUpdateRate`, default 120 Hz) and the display rate often
+differ. Interpolation is opt-in, and it already covers three cases: `Camera2D` blends its position
+when `SetRenderAlpha` is set (`Update` remembers the last two steps), entities with a
+`PreviousTransform` blend in `DrawSprites`, and `Interpolated<T>` covers other values. Zoom and
+rotation stay on the latest step, and so does anything that has not opted in, so that motion still
+stutters when the two rates are not multiples (a 120 Hz update on a 144 Hz monitor, for example).
+
+**Status:** planned
+
+### Custom 2D materials
+
+A game supplies its own sprite shader and uniforms per draw or batch. `Renderer2D` currently draws
+through four fixed pipelines (alpha and additive, unlit and lit) and the engine shaders `Sprite`
+and `SpriteLit`. Lighting uniforms are one set for the whole frame. Other HLSL can be compiled
+with `emerald_add_shaders` and drawn in a game's own pass, separate from the sprite batch.
+
+**Status:** planned
+
+### Render targets and layers
+
+Offscreen render-to-texture for minimaps, split-screen and portals, and a multi-camera setup.
+`Renderer::BeginRenderPass` can already draw into a texture, and the post-effect chain renders the
+scene offscreen before compositing. A frame can hold several batches, each begun with its own
+`Camera2D`, on that one target. Each camera letterboxes into the whole window: there is no
+viewport for a region of it, and no texture a game renders and then samples.
+
+**Status:** planned
+
+### Better text
+
+`Font` bakes `FontOptions::Ranges` (ASCII, `kAsciiGlyphs`, by default) into one atlas at load. A
+character outside those ranges is drawn as `?` when that glyph was baked, and skipped when it was
+not. The atlas stays as baked. Planned: SDF/MSDF fonts, an atlas that grows as new characters are
+drawn, word wrap on `DrawString` (dialogue already wraps with `WrapText`, and debug text wraps on
+a width), rich-text markup, and text fields. OS text input already arrives
+(`Window::SetTextInputEnabled`, `Application::GetTextInput`, `EventType::TextInput`). The UI has
+no field that reads it.
+
+**Status:** planned
+
+## Tooling and shipping
+
+Console, profiling, localization and CI. Not in a phase yet.
+
+### In-game console with cvars
+
+A console that gets and sets the values already registered with the tweak system. There is no
+console and no cvar type. `Tweak<T>` (float, int, bool, color) is that registry: an ImGui panel
+and a JSON file, and only in ImGui builds.
+
+**Status:** planned
+
+### GPU timing zones in Tracy
+
+CPU zones already exist. `EM_PROFILE_SCOPE` feeds the in-game profiler and, in a `profile` build,
+a Tracy CPU zone (`ZoneScoped` / `ZoneScopedN`). There are no GPU zones. SDL GPU has no
+timestamp-query API, so the renderer never samples GPU time (the overlay stays at n/a) and nothing
+opens a Tracy GPU context.
+
+**Status:** planned
+
+### Localization and string tables
+
+String tables and a locale, with dialogue decks looking strings up instead of storing the line.
+`DialogueLine::Text` and `DialogueAnswer::Text` are the words as written in the deck. UI strings
+and `DrawString` take the same kind of literal. Nothing looks a string up by id.
+
+**Status:** planned
+
+### CI matrix (macOS, sanitizers, clang-tidy)
+
+Linux CI already runs GCC and Clang (`debug`, `release`, `debug-ubsan`, `debug-tsan`, `profile`)
+and packages `linux-release`. Windows CI already runs `debug`, `debug-asan`, `debug-full`,
+`release` and `profile`. ThreadSanitizer is the Linux `debug-tsan` job. AddressSanitizer is the
+Windows `debug-asan` job. Still open, in a separate pull request: a macOS job, AddressSanitizer on
+Linux, and clang-tidy. The tree has no macOS workflow and no clang-tidy configuration.
+
+**Status:** in progress
+
+## Later
+
+Much later than Core and rendering.
+
+### Pathfinding
+
+Grid A* over the tilemap collision grid (`Tilemap::GetCollision`: empty, solid, one-way, slope),
+with a navmesh as a later option. Nothing in the engine searches a path today.
+
+**Status:** planned
+
+### World and prefab serialization
+
+Save and load entities as JSON, driven by a component registry, including prefabs. `SaveSystem`
+stores key/value game data (settings, slots, dialogue flags). `EntityInspector` already registers
+component types by name (has, draw, remove) for the ImGui panel, and that registration compiles
+out without ImGui.
+The draw function edits widgets; it does not describe fields, and nothing writes an entity or a
+prefab.
+
+**Status:** planned
+
+### Tilemap gaps
+
+Animated tiles, infinite or chunked maps, and `.tsx` tilesets. `Tilemap` loads orthogonal,
+fixed-size `.tmj` maps. An infinite map fails with a note to untick Map Properties > Infinite, and
+a layer that stores chunks fails as an infinite map. `TileInfo` has class, properties and
+collision, and no animation frames. A tileset whose file is not `.tsj` or `.json` (a `.tsx`) fails
+and tells you to export or save it as `.tsj`.
+
+**Status:** planned
+
+### Physics joints, or Box2D
+
+Joints, or Box2D as an optional dependency, for physics beyond the kinematic platformer.
+`StepPlatformer` is a kinematic box against the tilemap: no forces, no rigid bodies, no joints.
+Shape tests (`Collision.h`) and `SpatialHash` are already there. Box2D's license is MIT, so it can
+sit beside the other fetched libraries and stay off unless a game asks for it.
+
+**Status:** planned
 
 ## Maybe later
 

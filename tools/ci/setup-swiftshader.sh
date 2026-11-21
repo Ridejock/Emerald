@@ -104,6 +104,25 @@ PY
     trap - EXIT
 fi
 
+# Chrome's manifest says library_path ".\vk_swiftshader.dll". The Windows loader opens that
+# string as given and LoadLibrary returns error 87 (invalid parameter), so no device appears
+# and SDL reports the Vulkan backend as unsupported. An absolute path is opened correctly.
+# Linux keeps the relative path, which the loader resolves next to the manifest.
+if [ "$platform" = windows ]; then
+    "$PY" - "$dest" <<'PY'
+import json, pathlib, sys
+dest = pathlib.Path(sys.argv[1])
+icd = dest / "vk_swiftshader_icd.json"
+dll = (dest / "vk_swiftshader.dll").resolve()
+data = json.loads(icd.read_text(encoding="utf-8"))
+data["ICD"]["library_path"] = str(dll)
+icd.write_text(json.dumps(data), encoding="utf-8")
+if not dll.is_file():
+    sys.stderr.write(f"setup-swiftshader: missing {dll}\n")
+    sys.exit(1)
+PY
+fi
+
 icd="$dest/vk_swiftshader_icd.json"
 if [ "$platform" = windows ] && command -v cygpath >/dev/null 2>&1; then
     icd=$(cygpath -m "$icd")

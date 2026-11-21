@@ -141,21 +141,15 @@ jobs:
           path: C:/emerald-cache/shadercross/*/bin
           key: ${{ steps.shadercross.outputs.cache-primary-key }}
 
-      # RenderSmoke fails unless the device is SwiftShader. Offscreen needs VK_EXT_headless_surface.
-      # VK_LOADER_DEBUG and SDL_LOGGING stay on so a failure shows whether the loader opened the
-      # ICD (library_path -> vk_swiftshader.dll) and which extension or feature SDL rejected.
+      # RenderSmoke fails unless the device is SwiftShader. Offscreen is enough once the ICD's
+      # library_path is absolute (see setup-swiftshader.sh): the relative ".\vk_swiftshader.dll"
+      # never opens, so SDL never sees a Vulkan device.
       - name: Render smoke
         run: |
           set -euo pipefail
-          echo "SDL_VULKAN_LIBRARY=${SDL_VULKAN_LIBRARY-}"
-          echo "VK_DRIVER_FILES=${VK_DRIVER_FILES-}"
           echo "---- ICD json ----"
           cat "$VK_DRIVER_FILES"
           echo
-          echo "---- files next to the ICD ----"
-          ls -l "$(dirname "$VK_DRIVER_FILES")"
-          export VK_LOADER_DEBUG=all
-          export SDL_LOGGING='*=verbose'
           SDL_VIDEODRIVER=offscreen ctest --preset ${{ matrix.preset }} --output-on-failure -R '^RenderSmoke$' --verbose
 
       - name: Test

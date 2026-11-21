@@ -16,3 +16,10 @@ race:pa_mutex_lock
 # that library on the racing stack (TSan compares it to the module). Emerald's
 # own frames are not in that library, so they still report.
 race:libvulkan_lvp.so
+
+# The same lavapipe device startup then races inside Mesa's LLVM JIT (libLLVM.so
+# on the llvmpipe worker threads): bcmp in llvm::StringMapImpl::LookupBucketFor
+# against memcpy, on a heap block from llvm::allocate_buffer. Emerald never calls
+# LLVM. race:libvulkan_lvp.so does not see these frames; they are in libLLVM.
+# Matches that module only (libLLVM.so.20.1 on Ubuntu 24.04).
+race:libLLVM.so

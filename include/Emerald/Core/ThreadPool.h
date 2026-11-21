@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <condition_variable>
 #include <deque>
 #include <exception>
@@ -7,7 +8,6 @@
 #include <future>
 #include <memory>
 #include <mutex>
-#include <stop_token>
 #include <string>
 #include <thread>
 #include <type_traits>
@@ -26,9 +26,9 @@ namespace Emerald {
 //   answer.get();                                       // 42 (or rethrows the task's exception)
 //
 // How it works: tasks wait in a queue guarded by a mutex. Idle workers sleep on a
-// std::condition_variable_any, whose wait() also takes the worker's std::stop_token, so a stop
-// request wakes them up. The workers are std::jthreads: when the pool is destroyed they are asked
-// to stop and are joined automatically - there is no hand-written join/shutdown flag.
+// condition variable and wake when a task arrives or the pool is stopping. Apple's libc++ has no
+// std::jthread or std::stop_token, so the pool uses std::thread and an atomic stop flag. The
+// destructor sets the flag, wakes every worker, and joins them.
 //
 // Shutdown policy: the destructor lets running tasks finish but drops tasks still in the queue;
 // their futures then throw std::future_error (broken_promise). Call WaitIdle() first if every task
@@ -66,18 +66,21 @@ public:
 
 private:
     void Enqueue(std::function<void()> job);
-    void WorkerLoop(const std::stop_token& stop, u32 index);
+    void WorkerLoop(u32 index);
 
     std::mutex m_Mutex;
-    std::condition_variable_any m_WorkAvailable; // _any: its wait() accepts a stop_token
+    std::condition_variable m_WorkAvailable;
     std::condition_variable m_Idle;
     std::deque<std::function<void()>> m_Queue;
     u32 m_Running = 0; // tasks currently executing
+    // Set under m_Mutex, then every worker is notified. A worker that sees it drops the queue.
+    std::atomic<bool> m_Stop{false};
     std::string m_NamePrefix;
 
-    // Declared last so it is destroyed first: the jthreads are stopped and joined while the mutex,
-    // condition variables and queue above still exist.
-    std::vector<std::jthread> m_Workers;
+    // Declared last so it is destroyed first. The destructor joins these threads while the mutex,
+    // condition variables and queue above still exist. std::thread's own destructor would
+    // terminate if a worker were still joinable.
+    std::vector<std::thread> m_Workers;
 };
 
 template <typename F>

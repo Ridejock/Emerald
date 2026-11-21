@@ -28,6 +28,7 @@ Unit tests, ThreadSanitizer and benchmarks, the in-game profiler, Tracy and Addr
 | `AudioExtrasTests` | spatial attenuation/pan math; mixer groups mute and volume ramps; spatial voices following the listener; MP3/OGG `MusicStream` constant ring memory; crossfade between two tracks; file open for sandbox OGG loops |
 | `AudioTests` | MP3 decoding from an embedded 809-byte file (length, level, channels, pitch after resampling), garbage rejected, WAV loading, `LoadSound` by extension incl. unknown/missing files, `MakeSound` conversion; mixer handles (stale handles, reuse, releasing samples), fade-in/out and volume ramps without clicks, looping, pitch, pan, master volume/mute, voice stealing, soft limiter; synth waveforms (length, no NaN, peak), envelopes, lowpass |
 | `Renderer2DTests` | `Renderer2D` batching and shape generation on the CPU (no GPU), `Transform2D`, color packing; sprite quads (UVs, rotation, origin, flips, pixel snap), draw order across lines/sprites/texture switches and blend modes, lighting captured per draw (lit world and unlit HUD in one frame), atlas JSON parsing; `Camera2D` (pixel-space default, letterboxing, zoom/rotation, `ScreenToWorld` round trips against the GPU matrix, bounds clamp, follow dead zone and step-size independent damping, shake decay); atlas `"animations"` parsing (patterns, lists, durations, modes, missing frames reported), `Animator` loop / once / ping-pong timing at several dt, speed, stop/resume, finish and loop events, drawing a frame with flip and tint; `CrtEffect` afterglow decay, uniforms and bloom spread; `--gpu` parsing and driver names |
+| `RenderSmoke` | one GPU frame on the normal path (`Renderer::Init`, `Renderer2D` quads with tint, alpha and additive blending, a nearest-filtered sprite), read back with `RequestScreenshot` and compared to `tests/data/render_smoke.png` (2 levels of tolerance per channel). No Vulkan device: exit 77, CTest skips it. Not run under ThreadSanitizer. See [GPU render smoke](#gpu-render-smoke) |
 | `FontTests` | stb_truetype fonts with the sandbox's demo font: metrics, measuring, layout and `DrawString`; built-in debug text (measure, wrap, uppercase, glyph coverage) |
 | `ParticleTests` | particle spawning (shapes, ranges, base velocity), capacity limit, drag/gravity step, swap-remove, continuous rate, color/size fade when drawing, scalar and SSE updates agreeing over 240 steps |
 | `CollisionTests` | circle/circle, circle/AABB, AABB/AABB and SAT polygon contacts (normals, depths, touching = none, concentric circles, center inside a box, containment, winding, degenerate input); raycasts against circles, boxes and polygons (hits, misses, parallel, max distance, starting inside); `SpatialHash` insert/update/remove/query/pairs, wrap-around, brute-force equivalence on random data |
@@ -48,6 +49,38 @@ cmake --build --preset debug
 ctest --preset debug            # output on failure, 10 min timeout per test
 build/debug/bin/EmeraldAssetTests HotReload   # only the cases whose name contains "HotReload"
 ```
+
+### GPU render smoke
+
+`RenderSmoke` needs a Vulkan device. SDL's `offscreen` video driver is enough: it creates a
+swapchain with SwiftShader (the `dummy` driver does not). Xvfb also works, and the pixels match.
+The test prints the backend (`vulkan`) and the device name, then compares the frame to
+`tests/data/render_smoke.png`. Without a device it exits 77 and CTest records a skip. CI sets
+`SDL_VIDEODRIVER=offscreen`, `EMERALD_REQUIRE_GPU=1` and `EMERALD_REQUIRE_SWIFTSHADER=1`, so there
+a missing device, or any device whose name does not contain `SwiftShader`, fails the job.
+
+CI does not build SwiftShader and does not ship it. `tools/ci/setup-swiftshader.sh` downloads the
+ICD from Chrome for Testing 152.0.7977.54 (SwiftShader revision
+`5b0479bd2d15058aaa9eb490e364f920ff824a8c`, Apache-2.0) into
+the CI cache and prints its json path. The workflow sets both `VK_DRIVER_FILES` and
+`VK_ICD_FILENAMES` to that path and sets `VK_ADD_DRIVER_FILES` empty. Those two variables are the
+whole driver list (the second name is what older loaders read), so Mesa's lavapipe is not
+selected even though `mesa-vulkan-drivers` is installed. The render test checks the device name
+and fails if it is not SwiftShader. The Linux package does not contain the ICD.
+
+The reference image is that SwiftShader's output. To replace it, select the same ICD and run:
+
+```sh
+icd=$(bash tools/ci/setup-swiftshader.sh)
+VK_DRIVER_FILES="$icd" VK_ICD_FILENAMES="$icd" VK_ADD_DRIVER_FILES= \
+  SDL_VIDEODRIVER=offscreen \
+  EMERALD_UPDATE_RENDER_REFERENCE=1 ./build/debug/bin/EmeraldRenderSmoke
+```
+
+That overwrites `tests/data/render_smoke.png`. The update is refused unless the device name
+contains `SwiftShader`, so a machine GPU or lavapipe cannot replace the file. On Windows, set
+`SDL_VULKAN_LIBRARY` to the `vulkan-1.dll` that sits next to the ICD (SDL does not find that
+loader from `PATH` alone) and run the same command.
 
 ThreadSanitizer and UndefinedBehaviorSanitizer runs (GCC/Clang; see
 [Sanitizers](#addresssanitizer)):

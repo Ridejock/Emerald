@@ -199,9 +199,13 @@ SDL's `SDL_GPU_DRIVER` environment variable still works; the flag wins over it (
 it too). An unknown value logs a warning and uses auto; if the requested backend cannot create a
 device (e.g. `--gpu metal` on Windows), the error is logged and the engine retries with auto, so
 the app still starts. The backend in use is logged at startup and available as
-`GetRenderer().GetDriverName()` (`"vulkan"`, `"direct3d12"` or `"metal"`); the sandbox's ImGui
-panel shows it as `GPU: vulkan`.
+`GetRenderer().GetDriverName()` (`"vulkan"`, `"direct3d12"` or `"metal"`); the adapter is
+`GetRenderer().GetDeviceName()` (on Vulkan, the device the loader picked). The sandbox's ImGui
+panel shows the backend as `GPU: vulkan`.
 
-The renderer needs a real GPU backend, so a display is required (the `dummy` video driver has no
-GPU swapchain). On a machine/VM/CI runner without a GPU, install Mesa's software Vulkan driver
-(lavapipe) – e.g. `sudo apt install mesa-vulkan-drivers` – and run under X11/Xvfb.
+The renderer needs a real GPU backend, so a display is required for a normal run (the `dummy`
+video driver has no GPU swapchain). On a machine/VM without a GPU, install Mesa's software Vulkan
+driver (lavapipe) – e.g. `sudo apt install mesa-vulkan-drivers` – and run under X11/Xvfb. SDL's
+`offscreen` driver can still present a swapchain to a software Vulkan device; the render smoke
+test uses it. Engine CI does not use lavapipe: it pins SwiftShader and allows that ICD only. See
+[GPU render smoke](testing-and-profiling.md#gpu-render-smoke).

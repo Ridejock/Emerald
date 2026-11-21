@@ -1,8 +1,10 @@
 # Linux tests (Ubuntu 24.04, GCC and Clang): configure, build (warnings in Emerald's own code are
 # errors) and run the tests in the debug, release, debug-ubsan (UndefinedBehaviorSanitizer),
 # debug-tsan (ThreadSanitizer) and profile (Tracy) presets. GCC debug also runs the sandbox for a
-# few frames on software Vulkan (lavapipe, under Xvfb) and uploads its screenshot. A package job
-# builds the linux-release preset and uploads Sandbox-linux-x64.tar.gz. Every preset in
+# few frames on SwiftShader (CPU Vulkan, under Xvfb) and uploads its screenshot. Mesa's lavapipe
+# stays installed; VK_DRIVER_FILES / VK_ICD_FILENAMES point at SwiftShader only, so Mesa cannot be
+# picked. A package job builds the linux-release preset and uploads Sandbox-linux-x64.tar.gz.
+# Every preset in
 # CMakePresets.json is built with EMERALD_WARNINGS_AS_ERRORS on either this workflow or Windows CI.
 name: Linux
 
@@ -82,8 +84,42 @@ jobs:
           path: /home/runner/emerald-cache/shadercross/*/bin
           key: ${{ env.KEY }}
 
+  # SwiftShader's Vulkan ICD, downloaded once (tools/ci/setup-swiftshader.sh) and restored by the
+  # jobs below. The files stay in the cache directory: they are not linked into the build and not
+  # packed into Sandbox-linux-x64.tar.gz.
+  swiftshader:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    name: swiftshader
+    outputs:
+      key: ${{ steps.key.outputs.key }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Cache key
+        id: key
+        run: echo "key=swiftshader-Linux-${{ hashFiles('tools/ci/setup-swiftshader.sh') }}" >> "$GITHUB_OUTPUT"
+
+      - name: Restore SwiftShader
+        id: cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: /home/runner/emerald-cache/swiftshader
+          key: ${{ steps.key.outputs.key }}
+
+      - name: Fetch SwiftShader
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: bash tools/ci/setup-swiftshader.sh
+
+      - name: Save SwiftShader
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: /home/runner/emerald-cache/swiftshader
+          key: ${{ steps.key.outputs.key }}
+
   test:
-    needs: shadercross
+    needs: [shadercross, swiftshader]
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     strategy:
@@ -116,6 +152,27 @@ jobs:
           key: ${{ matrix.compiler == 'gcc' && needs.shadercross.outputs.gcc-key || needs.shadercross.outputs.clang-key }}
           fail-on-cache-miss: true
 
+      - name: Restore SwiftShader
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: /home/runner/emerald-cache/swiftshader
+          key: ${{ needs.swiftshader.outputs.key }}
+          fail-on-cache-miss: true
+
+      # Mesa's ICD json files are on disk (mesa-vulkan-drivers above). These variables are the
+      # whole driver list: VK_DRIVER_FILES for current loaders, VK_ICD_FILENAMES for older ones.
+      # VK_ADD_DRIVER_FILES is cleared so nothing else, lavapipe included, is appended.
+      - name: Use SwiftShader only
+        run: |
+          icd=$(bash tools/ci/setup-swiftshader.sh)
+          echo "VK_DRIVER_FILES=$icd" >> "$GITHUB_ENV"
+          echo "VK_ICD_FILENAMES=$icd" >> "$GITHUB_ENV"
+          echo "VK_ADD_DRIVER_FILES=" >> "$GITHUB_ENV"
+          echo "EMERALD_REQUIRE_GPU=1" >> "$GITHUB_ENV"
+          echo "EMERALD_REQUIRE_SWIFTSHADER=1" >> "$GITHUB_ENV"
+          echo "SwiftShader ICD: $icd"
+          test -s "$icd"
+
       # ThreadSanitizer can't map its shadow memory with the runner kernel's ASLR entropy.
       - name: Allow TSan
         if: matrix.preset == 'debug-tsan'
@@ -129,25 +186,38 @@ jobs:
       - name: Build
         run: cmake --build --preset ${{ matrix.preset }} 2>&1 | tee build-log.txt; exit ${PIPESTATUS[0]}
 
+      # SDL's offscreen video driver does open a GPU swapchain with SwiftShader (the dummy
+      # driver does not). RenderSmoke is verbose so the log shows the device name. It is not
+      # registered in the ThreadSanitizer build.
       - name: Test
-        run: ctest --preset ${{ matrix.preset }}
+        run: |
+          set -euo pipefail
+          if [ "${{ matrix.preset }}" != "debug-tsan" ]; then
+            SDL_VIDEODRIVER=offscreen ctest --preset ${{ matrix.preset }} --output-on-failure -R '^RenderSmoke$' --verbose
+            ctest --preset ${{ matrix.preset }} --output-on-failure -E '^RenderSmoke$'
+          else
+            ctest --preset ${{ matrix.preset }} --output-on-failure
+          fi
 
-      # A few frames of the sandbox on software Vulkan; the last one is saved.
-      - name: Sandbox smoke run (lavapipe)
+      # A few frames of the sandbox on SwiftShader; the last one is saved. The log must name
+      # SwiftShader — lavapipe is installed and would be used if the loader variables were wrong.
+      - name: Sandbox smoke run (SwiftShader)
         if: matrix.compiler == 'gcc' && matrix.preset == 'debug'
         run: |
           xvfb-run -a -s "-screen 0 1280x720x24" \
             ./build/debug/bin/Sandbox --gpu vulkan --frames 30 --screenshot sandbox.png 2>&1 | tee sandbox-log.txt
           test -s sandbox.png
+          grep -i swiftshader sandbox-log.txt
 
       - name: Upload screenshot
         if: always() && matrix.compiler == 'gcc' && matrix.preset == 'debug'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: sandbox-lavapipe
+          name: sandbox-swiftshader
           path: |
             sandbox.png
             sandbox-log.txt
+            build/debug/tests/render-smoke-actual.png
           if-no-files-found: ignore
 
       - name: Upload logs
@@ -158,12 +228,13 @@ jobs:
           path: |
             build-log.txt
             build/${{ matrix.preset }}/Testing/Temporary/LastTest.log
+            build/${{ matrix.preset }}/tests/render-smoke-actual.png
           if-no-files-found: ignore
 
   # Self-contained x64 archive (static SDL3, RPATH $ORIGIN, assets, launcher). SPIR-V only, same
   # as the test jobs: the DXIL output crashes the GCC 13-built DXC here.
   package:
-    needs: shadercross
+    needs: [shadercross, swiftshader]
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     name: gcc linux-release package
@@ -192,6 +263,22 @@ jobs:
           key: ${{ needs.shadercross.outputs.gcc-key }}
           fail-on-cache-miss: true
 
+      - name: Restore SwiftShader
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: /home/runner/emerald-cache/swiftshader
+          key: ${{ needs.swiftshader.outputs.key }}
+          fail-on-cache-miss: true
+
+      - name: Use SwiftShader only
+        run: |
+          icd=$(bash tools/ci/setup-swiftshader.sh)
+          echo "VK_DRIVER_FILES=$icd" >> "$GITHUB_ENV"
+          echo "VK_ICD_FILENAMES=$icd" >> "$GITHUB_ENV"
+          echo "VK_ADD_DRIVER_FILES=" >> "$GITHUB_ENV"
+          echo "SwiftShader ICD: $icd"
+          test -s "$icd"
+
       - name: Configure
         run: cmake --preset linux-release -DEMERALD_WARNINGS_AS_ERRORS=ON -DEMERALD_SHADER_FORMATS=SPIRV
 
@@ -218,8 +305,9 @@ jobs:
             exit 1
           fi
           xvfb-run -a -s "-screen 0 1280x720x24" \
-            "$bin" --gpu vulkan --frames 20 --screenshot "$root/shot.png"
+            "$bin" --gpu vulkan --frames 20 --screenshot "$root/shot.png" 2>&1 | tee package-smoke.txt
           test -s "$root/shot.png"
+          grep -i swiftshader package-smoke.txt
 
       - name: Upload package
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -237,4 +325,5 @@ jobs:
             package-list.txt
             readelf.txt
             ldd.txt
+            package-smoke.txt
           if-no-files-found: ignore

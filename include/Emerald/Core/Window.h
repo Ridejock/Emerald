@@ -22,6 +22,11 @@ struct WindowSpec {
 
 struct Image;
 
+// Starts SDL's video subsystem, which a Window and the GPU swapchain need. Does nothing if video
+// is already up, and does not shut it down (the process owns that). Returns false on failure
+// (logged). Log::Init must have run first: this writes to the log.
+bool InitVideo();
+
 // Owns the OS window. Rendering into it is done by Emerald::Renderer.
 class Window {
 public:

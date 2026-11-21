@@ -140,8 +140,9 @@ bool Renderer::Init(NativeWindow* window, bool vsync, ShaderFormat shaderFormats
 
     const SDL_PropertiesID props = SDL_GetGPUDeviceProperties(Sdl(m_Device));
     const char* deviceName = SDL_GetStringProperty(props, SDL_PROP_GPU_DEVICE_NAME_STRING, "?");
+    m_DeviceName = deviceName ? deviceName : std::string();
     EM_CORE_INFO("GPU device created: backend '{}', device '{}', present mode {}{}",
-                 SDL_GetGPUDeviceDriver(Sdl(m_Device)), deviceName, PresentModeName(presentMode),
+                 SDL_GetGPUDeviceDriver(Sdl(m_Device)), m_DeviceName, PresentModeName(presentMode),
                  debugMode ? " (debug mode)" : "");
     return true;
 }
@@ -162,6 +163,7 @@ void Renderer::Shutdown()
         SDL_ReleaseWindowFromGPUDevice(Sdl(m_Device), Sdl(m_Window));
     SDL_DestroyGPUDevice(Sdl(m_Device));
     m_Device = nullptr;
+    m_DeviceName.clear();
     m_Window = nullptr;
 }
 
@@ -191,6 +193,11 @@ std::string_view Renderer::GetDriverName() const
 {
     const char* name = m_Device ? SDL_GetGPUDeviceDriver(Sdl(m_Device)) : nullptr;
     return name ? std::string_view(name) : std::string_view();
+}
+
+std::string_view Renderer::GetDeviceName() const
+{
+    return m_DeviceName;
 }
 
 GpuTextureFormat Renderer::GetSwapchainFormat() const

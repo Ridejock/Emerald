@@ -169,7 +169,8 @@ because the two sanitizers cannot be linked together. `cmake/tsan.supp` is loade
 `debug-tsan` test preset. It only lists third-party noise (PulseAudio's mutex during
 `SDL_Init`, a lavapipe mutex race inside `libvulkan_lvp.so`, and the LLVM JIT race
 inside `libLLVM.so` on those same llvmpipe threads, and an SDL Vulkan lock-order
-report in `SDL_gpu_vulkan.c` while the window is released); Emerald frames are not suppressed.
+report in `SDL_gpu_vulkan.c` while the window is released, and a libdbus lock-order
+report across `SDL_Init` / `SDL_Quit`); Emerald frames are not suppressed.
 
 - **GCC / Clang:** `-fsanitize=address -fno-omit-frame-pointer`. On Linux with Mesa's drivers the
   sandbox reports about 50 KB of leaks from inside the unloaded GPU driver ("unknown module") at

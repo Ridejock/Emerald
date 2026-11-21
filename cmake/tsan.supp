@@ -31,3 +31,9 @@ race:libLLVM.so
 # SDL_ReleaseWindowFromGPUDevice; it does not take those mutexes. Matches the
 # SDL source file, not Emerald's.
 deadlock:SDL_gpu_vulkan.c
+
+# libdbus locks its connection and another mutex in opposite orders between
+# SDL_Init and SDL_Quit (unnamed frames in libdbus-1.so.3, plus
+# dbus_connection_close). Emerald calls SDL_Init and SDL_Quit and does not
+# take those locks. Matches the dbus library on the lock-order stack.
+deadlock:libdbus-1.so

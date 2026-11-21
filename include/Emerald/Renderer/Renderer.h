@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <optional>
 #include <span>
+#include <string>
 #include <string_view>
 
 #include "Emerald/Core/Defines.h"
@@ -86,6 +87,10 @@ public:
     [[nodiscard]] GpuDevice* GetDevice() const { return m_Device; }
     // The active backend, e.g. "vulkan", "direct3d12" or "metal" (empty before Init).
     [[nodiscard]] std::string_view GetDriverName() const;
+    // The adapter that backend picked (empty before a successful Init). On Vulkan this is the
+    // device name reported by the driver the loader selected, such as "SwiftShader Device" or
+    // "llvmpipe (LLVM ...)".
+    [[nodiscard]] std::string_view GetDeviceName() const;
     [[nodiscard]] GpuCommandBuffer* GetCommandBuffer() const { return m_CommandBuffer; }
     [[nodiscard]] GpuRenderPass* GetRenderPass() const { return m_RenderPass; }
     // This frame's output texture: the swapchain's, or the screenshot capture texture.
@@ -99,6 +104,7 @@ private:
     void FinishScreenshot();
 
     GpuDevice* m_Device = nullptr;
+    std::string m_DeviceName; // see GetDeviceName
     NativeWindow* m_Window = nullptr;
     bool m_VSync = true;
 

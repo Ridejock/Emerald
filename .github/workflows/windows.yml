@@ -3,6 +3,9 @@
 # (ImGui on: the editor tools, their tests and the sandbox's panels), release (no hot reload,
 # NDEBUG) and profile (Tracy). Every preset in CMakePresets.json is built with
 # EMERALD_WARNINGS_AS_ERRORS on either this workflow or Linux CI.
+# GPU frames use SwiftShader (CPU Vulkan). The Chrome build also ships vulkan-1.dll, which is
+# put on PATH for the test step only. It is not copied next to the game or into any package.
+# VK_DRIVER_FILES and VK_ICD_FILENAMES list that ICD alone, and VK_ADD_DRIVER_FILES is empty.
 name: Windows
 
 on:
@@ -25,7 +28,43 @@ env:
   EMERALD_CACHE_DIR: C:/emerald-cache
 
 jobs:
+  # See tools/ci/setup-swiftshader.sh. The zip is large; the cache keeps the ICD and vulkan-1.dll.
+  swiftshader:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    name: swiftshader
+    defaults:
+      run:
+        shell: bash
+    outputs:
+      key: ${{ steps.key.outputs.key }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Cache key
+        id: key
+        run: echo "key=swiftshader-Windows-${{ hashFiles('tools/ci/setup-swiftshader.sh') }}" >> "$GITHUB_OUTPUT"
+
+      - name: Restore SwiftShader
+        id: cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: C:/emerald-cache/swiftshader
+          key: ${{ steps.key.outputs.key }}
+
+      - name: Fetch SwiftShader
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: bash tools/ci/setup-swiftshader.sh
+
+      - name: Save SwiftShader
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: C:/emerald-cache/swiftshader
+          key: ${{ steps.key.outputs.key }}
+
   test:
+    needs: swiftshader
     runs-on: windows-latest
     timeout-minutes: 120
     strategy:
@@ -58,6 +97,33 @@ jobs:
           key: shadercross-bin-windows-${{ env.VCToolsVersion }}-${{ hashFiles('tools/shadercross/**') }}
           restore-keys: shadercross-bin-windows-${{ env.VCToolsVersion }}-
 
+      - name: Restore SwiftShader
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: C:/emerald-cache/swiftshader
+          key: ${{ needs.swiftshader.outputs.key }}
+          fail-on-cache-miss: true
+
+      # vulkan-1.dll sits next to the ICD. GITHUB_PATH puts that directory on PATH so SDL can
+      # load the Vulkan loader. The driver list is still SwiftShader only.
+      - name: Use SwiftShader only
+        run: |
+          icd=$(bash tools/ci/setup-swiftshader.sh)
+          echo "VK_DRIVER_FILES=$icd" >> "$GITHUB_ENV"
+          echo "VK_ICD_FILENAMES=$icd" >> "$GITHUB_ENV"
+          echo "VK_ADD_DRIVER_FILES=" >> "$GITHUB_ENV"
+          echo "EMERALD_REQUIRE_GPU=1" >> "$GITHUB_ENV"
+          echo "EMERALD_REQUIRE_SWIFTSHADER=1" >> "$GITHUB_ENV"
+          echo "SwiftShader ICD: $icd"
+          test -s "$icd"
+          dir=$(dirname "$icd")
+          if [ -f "$dir/vulkan-1.dll" ]; then
+            echo "$dir" >> "$GITHUB_PATH"
+          else
+            echo "::error::vulkan-1.dll was not next to the SwiftShader ICD"
+            exit 1
+          fi
+
       - name: Configure
         run: cmake --preset ${{ matrix.preset }} -DEMERALD_WARNINGS_AS_ERRORS=ON
 
@@ -73,8 +139,13 @@ jobs:
           path: C:/emerald-cache/shadercross/*/bin
           key: ${{ steps.shadercross.outputs.cache-primary-key }}
 
+      # RenderSmoke is its own step so the log shows the driver and device name. It fails unless
+      # that device is SwiftShader. Offscreen is enough for the swapchain (no desktop session).
+      - name: Render smoke
+        run: SDL_VIDEODRIVER=offscreen ctest --preset ${{ matrix.preset }} --output-on-failure -R '^RenderSmoke$' --verbose
+
       - name: Test
-        run: ctest --preset ${{ matrix.preset }}
+        run: ctest --preset ${{ matrix.preset }} --output-on-failure -E '^RenderSmoke$'
 
       # The Visual Studio generator must list the .hlsl files as None, not FXCompile (fxc rejects
       # the SDL GPU register spaces). Configure only; no build.
@@ -100,4 +171,5 @@ jobs:
           path: |
             build-log.txt
             build/${{ matrix.preset }}/Testing/Temporary/LastTest.log
+            build/${{ matrix.preset }}/tests/render-smoke-actual.png
           if-no-files-found: ignore

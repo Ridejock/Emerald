@@ -8,6 +8,18 @@
 
 namespace Emerald {
 
+bool InitVideo()
+{
+    if ((SDL_WasInit(SDL_INIT_VIDEO) & SDL_INIT_VIDEO) != 0)
+        return true;
+    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS)) {
+        EM_CORE_ERROR("SDL_Init failed: {}", SDL_GetError());
+        return false;
+    }
+    EM_CORE_INFO("SDL video driver: {}", SDL_GetCurrentVideoDriver());
+    return true;
+}
+
 Window::Window(const WindowSpec& spec) : m_Spec(spec)
 {
     SDL_WindowFlags flags = 0;

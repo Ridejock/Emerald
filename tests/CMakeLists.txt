@@ -185,3 +185,18 @@ add_executable(EmeraldEditorTests TestMain.cpp EditorTests.cpp)
 target_link_libraries(EmeraldEditorTests PRIVATE Emerald::Emerald)
 emerald_set_warnings(EmeraldEditorTests)
 add_test(NAME EditorTests COMMAND EmeraldEditorTests)
+
+# One real GPU frame (Renderer + Renderer2D), read back and compared with a checked-in image.
+# Exit 77 (no Vulkan device) is a skip. Not registered under ThreadSanitizer: SwiftShader is an
+# uninstrumented prebuilt, and TSan cannot check it. CI sets EMERALD_REQUIRE_GPU and
+# EMERALD_REQUIRE_SWIFTSHADER so a missing device, or any device that is not SwiftShader, fails.
+add_executable(EmeraldRenderSmoke RenderSmoke.cpp)
+target_link_libraries(EmeraldRenderSmoke PRIVATE Emerald::Emerald)
+target_compile_definitions(EmeraldRenderSmoke PRIVATE
+    "EMERALD_RENDER_SMOKE_REFERENCE=\"${CMAKE_CURRENT_SOURCE_DIR}/data/render_smoke.png\"")
+emerald_add_shaders(EmeraldRenderSmoke)
+emerald_set_warnings(EmeraldRenderSmoke)
+if(NOT EMERALD_TSAN)
+    add_test(NAME RenderSmoke COMMAND EmeraldRenderSmoke)
+    set_tests_properties(RenderSmoke PROPERTIES SKIP_RETURN_CODE 77)
+endif()

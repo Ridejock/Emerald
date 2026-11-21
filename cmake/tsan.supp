@@ -23,3 +23,11 @@ race:libvulkan_lvp.so
 # LLVM. race:libvulkan_lvp.so does not see these frames; they are in libLLVM.
 # Matches that module only (libLLVM.so.20.1 on Ubuntu 24.04).
 race:libLLVM.so
+
+# SDL's Vulkan backend locks two of its own mutexes in opposite orders while
+# releasing the window (VULKAN_ReleaseWindow / VULKAN_INTERNAL_PerformPendingDestroys
+# / VULKAN_INTERNAL_RemoveFramebuffersContainingView, all via SDL_LockMutex).
+# Seen under TSan on shutdown after a lavapipe smoke run. Emerald only calls
+# SDL_ReleaseWindowFromGPUDevice; it does not take those mutexes. Matches the
+# SDL source file, not Emerald's.
+deadlock:SDL_gpu_vulkan.c

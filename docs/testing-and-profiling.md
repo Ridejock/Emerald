@@ -168,7 +168,8 @@ Clang again with ASan and UBSan in one build (`debug-asan-ubsan`), and TSan in i
 because the two sanitizers cannot be linked together. `cmake/tsan.supp` is loaded by the
 `debug-tsan` test preset. It only lists third-party noise (PulseAudio's mutex during
 `SDL_Init`, a lavapipe mutex race inside `libvulkan_lvp.so`, and the LLVM JIT race
-inside `libLLVM.so` on those same llvmpipe threads); Emerald frames are not suppressed.
+inside `libLLVM.so` on those same llvmpipe threads, and an SDL Vulkan lock-order
+report in `SDL_gpu_vulkan.c` while the window is released); Emerald frames are not suppressed.
 
 - **GCC / Clang:** `-fsanitize=address -fno-omit-frame-pointer`. On Linux with Mesa's drivers the
   sandbox reports about 50 KB of leaks from inside the unloaded GPU driver ("unknown module") at

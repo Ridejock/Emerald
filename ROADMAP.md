@@ -383,13 +383,16 @@ and `DrawString` take the same kind of literal. Nothing looks a string up by id.
 
 ### CI matrix (macOS, sanitizers, clang-tidy)
 
-Linux CI already runs GCC and Clang (`debug`, `release`, `debug-ubsan`, `debug-tsan`, `profile`)
-and packages `linux-release`. Windows CI already runs `debug`, `debug-asan`, `debug-full`,
-`release` and `profile`. ThreadSanitizer is the Linux `debug-tsan` job. AddressSanitizer is the
-Windows `debug-asan` job. Still open, in a separate pull request: a macOS job, AddressSanitizer on
-Linux, and clang-tidy. The tree has no macOS workflow and no clang-tidy configuration.
+The matrix landed in [#50](https://github.com/Ridejock/Emerald/pull/50). Windows runs `debug`,
+`debug-asan`, `debug-full`, `release`, and `profile`. Linux (GCC and Clang) runs `debug`,
+`release`, `debug-ubsan`, `debug-tsan`, and `profile`, and packages `linux-release`. macOS
+(Apple Silicon) runs `debug` and `release` on Metal. A Linux Clang job runs AddressSanitizer and
+UndefinedBehaviorSanitizer together (`debug-asan-ubsan`). ThreadSanitizer (`debug-tsan`) loads
+`cmake/tsan.supp`, which lists third-party reports only. clang-tidy checks Emerald's own sources
+and is report-only: findings do not fail the job.
 
-**Status:** in progress
+**Status:** done (`.github/workflows/windows.yml`, `linux.yml`, `macos.yml`, `sanitizers.yml`,
+`clang-tidy.yml`; `cmake/tsan.supp`).
 
 ## Later
 

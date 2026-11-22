@@ -32,7 +32,7 @@ Unit tests, ThreadSanitizer and benchmarks, the in-game profiler, Tracy and Addr
 | `FontTests` | stb_truetype fonts with the sandbox's demo font: metrics, measuring, layout and `DrawString`; built-in debug text (measure, wrap, uppercase, glyph coverage) |
 | `ParticleTests` | particle spawning (shapes, ranges, base velocity), capacity limit, drag/gravity step, swap-remove, continuous rate, color/size fade when drawing, scalar and SSE updates agreeing over 240 steps |
 | `CollisionTests` | circle/circle, circle/AABB, AABB/AABB and SAT polygon contacts (normals, depths, touching = none, concentric circles, center inside a box, containment, winding, degenerate input); raycasts against circles, boxes and polygons (hits, misses, parallel, max distance, starting inside); `SpatialHash` insert/update/remove/query/pairs, wrap-around, brute-force equivalence on random data |
-| `AssetTests` | asset manager bookkeeping with a GPU-less loader: dedupe (same path, `..` paths, absolute paths; other options or types are other assets), handle copy/move/reset reference counts, unloading on `Update` and reviving before it, placeholders for missing and broken files (texture, atlas, font, sound), hot reload in place (textures, atlas image + JSON with sprites and animators keeping their pointers, fonts, real WAVs, dialogue decks with a conversation in progress, particle effects keeping their config's address), broken reloads keeping the old version, placeholders replaced when the file appears, reloads through `Update` on the thread pool within a second |
+| `AssetTests` | asset manager bookkeeping with a GPU-less loader: dedupe (same path, `..` paths, absolute paths; other options or types are other assets), handle copy/move/reset reference counts, unloading on `Update` and reviving before it, placeholders for missing and broken files (texture, atlas, font, sound), hot reload in place (textures, atlas image + JSON with sprites and animators keeping their pointers, fonts, real WAVs, dialogue decks with a conversation in progress, particle effects keeping their config's address), broken reloads keeping the old version, placeholders replaced when the file appears, reloads through `Update` on the thread pool within a couple of seconds |
 | `TilemapTests` | the sample room from Tiled JSON: layer order and kinds, external `.tsj` and embedded tilesets (GID lookup, sprite regions), objects (shapes, class, position, size, properties), the collision grid from tile properties and classes (non-colliding layer), tile ranges with touching edges, `OverlapsSolid`, `MoveAndCollide` (flush stops, no tunneling, sliding along walls, one-way from above / below / inside); all 8 flip-bit combinations against Tiled's transform; missing and broken files (JSON, sizes, infinite, isometric, missing/XML tileset, missing image, base64, bad cells) logged and failing cleanly, unknown tile ids left empty; a tileset's `normalMap` (missing or the wrong size: ignored; watched; drawn with the tiles only while lighting is on); through the asset manager: placeholder for a missing map, hot reload of the map and of its external tileset, broken edits keeping the last version |
 | `SceneTests` | the scene stack without a GPU: requests applied only at the end of `Update`, hook order for push / pop / replace / clear / `ReplaceAll` (pause, resume, exit, destruction), requests from inside a scene's own hooks, `DrawBelow` / `UpdateBelow` chains (which scenes draw and update, in which order), fade timing (change at full cover, then uncover, requests queued meanwhile), fading into an empty stack, custom transition `Draw`, input blocked below the top and during transitions (and the app's own block kept), empty-stack pops, exiting every scene on destruction |
 | `EntityTests` | add / get / has / remove and replacing components, deferred destroy (skipped by `Each`, invalid at once, destructors at `Flush`, stale handles after slot reuse), `Clear`; spawning, adding and destroying inside `Each`; churn of 400,000 spawns without leaks (destructor counts, bounded storage); movement, animation (an `OnFinished` that destroys); collisions (circle / circle normal and depth, circle / box, layer masks, destroyed and collider-less entities leaving the broadphase); `DrawSprites` order by layer and y, culling |
@@ -88,6 +88,7 @@ ThreadSanitizer and UndefinedBehaviorSanitizer runs (GCC/Clang; see
 ```sh
 cmake --preset debug-tsan && cmake --build --preset debug-tsan && ctest --preset debug-tsan
 cmake --preset debug-ubsan && cmake --build --preset debug-ubsan && ctest --preset debug-ubsan
+cmake --preset debug-asan-ubsan && cmake --build --preset debug-asan-ubsan && ctest --preset debug-asan-ubsan
 ```
 
 Benchmark (release build recommended; numbers vary a lot between machines):
@@ -194,8 +195,15 @@ null access, float-to-int casts out of range) and stops at the first report. `de
 on it). Like ASan, the flags go on everything and on the `Emerald` target's interface. Their test
 presets set `UBSAN_OPTIONS` / `TSAN_OPTIONS` (stack traces, stop at the first report). On kernels
 with high ASLR entropy TSan fails to start ("unexpected memory mapping"):
-`sudo sysctl vm.mmap_rnd_bits=28` fixes it until the next reboot. Linux CI runs both with GCC
-and Clang.
+`sudo sysctl vm.mmap_rnd_bits=28` fixes it until the next reboot. Linux CI runs UBSan and TSan
+with GCC and Clang (`.github/workflows/linux.yml`). `.github/workflows/sanitizers.yml` runs
+Clang again with ASan and UBSan in one build (`debug-asan-ubsan`), and TSan in its own job,
+because the two sanitizers cannot be linked together. `cmake/tsan.supp` is loaded by the
+`debug-tsan` test preset. It only lists third-party noise (PulseAudio's mutex during
+`SDL_Init`, a lavapipe mutex race inside `libvulkan_lvp.so`, and the LLVM JIT race
+inside `libLLVM.so` on those same llvmpipe threads, and an SDL Vulkan lock-order
+report in `SDL_gpu_vulkan.c` while the window is released, and a libdbus lock-order
+report across `SDL_Init` / `SDL_Quit`); Emerald frames are not suppressed.
 
 - **GCC / Clang:** `-fsanitize=address -fno-omit-frame-pointer`. On Linux with Mesa's drivers the
   sandbox reports about 50 KB of leaks from inside the unloaded GPU driver ("unknown module") at

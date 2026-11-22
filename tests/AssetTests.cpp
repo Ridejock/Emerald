@@ -483,7 +483,8 @@ TEST(AssetsHotReloadThroughUpdate)
     AssetHandle<Texture> ship = assets.Load<Texture>("ship.png");
     WriteText(f.Root / "ship.png", "40");
 
-    // About 60 frames a second until it shows up; it should take well under a second.
+    // About 60 frames a second until it shows up. Two polls (0.25 s apart) after the
+    // mtime changes, and some clocks only tick once a second, so allow a little over that.
     const auto start = std::chrono::steady_clock::now();
     f32 seconds = 0.0f;
     while (ship->GetWidth() != 40 && seconds < 3.0f) {
@@ -492,7 +493,7 @@ TEST(AssetsHotReloadThroughUpdate)
         seconds = std::chrono::duration<f32>(std::chrono::steady_clock::now() - start).count();
     }
     CHECK(ship->GetWidth() == 40);
-    CHECK(seconds < 1.0f);
+    CHECK(seconds < 2.5f);
 }
 
 // The real loader without a GPU device: sounds and fonts load for real, textures fall back to

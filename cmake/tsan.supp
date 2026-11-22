@@ -1,0 +1,39 @@
+# ThreadSanitizer suppressions for third-party code only.
+# A line here hides a report. Do not add Emerald frames.
+
+# SDL_Init starts PulseAudio's threaded mainloop (SDL_pulseaudio.c,
+# PULSEAUDIO_Init). libpulse allocates a pa_mutex on its PulseMainloop thread
+# and the thread that called SDL_Init locks it. TSan reports that as a data
+# race in pa_mutex_lock / pa_xmalloc, inside libpulsecommon. Emerald never
+# touches that mutex. Seen with the pinned SDL 3.4.16 and PulseAudio 16 on
+# Ubuntu 24.04, under xvfb, and not on every run.
+race:pa_mutex_lock
+
+# Mesa lavapipe (the software Vulkan driver) races with itself when SDL creates
+# a device. One llvmpipe thread calls pthread_mutex_destroy and another calls
+# pthread_mutex_lock; both frames are inside libvulkan_lvp.so, reached from
+# SDL's VULKAN_CreateDevice. The .so has no symbol names, so the pattern matches
+# that library on the racing stack (TSan compares it to the module). Emerald's
+# own frames are not in that library, so they still report.
+race:libvulkan_lvp.so
+
+# The same lavapipe device startup then races inside Mesa's LLVM JIT (libLLVM.so
+# on the llvmpipe worker threads): bcmp in llvm::StringMapImpl::LookupBucketFor
+# against memcpy, on a heap block from llvm::allocate_buffer. Emerald never calls
+# LLVM. race:libvulkan_lvp.so does not see these frames; they are in libLLVM.
+# Matches that module only (libLLVM.so.20.1 on Ubuntu 24.04).
+race:libLLVM.so
+
+# SDL's Vulkan backend locks two of its own mutexes in opposite orders while
+# releasing the window (VULKAN_ReleaseWindow / VULKAN_INTERNAL_PerformPendingDestroys
+# / VULKAN_INTERNAL_RemoveFramebuffersContainingView, all via SDL_LockMutex).
+# Seen under TSan on shutdown after a lavapipe smoke run. Emerald only calls
+# SDL_ReleaseWindowFromGPUDevice; it does not take those mutexes. Matches the
+# SDL source file, not Emerald's.
+deadlock:SDL_gpu_vulkan.c
+
+# libdbus locks its connection and another mutex in opposite orders between
+# SDL_Init and SDL_Quit (unnamed frames in libdbus-1.so.3, plus
+# dbus_connection_close). Emerald calls SDL_Init and SDL_Quit and does not
+# take those locks. Matches the dbus library on the lock-order stack.
+deadlock:libdbus-1.so

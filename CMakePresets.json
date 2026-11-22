@@ -57,6 +57,15 @@
       }
     },
     {
+      "name": "debug-asan-ubsan",
+      "displayName": "Debug (AddressSanitizer + UndefinedBehaviorSanitizer; GCC/Clang)",
+      "inherits": "debug",
+      "cacheVariables": {
+        "EMERALD_ASAN": "ON",
+        "EMERALD_UBSAN": "ON"
+      }
+    },
+    {
       "name": "debug-tsan",
       "displayName": "Debug (ThreadSanitizer; GCC/Clang)",
       "inherits": "debug",
@@ -87,6 +96,7 @@
     { "name": "profile", "configurePreset": "profile" },
     { "name": "debug-asan", "configurePreset": "debug-asan" },
     { "name": "debug-ubsan", "configurePreset": "debug-ubsan" },
+    { "name": "debug-asan-ubsan", "configurePreset": "debug-asan-ubsan" },
     { "name": "debug-tsan", "configurePreset": "debug-tsan" },
     {
       "name": "linux-release",
@@ -118,10 +128,21 @@
       "environment": { "UBSAN_OPTIONS": "print_stacktrace=1:halt_on_error=1" }
     },
     {
+      "name": "debug-asan-ubsan",
+      "inherits": "base",
+      "configurePreset": "debug-asan-ubsan",
+      "environment": {
+        "ASAN_OPTIONS": "halt_on_error=1:detect_leaks=1",
+        "UBSAN_OPTIONS": "print_stacktrace=1:halt_on_error=1"
+      }
+    },
+    {
       "name": "debug-tsan",
       "inherits": "base",
       "configurePreset": "debug-tsan",
-      "environment": { "TSAN_OPTIONS": "halt_on_error=1:second_deadlock_stack=1" }
+      "environment": {
+        "TSAN_OPTIONS": "halt_on_error=1:second_deadlock_stack=1:suppressions=${sourceDir}/cmake/tsan.supp"
+      }
     }
   ]
 }

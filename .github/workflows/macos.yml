@@ -1,0 +1,203 @@
+# macOS tests on an Apple Silicon runner (macos-15 is arm64; macos-15-intel is not).
+#
+# Windows MSVC stays in windows.yml. Linux GCC/Clang, lavapipe and the package
+# stay in linux.yml. Those files are left alone so a headless SwiftShader job
+# can land beside the lavapipe smoke without overlapping this workflow.
+#
+# Shaders: the default set is SPIR-V, DXIL and MSL. Metal loads the .msl files
+# shadercross writes (SPIRV-Cross, entry point main0). The tool is built once
+# and cached; later runs only restore bin/.
+#
+# The Metal smoke runs the sandbox for a few frames. If this runner image cannot
+# open a window or a Metal device, the step logs SKIP and the job still passes.
+# Unit tests do not need a GPU. A shader load error or a crash still fails.
+name: macOS
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  EMERALD_CACHE_DIR: /Users/runner/emerald-cache
+
+jobs:
+  shadercross:
+    runs-on: macos-15
+    timeout-minutes: 180
+    name: shadercross (Apple Clang)
+    outputs:
+      key: ${{ steps.key.outputs.key }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Apple Silicon
+        run: |
+          arch=$(uname -m)
+          echo "arch=${arch}"
+          if [ "$arch" != "arm64" ]; then
+            echo "::error::macos-15 must be Apple Silicon (arm64); got ${arch}"
+            exit 1
+          fi
+
+      - name: Tools
+        run: |
+          brew install cmake ninja ccache
+          echo "$(brew --prefix)/bin" >> "$GITHUB_PATH"
+
+      # The 14 GB image fills up once DirectXShaderCompiler is cloned. Simulators
+      # and the Android SDK are unused here.
+      - name: Free disk
+        run: |
+          df -h /
+          sudo rm -rf /Library/Developer/CoreSimulator/Caches /Library/Developer/CoreSimulator/Volumes || true
+          xcrun simctl delete unavailable || true
+          sudo rm -rf /usr/local/lib/android "$HOME/Library/Android" || true
+          df -h /
+
+      - name: Cache key
+        id: key
+        run: |
+          version=$(clang++ -dumpversion)
+          key="shadercross-bin-macos-${version}-${{ hashFiles('tools/shadercross/**') }}"
+          echo "key=${key}" >> "$GITHUB_OUTPUT"
+          echo "KEY=${key}" >> "$GITHUB_ENV"
+
+      - name: Restore shadercross
+        id: cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: /Users/runner/emerald-cache/shadercross/*/bin
+          key: ${{ env.KEY }}
+
+      # Two compile jobs and one link at a time: the M1 runner has 7 GB of RAM,
+      # and linking LLVM in parallel is what gets the job killed.
+      - name: Build shadercross
+        id: build
+        if: steps.cache.outputs.cache-hit != 'true'
+        env:
+          CMAKE_BUILD_PARALLEL_LEVEL: "2"
+          LLVM_PARALLEL_LINK_JOBS: "1"
+        run: |
+          cmake -S . -B build/tool -G Ninja -DEMERALD_BUILD_TESTS=OFF \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+          cmake --build build/tool --target emerald_shadercross
+
+      - name: Save shadercross
+        if: steps.cache.outputs.cache-hit != 'true' && steps.build.outcome == 'success'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: /Users/runner/emerald-cache/shadercross/*/bin
+          key: ${{ env.KEY }}
+
+  test:
+    needs: shadercross
+    runs-on: macos-15
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        preset: [debug, release]
+    name: ${{ matrix.preset }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Apple Silicon
+        run: |
+          arch=$(uname -m)
+          if [ "$arch" != "arm64" ]; then
+            echo "::error::macos-15 must be Apple Silicon (arm64); got ${arch}"
+            exit 1
+          fi
+
+      - name: Tools
+        run: |
+          brew install cmake ninja ccache
+          echo "$(brew --prefix)/bin" >> "$GITHUB_PATH"
+
+      - name: ccache
+        id: ccache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: /Users/runner/Library/Caches/ccache
+          key: ccache-macos-arm64-${{ matrix.preset }}-${{ github.sha }}
+          restore-keys: |
+            ccache-macos-arm64-${{ matrix.preset }}-
+
+      - name: Restore shadercross
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: /Users/runner/emerald-cache/shadercross/*/bin
+          key: ${{ needs.shadercross.outputs.key }}
+          fail-on-cache-miss: true
+
+      # MSL is the format Metal loads. SPIR-V and DXIL are produced too, same as a
+      # local macOS build; the tool's own smoke test already requires DXIL.
+      - name: Configure
+        env:
+          CCACHE_DIR: /Users/runner/Library/Caches/ccache
+          CCACHE_COMPRESS: "1"
+          CCACHE_MAXSIZE: 500M
+        run: |
+          ccache --zero-stats || true
+          cmake --preset ${{ matrix.preset }} -DEMERALD_WARNINGS_AS_ERRORS=ON \
+            -DEMERALD_SHADER_FORMATS="SPIRV;DXIL;MSL" \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+
+      - name: Build
+        id: build
+        env:
+          CCACHE_DIR: /Users/runner/Library/Caches/ccache
+          CCACHE_COMPRESS: "1"
+          CCACHE_MAXSIZE: 500M
+        run: cmake --build --preset ${{ matrix.preset }} 2>&1 | tee build-log.txt; exit ${PIPESTATUS[0]}
+
+      - name: ccache stats
+        if: always()
+        env:
+          CCACHE_DIR: /Users/runner/Library/Caches/ccache
+        run: ccache --show-stats || true
+
+      - name: Save ccache
+        if: steps.build.outcome == 'success'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        continue-on-error: true
+        with:
+          path: /Users/runner/Library/Caches/ccache
+          key: ${{ steps.ccache.outputs.cache-primary-key }}
+
+      - name: Test
+        run: ctest --preset ${{ matrix.preset }}
+
+      - name: Metal smoke
+        if: matrix.preset == 'debug'
+        run: tools/ci/gpu-smoke.sh --bin build/debug/bin/Sandbox --gpu metal --frames 30 --screenshot metal.png --log metal-smoke.log
+
+      - name: Upload Metal smoke
+        if: always() && matrix.preset == 'debug'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: metal-smoke
+          path: |
+            metal.png
+            metal-smoke.log
+          if-no-files-found: ignore
+
+      - name: Upload logs
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: logs-macos-${{ matrix.preset }}
+          path: |
+            build-log.txt
+            build/${{ matrix.preset }}/Testing/Temporary/LastTest.log
+            metal-smoke.log
+          if-no-files-found: ignore

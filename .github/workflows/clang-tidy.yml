@@ -1,0 +1,56 @@
+# clang-tidy on Emerald's own sources (src/, tests/, sandbox/, bench/).
+# src/Vendor and FetchContent trees are not passed to the tool. The check set
+# is .clang-tidy. Configure only: tidy reads compile_commands.json and does not
+# need a finished binary or the shader compiler.
+#
+# Report-only: the first run has a few dozen findings (tile-index casts, emplace,
+# string find, a deliberate use-after-move in a test). Failing on those would
+# block the new macOS and sanitizer jobs. The log is uploaded either way.
+# .clang-tidy turns off checks that mis-fire on this code (see the comments there).
+name: clang-tidy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tidy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    name: clang-tidy
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Packages
+        run: |
+          tools/ci/install-linux-packages.sh
+          sudo apt-get install -y clang-tidy
+
+      # compile_commands.json is enough. Sandbox and bench are on so their
+      # sources are in the database; shadercross is not built.
+      - name: Configure
+        run: |
+          echo "CC=clang" >> "$GITHUB_ENV"
+          echo "CXX=clang++" >> "$GITHUB_ENV"
+          export CC=clang CXX=clang++
+          cmake --preset debug -DEMERALD_BUILD_BENCH=ON -DEMERALD_BUILD_SHADERCROSS=ON
+
+      - name: clang-tidy
+        run: tools/ci/run-clang-tidy.sh --build build/debug --report-only --output clang-tidy.txt
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: clang-tidy
+          path: clang-tidy.txt
+          if-no-files-found: ignore

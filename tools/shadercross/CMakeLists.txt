@@ -20,9 +20,15 @@ endif()
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY $<1:${CMAKE_BINARY_DIR}/bin>)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY $<1:${CMAKE_BINARY_DIR}/bin>)
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
-# Let the executable find libdxcompiler/libdxil next to itself.
+# Let the executable find libdxcompiler/libdxil next to itself. dyld does not
+# expand $ORIGIN (it looks for a literal directory of that name); @loader_path
+# is the macOS token for "the directory containing this binary".
 set(CMAKE_BUILD_RPATH_USE_ORIGIN ON)
-set(CMAKE_BUILD_RPATH "$ORIGIN")
+if(APPLE)
+    set(CMAKE_BUILD_RPATH "@loader_path")
+else()
+    set(CMAKE_BUILD_RPATH "$ORIGIN")
+endif()
 
 include(FetchContent)
 set(FETCHCONTENT_QUIET OFF)
@@ -77,7 +83,7 @@ FetchContent_MakeAvailable(SDL3 SDL_shadercross)
 # built without SPIR-V codegen, and every DXIL compile fails with "SPIR-V CodeGen not
 # available". Copying both libraries beside the exe makes the application directory, which
 # Windows searches first, provide the right ones. (Harmless on Linux/macOS, where RPATH
-# $ORIGIN picks up the copies.)
+# $ORIGIN / @loader_path picks up the copies.)
 add_custom_target(shadercross_bundle ALL
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
             $<TARGET_FILE:dxcompiler> $<TARGET_FILE:dxildll> $<TARGET_FILE_DIR:shadercross>

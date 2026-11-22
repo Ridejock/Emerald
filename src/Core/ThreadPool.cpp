@@ -57,18 +57,20 @@ ThreadPool::ThreadPool(u32 threadCount, std::string namePrefix)
     if (threadCount == 0)
         threadCount = DefaultThreadCount();
     m_Workers.reserve(threadCount);
-    for (u32 i = 0; i < threadCount; ++i) {
-        // A jthread passes its own stop_token as the first argument when the callable accepts one.
-        m_Workers.emplace_back([this, i](std::stop_token stop) { WorkerLoop(stop, i); });
-    }
+    for (u32 i = 0; i < threadCount; ++i)
+        m_Workers.emplace_back([this, i] { WorkerLoop(i); });
 }
 
 ThreadPool::~ThreadPool()
 {
-    // Ask every worker to stop first so they all wind down in parallel; the jthread destructors
-    // (m_Workers is destroyed first, see the header) then join them.
-    for (std::jthread& worker : m_Workers)
-        worker.request_stop();
+    {
+        // Under the mutex, so a worker cannot miss the flag between its predicate and the wait.
+        const std::lock_guard lock(m_Mutex);
+        m_Stop.store(true, std::memory_order_release);
+    }
+    m_WorkAvailable.notify_all();
+    for (std::thread& worker : m_Workers)
+        worker.join();
 }
 
 void ThreadPool::Enqueue(std::function<void()> job)
@@ -86,7 +88,7 @@ void ThreadPool::WaitIdle()
     m_Idle.wait(lock, [this] { return m_Queue.empty() && m_Running == 0; });
 }
 
-void ThreadPool::WorkerLoop(const std::stop_token& stop, u32 index)
+void ThreadPool::WorkerLoop(u32 index)
 {
     SetCurrentThreadName(m_NamePrefix + std::to_string(index));
 
@@ -94,9 +96,10 @@ void ThreadPool::WorkerLoop(const std::stop_token& stop, u32 index)
         std::function<void()> job;
         {
             std::unique_lock lock(m_Mutex);
-            // Sleeps until there is work or a stop is requested (the stop_token wakes it).
-            m_WorkAvailable.wait(lock, stop, [this] { return !m_Queue.empty(); });
-            if (stop.stop_requested())
+            m_WorkAvailable.wait(lock, [this] {
+                return m_Stop.load(std::memory_order_acquire) || !m_Queue.empty();
+            });
+            if (m_Stop.load(std::memory_order_acquire))
                 return; // queued tasks are dropped; their futures report broken_promise
             job = std::move(m_Queue.front());
             m_Queue.pop_front();

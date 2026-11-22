@@ -118,8 +118,12 @@ Application::Application(const ApplicationSpec& spec)
                         "is required. Please update your graphics drivers.\n\n"
                         "Details: ") +
             SDL_GetError();
-        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Emerald - unsupported GPU", message.c_str(),
-                                 nullptr);
+        // --frames is how CI and capture runs ask the process to exit on its own. A modal
+        // dialog would sit until someone clicked it (or the job timed out).
+        if (m_Dev.Frames == 0) {
+            SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Emerald - unsupported GPU",
+                                     message.c_str(), nullptr);
+        }
         return;
     }
     m_RendererInitialized = true;
@@ -249,10 +253,13 @@ int Application::Run()
             if (m_FailedFrames >= kMaxFailedFrames) {
                 // E.g. the GPU device was lost: SDL has no callback for that, only failures.
                 EM_CORE_ERROR("{} frames in a row failed to render, exiting", m_FailedFrames);
-                SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Emerald - rendering failed",
-                                         "The GPU stopped rendering frames (see the log). The "
-                                         "application will close.",
-                                         Sdl(m_Window->GetNativeWindow()));
+                // Same as the GPU-init dialog: an automated --frames run must not block on it.
+                if (m_Dev.Frames == 0) {
+                    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Emerald - rendering failed",
+                                             "The GPU stopped rendering frames (see the log). The "
+                                             "application will close.",
+                                             Sdl(m_Window->GetNativeWindow()));
+                }
                 exitCode = 1;
                 m_Running = false;
             }

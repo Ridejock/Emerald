@@ -1,0 +1,45 @@
+# Clang-tidy for Emerald's own sources. The CI job does not pass src/Vendor or
+# anything under a FetchContent _deps tree.
+#
+# HeaderFilterRegex is an LLVM regex (no lookahead). It lists Emerald's header
+# directories so a warning inside SDL, spdlog or src/Vendor is not reported.
+# clang-tidy 18 has no ExcludeHeaderFilterRegex.
+#
+# bugprone-* and performance-* stay on, minus checks that flag ordinary
+# graphics math and parameter order rather than defects.
+# modernize-* is a short list: the full group rewrites a lot of valid C++20.
+# readability-braces-around-statements is off: single-line ifs in this code
+# have no braces, and turning that on is a repo-wide edit.
+# bugprone-macro-parentheses is off: the TEST/CHECK macros token-paste and
+# stringize their argument, and parentheses would break that.
+# bugprone-incorrect-roundings is off: it wants std::lround, and long is 32-bit
+# on Windows. Those sites round a positive nanosecond count into u64.
+# bugprone-unchecked-optional-access is off: it does not treat CHECK(opt) as a
+# guard, and FrameArena's arena optional is engaged for the object's whole life.
+Checks: >
+  -*,
+  bugprone-*,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-implicit-widening-of-multiplication-result,
+  -bugprone-narrowing-conversions,
+  -bugprone-macro-parentheses,
+  -bugprone-incorrect-roundings,
+  -bugprone-unchecked-optional-access,
+  performance-*,
+  -performance-avoid-endl,
+  -performance-enum-size,
+  modernize-use-nullptr,
+  modernize-use-override,
+  modernize-use-bool-literals,
+  modernize-use-equals-default,
+  modernize-use-equals-delete,
+  modernize-redundant-void-arg,
+  modernize-use-emplace,
+  readability-misleading-indentation,
+  readability-duplicate-include,
+  readability-container-size-empty,
+  readability-redundant-declaration,
+  readability-avoid-const-params-in-decls
+HeaderFilterRegex: '(include/Emerald/|/src/(Assets|Audio|Core|Dialogue|Editor|Entity|Input|IO|Memory|Particles|Physics|Platform|Renderer|Save|Scene|Tilemap|Tween|UI)/|/tests/|/sandbox/src/|/bench/)'
+WarningsAsErrors: ''
+FormatStyle: none

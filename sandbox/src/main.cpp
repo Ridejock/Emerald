@@ -15,7 +15,6 @@
 // sections to it).
 
 #include <array>
-#include <charconv>
 #include <chrono>
 #include <cmath>
 #include <cstddef>
@@ -31,6 +30,8 @@
 #include <vector>
 
 #include <Emerald/Emerald.h>
+
+#include "../../src/Core/FloatText.h"
 
 #include "DemoScene.h"
 #include "DialogueScene.h"
@@ -738,7 +739,9 @@ SandboxOptions ParseOptions(i32 argc, char** argv)
             options.Start = SceneId::Tilemap;
             ++i;
         } else if (arg == "--zoom") {
-            std::from_chars(value.data(), value.data() + value.size(), options.Room.Zoom);
+            f64 zoom = 0.0;
+            if (Emerald::TextToFloat(value, zoom) && zoom > 0.0)
+                options.Room.Zoom = static_cast<f32>(zoom);
             ++i;
         } else if (arg == "--tilemap") {
             options.Start = SceneId::Tilemap;

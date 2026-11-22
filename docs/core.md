@@ -42,7 +42,7 @@ spec.LogFile = "logs/MyGame.log"; // or "" for console only
 ## Threads
 
 `Emerald::ThreadPool` (`include/Emerald/Core/ThreadPool.h`) is a small worker pool built on
-`std::jthread`. `Application` owns one: `GetThreadPool()`, sized by `ApplicationSpec::WorkerThreads`
+`std::thread`. `Application` owns one: `GetThreadPool()`, sized by `ApplicationSpec::WorkerThreads`
 (0 = hardware threads − 1, at least 1).
 
 ```cpp
@@ -53,9 +53,8 @@ pool.WaitIdle();                                                    // until the
 i32 value = answer.get(); // 42, or rethrows the exception the task threw
 ```
 
-- Tasks wait in a mutex-protected queue; idle workers sleep on a `std::condition_variable_any` whose
-  `wait` takes the worker's `std::stop_token`. The destructor calls `request_stop()` and the jthreads
-  join automatically – no hand-written shutdown flag or join loop.
+- Tasks wait in a mutex-protected queue; idle workers sleep on a condition variable. The destructor
+  sets an atomic stop flag, wakes the workers and joins them. Apple's libc++ has no `std::jthread`.
 - **Shutdown policy**: running tasks finish, tasks still queued are dropped and their futures throw
   `std::future_error` (`broken_promise`). Call `WaitIdle()` first if everything must run.
   `Application` calls `WaitIdle()` before `OnShutdown()`.

@@ -15,6 +15,7 @@ You get a window, a batched 2D renderer, sprites and animation, a camera, tilema
 - **`Emerald::Emerald`**: the engine library.
 - **`Emerald::Math`**: a header-only math library (vectors, `Mat4`, optional SSE on x86/x64).
 - **`sandbox/`**: an example app on the scene stack (title, camera demo, tilemap room, entity swarm, platformer, pause, options, lighting, dialogue, particles, pop-ups).
+- **`examples/hello/`**: the smallest program, a window and one line of debug text. [Hello, world](docs/hello-world.md) walks through it.
 - **`tests/`**: unit tests, run with `ctest`.
 
 ## Features
@@ -59,7 +60,7 @@ Debug and release run on Windows, Linux, and macOS. The `profile` preset (Tracy,
 
 GPU checks:
 
-- **SwiftShader.** Linux and Windows run `RenderSmoke`: one Vulkan frame, compared with `tests/data/render_smoke.png`. The test is not part of a ThreadSanitizer build. With no Vulkan device it exits 77 and CTest skips it. Those jobs require SwiftShader, so a missing device fails the run. The Linux GCC debug job also runs the sandbox for a few frames on SwiftShader.
+- **SwiftShader.** Linux and Windows run `RenderSmoke`: one Vulkan frame, compared with `tests/data/render_smoke.png`. The test is not part of a ThreadSanitizer build. With no Vulkan device it exits 77 and CTest skips it. Those jobs require SwiftShader, so a missing device fails the run. The Linux GCC debug job also runs the sandbox and the hello-world example for a few frames on SwiftShader.
 - **llvmpipe.** The sanitizer jobs run the sandbox for a few frames on lavapipe (Mesa's llvmpipe Vulkan driver).
 - **Metal.** The macOS debug job runs the sandbox for a few frames on Metal. If that runner cannot open a window or a Metal device, the step skips and the job stays green.
 
@@ -82,6 +83,20 @@ ctest --preset debug
 
 Other presets, from [CMakePresets.json](CMakePresets.json): `release`, `debug-full` (ImGui), `profile` (Tracy), `debug-asan`, `debug-ubsan`, `debug-asan-ubsan`, `debug-tsan`, and on Linux `linux-release`. What each one sets, and how to run the sandbox (`--frames`, `--screenshot`, `--gpu`, scene switches), is in [Building and running](docs/building.md#running).
 
+## Hello, world
+
+The smallest program is [Hello, world](docs/hello-world.md): open a window, clear it, draw one line
+with the built-in debug font, and quit on Escape or when the window closes. `EMERALD_BUILD_EXAMPLES`
+is on when you build this repository (and in CI):
+
+```sh
+cmake --preset debug
+cmake --build --preset debug --target Hello
+./build/debug/bin/Hello        # Hello.exe on Windows
+```
+
+That page is also the walkthrough for adding Emerald to a new CMake project. The source it shows is `examples/hello/main.cpp`.
+
 ## Using Emerald in your own project
 
 ```cmake
@@ -98,7 +113,7 @@ target_link_libraries(MyGame PRIVATE Emerald::Emerald)
 emerald_add_shaders(MyGame)                                # engine shaders (+ your own .hlsl files)
 ```
 
-As a subproject, Emerald does not build the sandbox or the tests (`EMERALD_BUILD_SANDBOX` and `EMERALD_BUILD_TESTS` default to on only when Emerald is the top-level project). It keeps the parent's output directories. The shader compiler is built once per machine, in a per-user cache that presets and projects share ([The shader compiler](docs/building.md#the-shader-compiler)). To use a local checkout instead of the pinned commit, configure with `-DFETCHCONTENT_SOURCE_DIR_EMERALD=/path/to/Emerald`.
+As a subproject, Emerald does not build the sandbox, the examples, or the tests (`EMERALD_BUILD_SANDBOX`, `EMERALD_BUILD_EXAMPLES`, and `EMERALD_BUILD_TESTS` default to on only when Emerald is the top-level project). It keeps the parent's output directories. The shader compiler is built once per machine, in a per-user cache that presets and projects share ([The shader compiler](docs/building.md#the-shader-compiler)). To use a local checkout instead of the pinned commit, configure with `-DFETCHCONTENT_SOURCE_DIR_EMERALD=/path/to/Emerald`.
 
 ```cpp
 #include <Emerald/Emerald.h>
@@ -121,6 +136,7 @@ Phase work also has a GitHub issue. The lists after the phases (core and renderi
 
 | File | Contents |
 |---|---|
+| [docs/hello-world.md](docs/hello-world.md) | A one-file window, clear and debug-text program, and how to build it on Windows and Linux |
 | [docs/building.md](docs/building.md) | Dependencies, build options, per-platform setup, presets, the Linux release package, sandbox command line |
 | [docs/releasing.md](docs/releasing.md) | Reusable game CI: build, test, package, and publish a tag to itch.io with butler |
 | [docs/platforms.md](docs/platforms.md) | Linux paths (XDG), borderless fullscreen, Steam Deck controls and Steam Input. Deck support is untested on real hardware |
@@ -138,6 +154,7 @@ Phase work also has a GitHub issue. The lists after the phases (core and renderi
 
 ```
 docs/              Documentation (one file per topic, see above)
+examples/hello/    Smallest public-API program (EMERALD_BUILD_EXAMPLES). Walkthrough: docs/hello-world.md
 include/Emerald/   Public headers (Assets/, Audio/, Core/, Dialogue/, Editor/, Entity/, Input/, IO/, Math/, Memory/, Particles/, Physics/, Renderer/, Save/, Scene/, Tilemap/, Tween/, UI/)
 src/               Engine implementation. SDL translation headers live in src/Platform/ and are not on the public include path
 shaders/           Engine HLSL (lines, sprites, lit sprites, tint, CRT), compiled at build time for every app

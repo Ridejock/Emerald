@@ -1,11 +1,12 @@
 # Linux tests (Ubuntu 24.04, GCC and Clang): configure, build (warnings in Emerald's own code are
 # errors) and run the tests in the debug, release, debug-ubsan (UndefinedBehaviorSanitizer),
-# debug-tsan (ThreadSanitizer) and profile (Tracy) presets. GCC debug also runs the sandbox for a
-# few frames on SwiftShader (CPU Vulkan, under Xvfb) and uploads its screenshot. Mesa's lavapipe
-# stays installed; VK_DRIVER_FILES / VK_ICD_FILENAMES point at SwiftShader only, so Mesa cannot be
-# picked. A package job builds the linux-release preset and uploads Sandbox-linux-x64.tar.gz.
-# Every preset in
-# CMakePresets.json is built with EMERALD_WARNINGS_AS_ERRORS on either this workflow or Windows CI.
+# debug-tsan (ThreadSanitizer) and profile (Tracy) presets. GCC debug also runs the sandbox and the
+# hello-world example for a few frames on SwiftShader (CPU Vulkan, under Xvfb) and uploads the
+# screenshots. Mesa's lavapipe stays installed; VK_DRIVER_FILES / VK_ICD_FILENAMES point at
+# SwiftShader only, so Mesa cannot be picked. A package job builds the linux-release preset and
+# uploads Sandbox-linux-x64.tar.gz. Every preset in CMakePresets.json is built with
+# EMERALD_WARNINGS_AS_ERRORS on either this workflow or Windows CI. Configures pass
+# EMERALD_BUILD_EXAMPLES=ON.
 name: Linux
 
 on:
@@ -181,7 +182,7 @@ jobs:
       # SPIR-V only: Vulkan is the GPU backend on Linux. (The DXIL output also crashes the
       # GCC 13-built DXC here with "corrupted double-linked list"; Windows CI covers DXIL.)
       - name: Configure
-        run: cmake --preset ${{ matrix.preset }} -DEMERALD_WARNINGS_AS_ERRORS=ON -DEMERALD_SHADER_FORMATS=SPIRV
+        run: cmake --preset ${{ matrix.preset }} -DEMERALD_WARNINGS_AS_ERRORS=ON -DEMERALD_BUILD_EXAMPLES=ON -DEMERALD_SHADER_FORMATS=SPIRV
 
       - name: Build
         run: cmake --build --preset ${{ matrix.preset }} 2>&1 | tee build-log.txt; exit ${PIPESTATUS[0]}
@@ -208,6 +209,25 @@ jobs:
             ./build/debug/bin/Sandbox --gpu vulkan --frames 30 --screenshot sandbox.png 2>&1 | tee sandbox-log.txt
           test -s sandbox.png
           grep -i swiftshader sandbox-log.txt
+
+      # Same SwiftShader path as the sandbox, for examples/hello. The log must name SwiftShader.
+      - name: Hello smoke run (SwiftShader)
+        if: matrix.compiler == 'gcc' && matrix.preset == 'debug'
+        run: |
+          xvfb-run -a -s "-screen 0 1280x720x24" \
+            ./build/debug/bin/Hello --gpu vulkan --frames 30 --screenshot hello.png 2>&1 | tee hello-log.txt
+          test -s hello.png
+          grep -i swiftshader hello-log.txt
+
+      - name: Upload hello screenshot
+        if: always() && matrix.compiler == 'gcc' && matrix.preset == 'debug'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: hello-swiftshader
+          path: |
+            hello.png
+            hello-log.txt
+          if-no-files-found: ignore
 
       - name: Upload screenshot
         if: always() && matrix.compiler == 'gcc' && matrix.preset == 'debug'
@@ -280,7 +300,7 @@ jobs:
           test -s "$icd"
 
       - name: Configure
-        run: cmake --preset linux-release -DEMERALD_WARNINGS_AS_ERRORS=ON -DEMERALD_SHADER_FORMATS=SPIRV
+        run: cmake --preset linux-release -DEMERALD_WARNINGS_AS_ERRORS=ON -DEMERALD_BUILD_EXAMPLES=ON -DEMERALD_SHADER_FORMATS=SPIRV
 
       - name: Package
         run: cmake --build --preset linux-release
